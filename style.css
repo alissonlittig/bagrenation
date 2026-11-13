@@ -212,7 +212,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .lobby-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .lobby-links { display: flex; align-items: center; gap: 10px; }
 
-.lobby-hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 430px); gap: clamp(32px, 6vw, 80px); align-items: center; margin-top: clamp(0px, 2vh, 24px); }
+.lobby-hero { display: grid; grid-template-columns: minmax(0, 430px); justify-content: center; gap: clamp(32px, 6vw, 80px); align-items: center; margin-block: auto; }
 .eyebrow { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; color: var(--muted); font: 400 10px/1.4 var(--pix); text-transform: uppercase; }
 .dot-live { width: 9px; height: 9px; background: var(--red); animation: blink 1.2s steps(1) infinite; }
 .lobby h1 { margin: 24px 0 22px; font: 400 clamp(24px, 3.9vw, 50px)/1.3 var(--pix); text-transform: uppercase; text-shadow: var(--u) var(--u) 0 var(--mag); text-wrap: balance; }
@@ -227,7 +227,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .lobby-card { --fr: var(--fr-panel-hot); position: relative; margin-top: 48px; padding: 22px 18px 18px; filter: drop-shadow(9px 9px 0 #ff2bd6); }
 .card-mascot { position: absolute; right: 10px; top: -78px; pointer-events: none; }
 .card-mascot .bagre { width: 160px; }
-.card-tag { position: absolute; left: 12px; top: -20px; padding: 6px 8px; background: var(--cyan); color: var(--ink); font: 400 10px/1 var(--pix); text-transform: uppercase; }
+.lobby h1.card-tag { margin: 0; text-shadow: none; text-wrap: nowrap; position: absolute; left: 12px; top: -20px; padding: 6px 8px; background: var(--cyan); color: var(--ink); font: 400 10px/1 var(--pix); text-transform: uppercase; }
 .lobby-card #homeName { margin-bottom: 18px; }
 .divider { display: flex; align-items: center; gap: 12px; margin: 26px 0 18px; color: var(--faint); font: 400 9px/1.3 var(--pix); text-transform: uppercase; }
 .divider::before, .divider::after { content: ""; flex: 1; height: 3px; background: repeating-linear-gradient(90deg, var(--line) 0 6px, transparent 6px 12px); }
@@ -289,7 +289,6 @@ button { -webkit-tap-highlight-color: transparent; }
 .chat-log .mine .from { color: var(--mag); }
 .chat-log .sys { color: var(--faint); font-size: 20px; }
 .chat-log .sys::before { content: "> "; color: var(--ok); }
-.chat-log:empty::before { content: "As mensagens somem quando todos saem. Nada é gravado."; color: var(--faint); font-size: 20px; line-height: 1.1; }
 .chat-form { display: flex; gap: 6px; padding: 8px 0 10px; }
 
 .me { display: flex; align-items: center; gap: 11px; flex: none; padding: 10px 14px; padding-bottom: max(10px, env(safe-area-inset-bottom)); background: var(--bg); border-top: var(--u) solid var(--line); }

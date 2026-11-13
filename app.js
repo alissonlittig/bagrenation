@@ -713,9 +713,7 @@
     $('peopleCount').textContent = String(n);
     $('peopleCountSide').textContent = String(n);
     paintAvatar($('meAvatar'), myName);
-    $('emptyText').textContent = n > 1
-      ? 'Quem compartilhar a tela aparece aqui para todos da sala.'
-      : 'Passe o ID para a galera e comece quando quiser.';
+    $('emptyText').textContent = '';
   }
 
   function addChat(from, text, kind) {
@@ -862,7 +860,7 @@
     if (wakeLock) wakeLock.release().catch(() => {});
     room = null;
     history.replaceState(null, '', location.pathname);
-    document.title = 'BAGRENATION — transmita sua tela com um ID';
+    document.title = 'BAGRENATION';
     $('room').hidden = true;
     $('home').hidden = false;
   }
