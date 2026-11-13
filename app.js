@@ -52,7 +52,8 @@
   let wakeLock = null;
   let myName = clean(store('name')) || `Visitante ${100 + Math.floor(Math.random() * 900)}`;
   // Avatares desenhados em tools/pixel.py (símbolos av-* do index.html). Sem escolha = inicial do nome.
-  const AVATARS = [...document.querySelectorAll('symbol[id^="av-"]')].map((el) => el.id.slice(3));
+  const AV_SYM = [...document.querySelectorAll('symbol[id^="av-"]')]; // data-g = aba da galeria, data-n = nome
+  const AVATARS = AV_SYM.map((el) => el.id.slice(3));
   let myAv = AVATARS.includes(store('avatar')) ? store('avatar') : '';
   // Voz. Preferências lembradas no navegador; mudo/ensurdecido valem só até fechar a página.
   const voice = {
@@ -1489,16 +1490,31 @@
     for (const el of document.querySelectorAll('.js-avatar')) paintAvatar(el, name, myAv);
   }
   // Galeria de avatares: a primeira opção é a inicial do nome (padrão)
-  function renderGallery() {
+  function renderGallery(tab) { // sem aba pedida: abre na aba do avatar atual
+    const group = (av) => $('av-' + av).dataset.g;
+    const groups = [...new Set(AVATARS.map(group))];
+    tab = tab || (myAv ? group(myAv) : groups[0]);
+    const tabs = $('avatarTabs');
+    tabs.textContent = '';
+    for (const g of groups) {
+      const t = document.createElement('button');
+      t.type = 'button';
+      t.className = 'chip';
+      t.textContent = g;
+      t.setAttribute('aria-pressed', String(g === tab));
+      t.addEventListener('click', () => { renderGallery(g); tabs.querySelector('[aria-pressed="true"]').focus(); sfx('tick'); });
+      tabs.append(t);
+    }
     const grid = $('avatarGrid');
     grid.textContent = '';
-    for (const av of ['', ...AVATARS]) {
+    for (const av of ['', ...AVATARS.filter((a) => group(a) === tab)]) {
+      const label = av ? $('av-' + av).dataset.n || av.replace('-', ' ') : 'inicial do nome';
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'avatar';
       b.setAttribute('aria-pressed', String(av === myAv));
-      b.setAttribute('aria-label', av ? `Avatar ${av.replace('-', ' ')}` : 'Inicial do nome');
-      b.title = av ? av.replace('-', ' ') : 'inicial do nome';
+      b.setAttribute('aria-label', av ? `Avatar ${label}` : 'Inicial do nome');
+      b.title = label;
       paintAvatar(b, room ? myName : clean($('homeName').value) || '?', av);
       b.addEventListener('click', () => {
         myAv = av;

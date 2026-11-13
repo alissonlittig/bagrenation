@@ -292,7 +292,9 @@ button { -webkit-tap-highlight-color: transparent; }
 .avatar-btn { padding: 0; border: 0; cursor: pointer; }
 .avatar-btn:hover { outline-color: var(--cyan); outline-offset: 2px; }
 .avatar-btn::after { content: ""; position: absolute; right: -4px; bottom: -4px; width: 14px; height: 14px; background: var(--yel) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 7' shape-rendering='crispEdges'%3E%3Cpath fill='%2307040f' d='M4 1h2v2H4zM3 2h1v1H3zM2 3h2v1H2zM1 4h2v1H1zM1 5h1v1H1z'/%3E%3C/svg%3E") center / 14px 14px; box-shadow: 0 0 0 2px var(--ink); }
-.av-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 6px 4px 4px; justify-items: center; }
+.av-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.av-tabs .chip { flex: 1 1 auto; justify-content: center; }
+.av-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 6px 4px 4px; justify-items: center; align-content: start; min-height: 254px; } /* 3 linhas: a janela não pula ao trocar de aba */
 .av-grid .avatar { width: 72px; height: 72px; padding: 0; border: 0; font-size: 26px; cursor: pointer; }
 .av-grid .avatar:hover { outline-color: var(--cyan); outline-offset: 2px; }
 .av-grid .avatar[aria-pressed="true"] { outline-color: var(--yel); outline-offset: 2px; }
@@ -566,7 +568,7 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
   .stage.has-focus .tile.focused { height: calc(100% - 106px); }
   .empty { padding: 16px 8px 18px; }
   .empty-mascot .bagre { width: 160px; }
-  .av-grid { gap: 12px 6px; }
+  .av-grid { gap: 12px 6px; min-height: 214px; }
   .av-grid .avatar { width: 60px; height: 60px; }
   .voice-grid { gap: 14px 6px; }
   .vcard { width: 84px; }

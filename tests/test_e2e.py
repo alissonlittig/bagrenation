@@ -419,9 +419,10 @@ def row(pg, name):
     return pg.locator("#people li", has=pg.locator(".nm", has_text=re.compile(rf"^{name}( \(você\))?$")))
 
 
-def pick_avatar(pg, opener, av):
+def pick_avatar(pg, opener, av, tab="Clássicos"):
     pg.click(opener)
     expect(pg.locator("#avatarDlg")).to_be_visible()
+    pg.click(f'#avatarTabs button:text-is("{tab}")')
     pg.click(f'#avatarGrid button[title="{av}"]')
     expect(pg.locator("#avatarDlg")).to_be_hidden()
 
@@ -446,9 +447,18 @@ def run_voice(base):
         a.fill("#joinInput", "")
         expect(a.locator("#homeAvatar")).to_have_text("A")  # padrão: inicial do nome
         a.click("#homeAvatar")
-        n_av = a.locator("#avatarGrid button").count()
-        assert 13 <= n_av <= 17, n_av  # inicial + 12 a 16 avatares
-        shot(a, "10_galeria_avatares")
+        tabs = a.locator("#avatarTabs button")
+        assert tabs.all_text_contents() == ["Bagres", "Clássicos", "RPG", "Cyber"], tabs.all_text_contents()
+        expect(a.locator('#avatarTabs button[aria-pressed="true"]')).to_have_text("Bagres")  # sem avatar: primeira aba
+        n_av = 1
+        for i, quantos in enumerate([4, 11, 10, 6]):  # cada aba: inicial + os avatares do grupo
+            tabs.nth(i).click()
+            expect(a.locator("#avatarGrid button")).to_have_count(quantos + 1)
+            expect(a.locator("#avatarGrid button svg")).to_have_count(quantos)
+            n_av += quantos
+            shot(a, f"10_galeria_{i + 1}")
+        assert a.locator('#avatarGrid button[title="Ampulho, viajante do tempo"]').count() == 1
+        tabs.nth(1).click()
         a.click('#avatarGrid button[title="gato"]')
         expect(a.locator('#homeAvatar use[href="#av-gato"]')).to_have_count(1)
         assert a.evaluate("localStorage.getItem('bagrenation:avatar')") == "gato"
@@ -475,7 +485,7 @@ def run_voice(base):
         expect(row(b, "Ana").locator('use[href="#av-gato"]')).to_have_count(1)
         expect(row(a, "Bruno").locator('use[href="#av-robo"]')).to_have_count(1)
         expect(row(a, "Caio").locator(".avatar")).to_have_text("C")
-        pick_avatar(c, "#meAvatar", "bagre dj")  # trocar depois, já dentro da sala
+        pick_avatar(c, "#meAvatar", "bagre dj", "Bagres")  # trocar depois, já dentro da sala
         expect(row(a, "Caio").locator('use[href="#av-bagre-dj"]')).to_have_count(1)
         expect(a.locator('#voiceGrid .vcard use[href="#av-bagre-dj"]')).to_have_count(1)
         step(f"teclado retrô só com o som ligado; avatares: galeria com {n_av - 1} + inicial, escolha salva, vista pelos outros, troca dentro da sala")

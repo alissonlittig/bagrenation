@@ -521,6 +521,7 @@ PAL = {
     # cores extras dos avatares
     "N": "#39ff88", "n": "#168a4a", "O": "#ff8a1f", "P": "#9b6dff", "p": "#2a2160",
     "S": "#f2b58a", "T": "#f4f0ff", "E": "#a9a2d6", "e": "#4a4470",
+    "M": "#8a5230", "m": "#4f2c18", "r": "#a3122e", "b": "#2b4bd6",
 }
 BAGRE = ["""
 ........................................
@@ -604,6 +605,14 @@ def variant(swap, top=None, edits=()):
     g = [r.translate(str.maketrans(swap)) for r in grid_of(HEAD)]
     if top:
         g[0:2] = top
+    for y, x, txt in edits:
+        g[y] = g[y][:x] + txt + g[y][x + len(txt):]
+    return "\n".join(g)
+
+
+def avatar_edit(art, edits):
+    """Desenho espelhado + retoques assimétricos (linha, coluna, texto)."""
+    g = [r + r[::-1] for r in grid_of(art)]
     for y, x, txt in edits:
         g[y] = g[y][:x] + txt + g[y][x + len(txt):]
     return "\n".join(g)
@@ -805,7 +814,299 @@ KRRRRRRT
 ..KLLLLL
 ...KKKKK
 ........"""),
+
+    # S-1180: originais no clima de RPG 16-bit, ação e cyberpunk (nenhum personagem de outra obra)
+    "espadachim": ("#1a1433", """
+........
+..KK.KKK
+.KNNKNNN
+.KNNNNNN
+KNNNNNNN
+KVVVVVVV
+KNSSSSSS
+KNSTKSSS
+KnSSSSSS
+.KSSSSSS
+.KSSSSKK
+..KSSSSS
+...KKKKK
+..KbbbTT
+.KbbbbbT
+Kbbbbbbb"""),
+    "maga": ("#00f0ff", """
+.....KKK
+...KKPPP
+..KPPPPP
+.KPPPPPV
+.KPPPKKK
+KPPPKFFF
+KPPKFSSS
+KPPKSTKS
+KPPKSSSS
+KPPKSSSS
+KPPPKSSS
+KPPPPKKK
+.KPPPPPP
+.KPpPPPp
+KPPpPPPp
+KPPPpPPP"""),
+    "cavaleiro": ("#2a0f33", """
+......RR
+....KKRR
+..KKEEKR
+.KETEEEK
+.KEEEEEE
+KEEEEEEE
+KEKKKKKE
+KEKpTpKE
+KEEEEEEE
+KEEeEeEE
+.KEeEeEE
+.KEEEEEE
+..KKEEEE
+.KKeKKKK
+KEEKeeee
+KEEEKeee"""),
+    "samurai": ("#ffe600", """
+.O......
+.OO...KK
+..OOKKRR
+..KOORRR
+.KRROOOO
+KRRRRRRR
+KKKKKKKK
+KrSSSSSS
+KrSTKSSS
+KrSSSSSS
+KrKSSSSS
+KrrKSSKK
+KrrrKKKK
+.KrRrRrR
+KRrRrRrR
+KrRrRrRr"""),
+    "cacador": ("#39ff88", """
+........
+....KKKK
+...Keeee
+...Keeee
+...KOOOO
+KKKKeeee
+Keeeeeee
+.KKKKKKK
+..KSTKSS
+..KSSSSS
+.KKSSSKK
+KpPKSSSS
+KpPPKKKK
+KpPPPpVp
+KpPPPppp
+KpPPPpVp"""),
+    "alquimista": ("#7b2dff", avatar_edit("""
+........
+...KKKKK
+.KKOOOOO
+KOOOOOOO
+KOKKKKKO
+KOKCCTKM
+KOKKKKKO
+KOSSSSSS
+KOSTKSSS
+.KSSSSSS
+.KSSSSKK
+..KSSSSS
+...KKKKK
+..KMMMTT
+.KMMMMMT
+KMMMMMMM""", [(10, 12, "KTTK"), (11, 12, "KTTK"), (12, 11, "KNNNN"), (13, 11, "KNTNN"), (14, 11, "KNNNN"), (15, 11, "KKKKK")])),
+    "bardo": ("#1a1433", avatar_edit("""
+........
+....KKKK
+..KKNNNN
+.KNNNNNN
+KnnnnnNN
+KKKKKKKK
+KVVSSSSS
+KVSTKSSS
+KVSSSSSS
+KVSSSSSS
+.KSSSKKK
+..KSSSSS
+...KKKKK
+..KFFFVV
+.KFFFFFV
+KFFFFFFF""", [(0, 13, "RR"), (1, 12, "RRr"), (2, 12, "Rr"), (3, 11, "r")])),
+    "arqueira": ("#ff2bd6", """
+........
+....KKKK
+..KKMMMM
+.KMMMMMM
+.KMMMMMM
+.KNNNNNN
+.KMMSSSS
+KKMSSSSS
+KSKSTKSS
+.KKSSSSS
+.KMSSSKK
+.KMKSSSS
+KMMMKKKK
+KMMKnNNN
+KMKnnnNN
+KMKnnnnN"""),
+    "chefao": ("#ff3355", """
+K.......
+KK......
+KTK..KKK
+KTTKKppp
+.KTKpppp
+.KKppppp
+.Kpppppp
+KppKKppp
+KpppVKpp
+Kppppppp
+Kppppppp
+.KppKKKK
+.KpppTKT
+..KKpppp
+.KPPKKKK
+KPPPPPKP"""),
+    "dragao": ("#1a1433", """
+........
+.K....K.
+KVK..KKK
+KVVKKRRR
+.KVRRRRR
+.KRRRRRR
+KRRRRRRR
+KRRTKRRR
+KRRKKRRR
+KRRRRRRR
+KRROOOOO
+.KOOOKOO
+.KOOOOOO
+..KTOOOO
+...KKKKK
+........"""),
+    "ninja-ciber": ("#ff2bd6", """
+........
+....KKKK
+..KKpppp
+.Kpppppp
+.KppppCp
+KpppppCC
+KKKKKKKK
+KCCCCTCC
+KKKKKKKK
+Kppppppp
+KpFppppp
+.Kpppppp
+.KppFFpp
+..KKpppp
+.KeeKKKK
+Keeeeeee"""),
+    "netrunner": ("#1a1433", """
+......KK
+.....KFF
+.....KFF
+..KKKKFF
+.KeeeKFF
+KeeSSSSS
+KKKKKKKK
+KCCCTCCK
+KKKKKKKK
+.KSSSSSS
+.KSSSSKK
+..KSSSSS
+...KKKKK
+..KeeeNe
+.KeeeeNe
+KeeeeeNe"""),
+    "mercenario": ("#ffe600", avatar_edit("""
+........
+....KKKK
+..KKEEEE
+.KEEEEEE
+.KEsssss
+KEsSSSSS
+KsSKKSSS
+KsSSKSSS
+KsSSSSSS
+.KSSSSSS
+.KSMMMMM
+..KMMKKM
+...KKKKK
+..KnnnKK
+.Knnnnnn
+Knnnnnnn""".replace("s", "S"), [(5, 11, "r"), (7, 11, "R"), (8, 11, "r"), (12, 11, "KKKKK"), (13, 11, "KEEEK"), (14, 11, "KECEK"), (15, 11, "KEEEK")])),
+    "piloto": ("#00f0ff", """
+........
+....KKKK
+..KKTTOO
+.KTTTTOO
+.KTTTTOO
+KTKKKKKK
+KTKpCCpp
+KTKpCppp
+KTKppppp
+KEKKKKKK
+KEKSSSSS
+.KKSSSKK
+..KSSSSS
+..KKKKKK
+.KOOKTTT
+KOOOOKTT"""),
+    "robo-antigo": ("#7b2dff", """
+........
+..NN.N..
+.KKKKKKK
+KMOOOOOO
+KMOVOOOO
+KMOOOKKK
+KMOOKCCC
+KMOOKCTC
+KMOOKCCC
+KMOOOKKK
+KMOOOOOO
+KMOKTKTK
+KMOKKKKK
+.KKKKKKK
+..KmMMMM
+.KKmMMMM"""),
+    "viajante": ("#2a0f33", """
+........
+....KKKK
+..KKMMMM
+.KMMMMMM
+.KMMMMMM
+KMMKKKKM
+KMKVVVVK
+KMKVTKVK
+KMKVVVVK
+KMSKKKKS
+.KSSSSKK
+.KSSSSSS
+..KKKKKK
+.KCCCCCC
+KCCCbCCC
+KCCCCCCC"""),
 }
+
+# Abas da galeria (ordem = ordem das abas) e nomes inventados dos novos.
+GROUPS = {
+    "Bagres": ["bagre", "bagre-dj", "bagre-rei", "bagre-toxico"],
+    "Clássicos": ["robo", "caveira", "gato", "alien", "fantasma", "sapo", "polvo", "ninja", "astronauta", "slime", "cogumelo"],
+    "RPG": ["espadachim", "maga", "cavaleiro", "samurai", "cacador", "alquimista", "bardo", "arqueira", "chefao", "dragao"],
+    "Cyber": ["ninja-ciber", "netrunner", "mercenario", "piloto", "robo-antigo", "viajante"],
+}
+NAMES = {
+    "espadachim": "Tarvo, o espadachim", "maga": "Nyssara, a maga", "cavaleiro": "Brumal, o cavaleiro",
+    "samurai": "Okiru, o samurai", "cacador": "Corvano, o caçador", "alquimista": "Zimbro, o alquimista",
+    "bardo": "Lirão, o bardo", "arqueira": "Tílva, a arqueira", "chefao": "Umbraz, o chefão",
+    "dragao": "Brasinha, o dragãozinho", "ninja-ciber": "Kiru-9, ninja ciber", "netrunner": "Vanta, a netrunner",
+    "mercenario": "Rusgo, o mercenário", "piloto": "Tenê, piloto de mecha", "robo-antigo": "Ferrugem, o robô antigo",
+    "viajante": "Ampulho, viajante do tempo",
+}
+assert sorted(sum(GROUPS.values(), [])) == sorted(AVATARS), "todo avatar em exatamente uma aba"
+assert set(NAMES) <= set(AVATARS)
 
 
 def avatar_grid(art):
@@ -818,10 +1119,14 @@ def avatar_grid(art):
 
 def avatar_symbols():
     out = []
-    for name, (bg, art) in AVATARS.items():
+    group = {name: g for g, names in GROUPS.items() for name in names}
+    for g_name in GROUPS:  # símbolos saem na ordem das abas
+      for name in GROUPS[g_name]:
+        bg, art = AVATARS[name]
         g = avatar_grid(art)
         body = "".join(f'<path fill="{PAL[c]}" d="{runs(g, c)}"/>' for c in PAL if any(c in r for r in g))
-        out.append(f'  <symbol id="av-{name}" viewBox="0 0 16 16"><path fill="{bg}" d="M0 0h16v16H0z"/>{body}</symbol>')
+        label = f' data-n="{NAMES[name]}"' if name in NAMES else ""
+        out.append(f'  <symbol id="av-{name}" data-g="{group[name]}"{label} viewBox="0 0 16 16"><path fill="{bg}" d="M0 0h16v16H0z"/>{body}</symbol>')
     return "\n".join(out)
 
 
