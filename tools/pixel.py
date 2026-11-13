@@ -519,7 +519,7 @@ PAL = {
     "C": "#00f0ff",  # circuito
     "R": "#ff3355",  # led
     # cores extras dos avatares
-    "N": "#39ff88", "n": "#168a4a", "O": "#ff8a1f", "P": "#9b6dff", "p": "#2a2160",
+    "N": "#39ff88", "n": "#168a4a", "s": "#c8845c", "O": "#ff8a1f", "P": "#9b6dff", "p": "#2a2160",
     "S": "#f2b58a", "T": "#f4f0ff", "E": "#a9a2d6", "e": "#4a4470",
     "M": "#8a5230", "m": "#4f2c18", "r": "#a3122e", "b": "#2b4bd6",
 }
@@ -816,23 +816,23 @@ KRRRRRRT
 ........"""),
 
     # S-1180: originais no clima de RPG 16-bit, ação e cyberpunk (nenhum personagem de outra obra)
-    "espadachim": ("#1a1433", """
-........
-..KK.KKK
-.KNNKNNN
-.KNNNNNN
-KNNNNNNN
-KVVVVVVV
-KNSSSSSS
-KNSTKSSS
-KnSSSSSS
-.KSSSSSS
-.KSSSSKK
-..KSSSSS
-...KKKKK
-..KbbbTT
-.KbbbbbT
-Kbbbbbbb"""),
+    "espadachim": ("#7b2dff", """
+..K.....KK...K..
+.KNK...KNNK.KNK.
+.KNNK.KNNNKKNNK.
+KKNNNKNNNNNNNNKK
+KNNNNNNNNNNNNNNK
+.KNVVVVVVVVVVNK.
+KNNNSNNSSNNSNNNK
+.KNSSSNSSNSSSNK.
+.KnSnnSSSSnnSnK.
+.KnSTKSSSSKTSnK.
+.KSSbKSSSSKbSSK.
+..KSSSSSSSSSSK..
+..KSSSKTTKSSSK..
+...KKSSSSSSKK...
+..KbbKKKKKKbbK..
+.KbbbbbTTbbbbbK."""),
     "maga": ("#00f0ff", """
 .....KKK
 ...KKPPP
@@ -840,10 +840,10 @@ Kbbbbbbb"""),
 .KPPPPPV
 .KPPPKKK
 KPPPKFFF
-KPPKFSSS
+KPPKFFSS
 KPPKSTKS
-KPPKSSSS
-KPPKSSSS
+KPPKSFKS
+KPPKSSSr
 KPPPKSSS
 KPPPPKKK
 .KPPPPPP
@@ -868,39 +868,39 @@ KEEeEeEE
 KEEKeeee
 KEEEKeee"""),
     "samurai": ("#ffe600", """
-.O......
-.OO...KK
-..OOKKRR
-..KOORRR
-.KRROOOO
-KRRRRRRR
-KKKKKKKK
-KrSSSSSS
-KrSTKSSS
-KrSSSSSS
-KrKSSSSS
-KrrKSSKK
-KrrrKKKK
-.KrRrRrR
-KRrRrRrR
-KrRrRrRr"""),
+.......K
+......Kp
+....KKKr
+..KKpppp
+.Kpppepp
+.Kpppppp
+KTTTTTTT
+KpSSSSSS
+KpSKKKSS
+KpSTKSSS
+KpSeKSSS
+.KSSSSSS
+.KSSSSKK
+..KKSSSS
+.KrrTKSS
+KrrrrTKS"""),
     "cacador": ("#39ff88", """
-........
-....KKKK
-...Keeee
-...Keeee
-...KOOOO
-KKKKeeee
-Keeeeeee
-.KKKKKKK
-..KSTKSS
-..KSSSSS
-.KKSSSKK
-KpPKSSSS
-KpPPKKKK
-KpPPPpVp
-KpPPPppp
-KpPPPpVp"""),
+................
+....KKKKKKKK....
+..KKTTTTTTTTKK..
+.KTTTTTTTTTTTTK.
+.KTTETTTTTTETTK.
+KTTTTTTTTTTTTTTK
+KTTTTETTTTTTETTK
+KTTSSTTSSTSSTTTK
+KTESKKTSSSKKSETK
+KTESTKSSSSKTSETK
+KTESCKSSSSKCSETK
+KEKSSSSSSSKSSKEK
+.KKSSSSKKKSSSKK.
+KpKKSSSSSSSSKKpK
+KprpKKSSSSKKprpK
+KpprpKKKKKKprppK"""),
     "alquimista": ("#7b2dff", avatar_edit("""
 ........
 ...KKKKK
@@ -909,11 +909,11 @@ KOOOOOOO
 KOKKKKKO
 KOKCCTKM
 KOKKKKKO
-KOSSSSSS
+KOSmmSSS
 KOSTKSSS
-.KSSSSSS
-.KSSSSKK
-..KSSSSS
+.KSNKSSS
+.KSSSKSS
+..KSSSKK
 ...KKKKK
 ..KMMMTT
 .KMMMMMT
@@ -925,12 +925,12 @@ KMMMMMMM""", [(10, 12, "KTTK"), (11, 12, "KTTK"), (12, 11, "KNNNN"), (13, 11, "K
 .KNNNNNN
 KnnnnnNN
 KKKKKKKK
-KVVSSSSS
+KVVmmSSS
 KVSTKSSS
+KVSbKSSS
 KVSSSSSS
-KVSSSSSS
-.KSSSKKK
-..KSSSSS
+.KSSSSKK
+..KSSSrr
 ...KKKKK
 ..KFFFVV
 .KFFFFFV
@@ -943,10 +943,10 @@ KFFFFFFF""", [(0, 13, "RR"), (1, 12, "RRr"), (2, 12, "Rr"), (3, 11, "r")])),
 .KMMMMMM
 .KNNNNNN
 .KMMSSSS
-KKMSSSSS
+KKMSmmSS
 KSKSTKSS
-.KKSSSSS
-.KMSSSKK
+.KKSNKSS
+.KMSSSSr
 .KMKSSSS
 KMMMKKKK
 KMMKnNNN
@@ -1014,7 +1014,7 @@ KKKKKKKK
 KCCCTCCK
 KKKKKKKK
 .KSSSSSS
-.KSSSSKK
+.KSSSSFF
 ..KSSSSS
 ...KKKKK
 ..KeeeNe
@@ -1027,16 +1027,16 @@ KeeeeeNe"""),
 .KEEEEEE
 .KEsssss
 KEsSSSSS
-KsSKKSSS
-KsSSKSSS
-KsSSSSSS
+KsSKKKSS
+KsSTKSSS
+KsSeKSSS
 .KSSSSSS
 .KSMMMMM
 ..KMMKKM
 ...KKKKK
 ..KnnnKK
 .Knnnnnn
-Knnnnnnn""".replace("s", "S"), [(5, 11, "r"), (7, 11, "R"), (8, 11, "r"), (12, 11, "KKKKK"), (13, 11, "KEEEK"), (14, 11, "KECEK"), (15, 11, "KEEEK")])),
+Knnnnnnn""".replace("s", "S"), [(5, 11, "r"), (7, 10, "RR"), (8, 10, "RR"), (9, 11, "r"), (12, 11, "KKKKK"), (13, 11, "KEEEK"), (14, 11, "KECEK"), (15, 11, "KEEEK")])),
     "piloto": ("#00f0ff", """
 ........
 ....KKKK
@@ -1049,7 +1049,7 @@ KTKpCppp
 KTKppppp
 KEKKKKKK
 KEKSSSSS
-.KKSSSKK
+.KKSSSTT
 ..KSSSSS
 ..KKKKKK
 .KOOKTTT
@@ -1088,22 +1088,92 @@ KMSKKKKS
 .KCCCCCC
 KCCCbCCC
 KCCCCCCC"""),
+    # S-1183: mais originais (aventureiro de RPG e três de cyberpunk)
+    "aventureiro": ("#ff2bd6", """
+..K...K...K.....
+.KbK.KbK.KbK.KK.
+.KbbKbbbKbbbKbbK
+KKbbbbbbbbbbbbbK
+KbbbCbbbbbCbbbbK
+.KbbbbbbbbbbbbbK
+KbbbbSbbSSbSbbbK
+.KbSmmSSSSmmSbK.
+.KbSTKSSSSKTSbK.
+.KSSCKSSSSKCSSK.
+..KSSSSSSSSSSK..
+..KSSKSSSSKSSK..
+...KSSKKKKSSK...
+..KVKKSSSSKKVK..
+.KVVVKKCCKKVVVK.
+KVVVnnnTTnnnVVVK"""),
+    "cromado": ("#ff2bd6", """
+................
+....KKKKKKKK....
+..KKeeeeeeeeKK..
+.KeeeeeeeeeeeeK.
+.KeeeeeeeEEEEEK.
+KeeSSSSSEEEEEEEK
+KeSKKKSSETEEEEEK
+KeSTKSSSEKKKKEEK
+KSSeKSSSEKRRKEEK
+KSSSSSSSEKKKKEeK
+.KSSSSSSEEEEEeK.
+.KSSSSKKKKEEEeK.
+..KSSSSSSEEEeK..
+...KKKKKKKKKK...
+..KVVVKSSKVVVK..
+.KVVVVVKKVVVVVK."""),
+    "punk-neon": ("#1a1433", """
+................
+....KKKKKKK.....
+..KKFFFFFFFKK...
+.KFFFTFFFFFFFK..
+.KFFFFFFFFFFFFK.
+KFFFFFFFFFGeeeK.
+KFFFFFFGSSSSSeK.
+KFFFFFGSSSKKSSK.
+KFFFFGSSSSKTSSK.
+KFFFFGSSSSKCSSK.
+KFFFGSSSSSSSSK..
+KFFGKSSSSrrSSK..
+.KFGKKKKKKKKKKK.
+.KKKeeeeKKeeeeK.
+KeeeeeNeKKeNeeeK
+KeeeeeNeeeeNeeeK"""),
+    "hacker": ("#ffe600", """
+........
+...KKKKK
+..KeeeeE
+.KeKKKKK
+.KKCCCCC
+KKKCCHCC
+KeKCCCSC
+KRKCmmSS
+KeKCTKSS
+KKKCFKSS
+.KCCSSSS
+.KCKSSSr
+.KCCKKKK
+..KKpppp
+.KppNppp
+KpppNppp"""),
 }
 
 # Abas da galeria (ordem = ordem das abas) e nomes inventados dos novos.
 GROUPS = {
     "Bagres": ["bagre", "bagre-dj", "bagre-rei", "bagre-toxico"],
     "Clássicos": ["robo", "caveira", "gato", "alien", "fantasma", "sapo", "polvo", "ninja", "astronauta", "slime", "cogumelo"],
-    "RPG": ["espadachim", "maga", "cavaleiro", "samurai", "cacador", "alquimista", "bardo", "arqueira", "chefao", "dragao"],
-    "Cyber": ["ninja-ciber", "netrunner", "mercenario", "piloto", "robo-antigo", "viajante"],
+    "RPG": ["espadachim", "maga", "cavaleiro", "samurai", "cacador", "alquimista", "bardo", "arqueira", "chefao", "dragao", "aventureiro"],
+    "Cyber": ["ninja-ciber", "netrunner", "mercenario", "piloto", "robo-antigo", "viajante", "cromado", "punk-neon", "hacker"],
 }
 NAMES = {
     "espadachim": "Tarvo, o espadachim", "maga": "Nyssara, a maga", "cavaleiro": "Brumal, o cavaleiro",
-    "samurai": "Okiru, o samurai", "cacador": "Corvano, o caçador", "alquimista": "Zimbro, o alquimista",
+    "samurai": "Okiru, o ronin", "cacador": "Corvano, caçador de demônios", "alquimista": "Zimbro, o alquimista",
     "bardo": "Lirão, o bardo", "arqueira": "Tílva, a arqueira", "chefao": "Umbraz, o chefão",
     "dragao": "Brasinha, o dragãozinho", "ninja-ciber": "Kiru-9, ninja ciber", "netrunner": "Vanta, a netrunner",
     "mercenario": "Rusgo, o mercenário", "piloto": "Tenê, piloto de mecha", "robo-antigo": "Ferrugem, o robô antigo",
-    "viajante": "Ampulho, viajante do tempo",
+    "viajante": "Ampulho, viajante do tempo", "aventureiro": "Miro, o aventureiro",
+    "cromado": "Zarco, o cromado", "punk-neon": "Faísca, a punk neon", "hacker": "Bit, hacker de fones",
 }
 assert sorted(sum(GROUPS.values(), [])) == sorted(AVATARS), "todo avatar em exatamente uma aba"
 assert set(NAMES) <= set(AVATARS)

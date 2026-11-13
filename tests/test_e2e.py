@@ -451,7 +451,7 @@ def run_voice(base):
         assert tabs.all_text_contents() == ["Bagres", "Clássicos", "RPG", "Cyber"], tabs.all_text_contents()
         expect(a.locator('#avatarTabs button[aria-pressed="true"]')).to_have_text("Bagres")  # sem avatar: primeira aba
         n_av = 1
-        for i, quantos in enumerate([4, 11, 10, 6]):  # cada aba: inicial + os avatares do grupo
+        for i, quantos in enumerate([4, 11, 11, 9]):  # cada aba: inicial + os avatares do grupo
             tabs.nth(i).click()
             expect(a.locator("#avatarGrid button")).to_have_count(quantos + 1)
             expect(a.locator("#avatarGrid button svg")).to_have_count(quantos)
