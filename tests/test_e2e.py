@@ -419,10 +419,9 @@ def row(pg, name):
     return pg.locator("#people li", has=pg.locator(".nm", has_text=re.compile(rf"^{name}( \(você\))?$")))
 
 
-def pick_avatar(pg, opener, av, tab="Clássicos"):
+def pick_avatar(pg, opener, av):
     pg.click(opener)
     expect(pg.locator("#avatarDlg")).to_be_visible()
-    pg.click(f'#avatarTabs button:text-is("{tab}")')
     pg.click(f'#avatarGrid button[title="{av}"]')
     expect(pg.locator("#avatarDlg")).to_be_hidden()
 
@@ -447,21 +446,14 @@ def run_voice(base):
         a.fill("#joinInput", "")
         expect(a.locator("#homeAvatar")).to_have_text("A")  # padrão: inicial do nome
         a.click("#homeAvatar")
-        tabs = a.locator("#avatarTabs button")
-        assert tabs.all_text_contents() == ["Bagres", "Clássicos", "RPG", "Cyber"], tabs.all_text_contents()
-        expect(a.locator('#avatarTabs button[aria-pressed="true"]')).to_have_text("Bagres")  # sem avatar: primeira aba
-        n_av = 1
-        for i, quantos in enumerate([4, 11, 11, 9]):  # cada aba: inicial + os avatares do grupo
-            tabs.nth(i).click()
-            expect(a.locator("#avatarGrid button")).to_have_count(quantos + 1)
-            expect(a.locator("#avatarGrid button svg")).to_have_count(quantos)
-            n_av += quantos
-            shot(a, f"10_galeria_{i + 1}")
-        assert a.locator('#avatarGrid button[title="Ampulho, viajante do tempo"]').count() == 1
-        tabs.nth(1).click()
-        a.click('#avatarGrid button[title="gato"]')
-        expect(a.locator('#homeAvatar use[href="#av-gato"]')).to_have_count(1)
-        assert a.evaluate("localStorage.getItem('bagrenation:avatar')") == "gato"
+        expect(a.locator("#avatarTabs")).to_have_count(0)  # sem abas: só os 4 bagres + inicial
+        expect(a.locator("#avatarGrid button")).to_have_count(5)
+        expect(a.locator("#avatarGrid button svg")).to_have_count(4)
+        n_av = 5
+        shot(a, "10_galeria")
+        a.click('#avatarGrid button[title="bagre rei"]')
+        expect(a.locator('#homeAvatar use[href="#av-bagre-rei"]')).to_have_count(1)
+        assert a.evaluate("localStorage.getItem('bagrenation:avatar')") == "bagre-rei"
         shot(a, "11_inicio_com_avatar")
         a.click("#createBtn")
         connected(a)
@@ -471,7 +463,7 @@ def run_voice(base):
         b.goto(base)
         b.click("#startBtn")
         b.fill("#homeName", "Bruno")
-        pick_avatar(b, "#homeAvatar", "robo")
+        pick_avatar(b, "#homeAvatar", "bagre toxico")
         b.fill("#joinInput", code)
         b.click("#joinForm [type=submit]")
         connected(b)
@@ -482,10 +474,10 @@ def run_voice(base):
         c.press("#nameInput", "Enter")
         for pg in (a, b, c):
             expect(pg.locator("#peopleCount")).to_have_text("3", timeout=45000)
-        expect(row(b, "Ana").locator('use[href="#av-gato"]')).to_have_count(1)
-        expect(row(a, "Bruno").locator('use[href="#av-robo"]')).to_have_count(1)
+        expect(row(b, "Ana").locator('use[href="#av-bagre-rei"]')).to_have_count(1)
+        expect(row(a, "Bruno").locator('use[href="#av-bagre-toxico"]')).to_have_count(1)
         expect(row(a, "Caio").locator(".avatar")).to_have_text("C")
-        pick_avatar(c, "#meAvatar", "bagre dj", "Bagres")  # trocar depois, já dentro da sala
+        pick_avatar(c, "#meAvatar", "bagre dj")  # trocar depois, já dentro da sala
         expect(row(a, "Caio").locator('use[href="#av-bagre-dj"]')).to_have_count(1)
         expect(a.locator('#voiceGrid .vcard use[href="#av-bagre-dj"]')).to_have_count(1)
         step(f"teclado retrô só com o som ligado; avatares: galeria com {n_av - 1} + inicial, escolha salva, vista pelos outros, troca dentro da sala")
@@ -675,7 +667,7 @@ def run_voice(base):
         b.click("#leaveBtn")
         expect(b.locator("#home")).to_be_visible()
         assert b.evaluate("document.querySelectorAll('audio').length") == 0
-        expect(b.locator('#homeAvatar use[href="#av-robo"]')).to_have_count(1)  # avatar lembrado
+        expect(b.locator('#homeAvatar use[href="#av-bagre-toxico"]')).to_have_count(1)  # avatar lembrado
         for pg in (a, c, d):
             expect(pg.locator("#peopleCount")).to_have_text("3", timeout=30000)
         voice_ready(a, 2)
@@ -689,7 +681,7 @@ def run_voice(base):
         b.reload()  # recarregar: avatar e preferências continuam
         connected(b)
         voice_ready(b, 3)
-        expect(row(a, "Bruno").locator('use[href="#av-robo"]')).to_have_count(1, timeout=30000)
+        expect(row(a, "Bruno").locator('use[href="#av-bagre-toxico"]')).to_have_count(1, timeout=30000)
         step("sair e voltar (e recarregar): voz reconecta, avatar lembrado")
 
         # 11. celular: entra na voz, controles cabem, configurações abrem dentro da tela

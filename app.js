@@ -54,7 +54,8 @@
   // Avatares desenhados em tools/pixel.py (símbolos av-* do index.html). Sem escolha = inicial do nome.
   const AV_SYM = [...document.querySelectorAll('symbol[id^="av-"]')]; // data-g = aba da galeria, data-n = nome
   const AVATARS = AV_SYM.map((el) => el.id.slice(3));
-  let myAv = AVATARS.includes(store('avatar')) ? store('avatar') : '';
+  const savedAv = store('avatar'); // avatar que não existe mais (galeria só tem bagres) volta para o bagre clássico
+  let myAv = AVATARS.includes(savedAv) ? savedAv : savedAv ? 'bagre' : '';
   // Voz. Preferências lembradas no navegador; mudo/ensurdecido valem só até fechar a página.
   const voice = {
     track: null,      // faixa do microfone que vai para a sala (ligada/desligada pelo portão)
@@ -296,7 +297,7 @@
       e.name = clean(d.name) || 'Convidado';
       e.named = true;
       e.sharing = d.sharing === true;
-      e.av = AVATARS.includes(d.av) ? d.av : '';
+      e.av = AVATARS.includes(d.av) ? d.av : d.av ? 'bagre' : '';
       e.vmuted = d.muted === true;
       e.vdeaf = d.deaf === true;
       e.talking = d.talking === true && !e.vmuted; // quem chega no meio de uma fala já vê o anel aceso
@@ -1490,24 +1491,10 @@
     for (const el of document.querySelectorAll('.js-avatar')) paintAvatar(el, name, myAv);
   }
   // Galeria de avatares: a primeira opção é a inicial do nome (padrão)
-  function renderGallery(tab) { // sem aba pedida: abre na aba do avatar atual
-    const group = (av) => $('av-' + av).dataset.g;
-    const groups = [...new Set(AVATARS.map(group))];
-    tab = tab || (myAv ? group(myAv) : groups[0]);
-    const tabs = $('avatarTabs');
-    tabs.textContent = '';
-    for (const g of groups) {
-      const t = document.createElement('button');
-      t.type = 'button';
-      t.className = 'chip';
-      t.textContent = g;
-      t.setAttribute('aria-pressed', String(g === tab));
-      t.addEventListener('click', () => { renderGallery(g); tabs.querySelector('[aria-pressed="true"]').focus(); sfx('tick'); });
-      tabs.append(t);
-    }
+  function renderGallery() {
     const grid = $('avatarGrid');
     grid.textContent = '';
-    for (const av of ['', ...AVATARS.filter((a) => group(a) === tab)]) {
+    for (const av of ['', ...AVATARS]) {
       const label = av ? $('av-' + av).dataset.n || av.replace('-', ' ') : 'inicial do nome';
       const b = document.createElement('button');
       b.type = 'button';
