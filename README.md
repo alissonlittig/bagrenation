@@ -40,6 +40,7 @@ O site é estático: `index.html`, `style.css`, `app.js`, a biblioteca PeerJS e 
 - **Áudio.** Chrome e Edge enviam o áudio de uma guia em qualquer sistema e o áudio do sistema inteiro só no Windows. Firefox e Safari não capturam áudio de tela.
 - **Celular** não transmite tela (os navegadores móveis não oferecem essa função), só assiste.
 - **Quem tem o link entra.** Não há senha; todo participante aparece na lista da sala.
+- **Sinalização de terceiros.** O servidor público do PeerJS é gratuito, sem garantia de disponibilidade, e enxerga os identificadores das salas (não o vídeo nem o áudio). Se ele cair, ninguém novo entra; as transmissões abertas continuam.
 
 ## Rodar e testar
 

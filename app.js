@@ -341,8 +341,10 @@
       return await navigator.mediaDevices.getDisplayMedia({
         video: { width: { max: q.w }, height: { max: q.h }, frameRate: { ideal: q.fps, max: q.fps } },
         // áudio de jogo/vídeo: sem os filtros de voz, que abafam música e efeitos
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 },
+        // restrictOwnAudio: ao capturar o som do sistema, deixa de fora o que o próprio Telão está tocando (evita eco entre duas transmissões)
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2, restrictOwnAudio: true },
         systemAudio: 'include',
+        windowAudio: 'window',
         selfBrowserSurface: 'exclude', // não oferecer a própria guia do Telão (efeito espelho infinito)
         surfaceSwitching: 'include',
       });
@@ -382,7 +384,11 @@
     renderShareUi();
     renderPeople();
     layout();
-    if (!audio) toast('Sem áudio nesta transmissão. Para enviar som, marque "Compartilhar áudio" ao escolher a tela.', 6000);
+    if (!audio) {
+      toast(video.getSettings().displaySurface === 'window'
+        ? 'Sem áudio: este navegador não envia o som de janelas. Para ter som, use "Trocar tela" e escolha uma guia ou a tela inteira.'
+        : 'Sem áudio nesta transmissão. Para enviar som, use "Trocar tela" e marque "Compartilhar áudio" no seletor.', 8000);
+    }
   }
 
   function stopShare() {
@@ -502,7 +508,9 @@
         volume();
       });
       range.addEventListener('input', () => { e.volume = Number(range.value); e.muted = false; volume(); });
-      q('.unblock').addEventListener('click', () => { e.blocked = false; volume(); video.play().catch(() => {}); });
+      q('.unblock').addEventListener('click', () => { // um clique já autoriza o som na página inteira
+        for (const p of peers.values()) if (p.blocked && p.tile) p.tile.unblock();
+      });
     }
 
     q('.js-focus').addEventListener('click', () => {
@@ -533,6 +541,7 @@
       setName: labels,
       stats: (text, tip = '') => { q('.tile-stats').textContent = text; q('.tile-stats').title = tip; },
       wait: (on) => { q('.tile-wait').hidden = !on; },
+      unblock() { e.blocked = false; volume(); video.play().catch(() => {}); },
       attach(stream) {
         if (video.srcObject !== stream) video.srcObject = stream;
         if (el.classList.contains('preview-off')) return;
@@ -781,7 +790,10 @@
   for (const b of [$('copyBtn'), ...document.querySelectorAll('.js-copy')]) b.addEventListener('click', () => copyLink(b));
   $('leaveBtn').addEventListener('click', leaveRoom);
   $('brandLeave').addEventListener('click', (ev) => { ev.preventDefault(); leaveRoom(); });
-  $('panelBtn').addEventListener('click', () => togglePanel($('panel').hidden));
+  $('panelBtn').addEventListener('click', () => {
+    togglePanel($('panel').hidden);
+    if (!$('panel').hidden) $('panelClose').focus();
+  });
   $('panelClose').addEventListener('click', () => { togglePanel(false); $('panelBtn').focus(); });
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && !$('panel').hidden && !document.fullscreenElement) { togglePanel(false); $('panelBtn').focus(); }
