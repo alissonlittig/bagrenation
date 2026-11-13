@@ -1,8 +1,8 @@
-/* Telão — compartilhamento de tela ponto a ponto (WebRTC).
+/* BAGRENATION — compartilhamento de tela ponto a ponto (WebRTC).
  *
  * Como funciona:
  *  - Cada pessoa é um "membro" com um ID próprio no servidor público de sinalização do PeerJS.
- *  - A sala tem um ID fixo de "diretório" (telao-<código>-dir). Quem chega tenta falar com ele;
+ *  - A sala tem um ID fixo de "diretório" (bagrenation-<código>-dir). Quem chega tenta falar com ele;
  *    se ninguém responde, assume o papel. O diretório só distribui a lista de membros.
  *    Se quem o mantinha sai, outro membro assume: o link da sala nunca morre.
  *  - Os membros se conectam todos entre si (malha) por canal de dados; quem transmite
@@ -53,8 +53,8 @@
   // ---------- utilidades ----------
   function store(key, value) {
     try {
-      if (value === undefined) return localStorage.getItem(`telao:${key}`);
-      localStorage.setItem(`telao:${key}`, value);
+      if (value === undefined) return localStorage.getItem(`bagrenation:${key}`);
+      localStorage.setItem(`bagrenation:${key}`, value);
     } catch { /* armazenamento bloqueado: segue sem lembrar */ }
     return null;
   }
@@ -77,8 +77,8 @@
   }
   const half = (code) => Math.ceil(code.length / 2);
   const pretty = (code) => `${code.slice(0, half(code))}-${code.slice(half(code))}`.toUpperCase();
-  const dirId = () => `telao-${room}-dir`;
-  const isMember = (id) => typeof id === 'string' && id.startsWith(`telao-${room}-m-`) && id.length < 64;
+  const dirId = () => `bagrenation-${room}-dir`;
+  const isMember = (id) => typeof id === 'string' && id.startsWith(`bagrenation-${room}-m-`) && id.length < 64;
   const setIcon = (use, name) => use.setAttribute('href', `#i-${name}`);
   const narrow = () => window.matchMedia('(max-width: 960px)').matches;
   function paintAvatar(el, name) { // cor fixa por nome: a mesma pessoa tem a mesma cor em todas as telas
@@ -114,7 +114,7 @@
   function connect() {
     if (leaving || !room) return;
     clearTimeout(retryTimer);
-    myId = `telao-${room}-m-${randomCode(8)}`;
+    myId = `bagrenation-${room}-m-${randomCode(8)}`;
     const p = peer = new Peer(myId, PEER_OPTS);
     p.on('open', () => { backoff = 0; joinDirectory(); refreshStatus(); });
     p.on('connection', wire);
@@ -140,7 +140,7 @@
           claimDirectory();
         } else if (target) dropPeer(target, true);
       } else if (err.type === 'browser-incompatible') {
-        toast('Este navegador não tem o WebRTC necessário para o Telão.', 8000);
+        toast('Este navegador não tem o WebRTC necessário para o BAGRENATION.', 8000);
       }
     });
   }
@@ -249,7 +249,7 @@
       e.name = clean(d.name) || 'Convidado';
       e.named = true;
       e.sharing = d.sharing === true;
-      if (first) { note(`${e.name} entrou`); e.wanted = Date.now(); }
+      if (first) { note(`${e.name} entrou`); sfx('in'); e.wanted = Date.now(); }
       if (!e.sharing) removeStream(e);
       if (e.tile) e.tile.setName(e.name);
       renderPeople();
@@ -274,7 +274,7 @@
     if (c) c.close();
     if (e.out) e.out.close();
     removeStream(e);
-    if (e.named && !silent && !leaving) note(`${e.name} saiu`);
+    if (e.named && !silent && !leaving) { note(`${e.name} saiu`); sfx('out'); }
     renderPeople();
   }
 
@@ -286,7 +286,7 @@
   }
 
   // ---------- mídia: enviar ----------
-  // Ajustes na negociação (SDP), só nas chamadas do Telão:
+  // Ajustes na negociação (SDP), só nas chamadas do BAGRENATION:
   //  - Opus estéreo a 256 kb/s (o padrão do navegador é mono ~32 kb/s, feito para voz);
   //  - vídeo já começa em 3 Mb/s. Sem isso o Chrome parte de 0,3 Mb/s, escolhe 480×270 e leva
   //    ~30 s subindo a resolução em degraus (medido com captura real de monitor).
@@ -329,7 +329,7 @@
       } else {
         params.encodings[0].maxBitrate = 256_000;
       }
-      sender.setParameters(params).catch((err) => console.warn('Telão: limite de envio não aplicado', err));
+      sender.setParameters(params).catch((err) => console.warn('BAGRENATION: limite de envio não aplicado', err));
     }
   }
 
@@ -356,12 +356,12 @@
       return await navigator.mediaDevices.getDisplayMedia({
         video: { width: { max: q.w }, height: { max: q.h }, frameRate: { ideal: q.fps, max: q.fps } },
         // áudio de jogo/vídeo: sem os filtros de voz, que abafam música e efeitos
-        // restrictOwnAudio: ao capturar o som do sistema, deixa de fora o que o próprio Telão está tocando (evita eco entre duas transmissões)
+        // restrictOwnAudio: ao capturar o som do sistema, deixa de fora o que o próprio BAGRENATION está tocando (evita eco entre duas transmissões)
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2, restrictOwnAudio: true },
         systemAudio: nd ? 'exclude' : 'include',
         windowAudio: 'window',
         monitorTypeSurfaces: nd ? 'exclude' : 'include',
-        selfBrowserSurface: 'exclude', // não oferecer a própria guia do Telão (efeito espelho infinito)
+        selfBrowserSurface: 'exclude', // não oferecer a própria guia do BAGRENATION (efeito espelho infinito)
         surfaceSwitching: 'include',
       });
     } catch (err) {
@@ -378,7 +378,7 @@
     } catch (err) {
       // NotAllowedError = a pessoa cancelou a escolha: não é erro
       if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
-        console.warn('Telão: captura falhou', err);
+        console.warn('BAGRENATION: captura falhou', err);
         toast('Não foi possível capturar a tela. Feche o seletor e tente de novo.');
       }
       return;
@@ -441,7 +441,7 @@
     $('audioBtn').hidden = !on;
     $('audioBtn').disabled = !audio;
     $('audioBtn').setAttribute('aria-pressed', String(!!audio && audioMuted));
-    $('audioLabel').textContent = !audio ? 'Sem áudio' : audioMuted ? 'Áudio mudo' : 'Áudio';
+    $('audioLabel').textContent = !audio ? 'Sem som' : audioMuted ? 'Som mudo' : 'Som';
     $('audioBtn').setAttribute('aria-label', !audio ? 'Transmissão sem áudio' : audioMuted ? 'Seu áudio está silenciado para todos. Reativar' : 'Seu áudio está indo para todos. Silenciar');
     $('meter').hidden = !audio;
     setIcon($('audioIcon'), !audio || audioMuted ? 'mute' : 'vol');
@@ -733,7 +733,7 @@
   async function copy(text, btn, done) {
     try {
       await navigator.clipboard.writeText(text);
-      toast(done);
+      toast(done); sfx('ok');
       if (btn === $('copyBtn')) {
         btn.classList.add('done'); setIcon($('copyIcon'), 'check'); $('copyLabel').textContent = 'Copiado';
         setTimeout(() => { btn.classList.remove('done'); setIcon($('copyIcon'), 'copy'); $('copyLabel').textContent = 'Copiar ID'; }, 1600);
@@ -761,7 +761,7 @@
       box.classList.remove('bad');
     };
     for (const ev of ['input', 'focus', 'blur']) input.addEventListener(ev, paint);
-    return { reset() { input.value = ''; paint(); }, bad() { box.classList.add('bad'); } };
+    return { reset() { input.value = ''; paint(); }, bad() { box.classList.add('bad'); sfx('err'); } };
   }
 
   // A sala existe? Pergunta ao servidor se o "diretório" dela está no ar, sem entrar nela.
@@ -769,11 +769,11 @@
   function probe(code) {
     return new Promise((resolve) => {
       if (typeof Peer === 'undefined') { resolve(null); return; }
-      const p = new Peer(`telao-${code}-q-${randomCode(8)}`, PEER_OPTS);
+      const p = new Peer(`bagrenation-${code}-q-${randomCode(8)}`, PEER_OPTS);
       let over = false;
       const end = (v) => { if (over) return; over = true; clearTimeout(t); p.destroy(); resolve(v); };
       const t = setTimeout(() => end(null), 12000);
-      p.on('open', () => { p.connect(`telao-${code}-dir`, CONN_OPTS).on('open', () => end(true)); });
+      p.on('open', () => { p.connect(`bagrenation-${code}-dir`, CONN_OPTS).on('open', () => end(true)); });
       p.on('error', (err) => end(err.type === 'peer-unavailable' ? false : null));
     });
   }
@@ -808,7 +808,8 @@
     room = code;
     leaving = false; everOk = false; backoff = 0;
     if (parseCode(location.hash) !== code) location.hash = pretty(code);
-    document.title = `Sala ${pretty(code)} · Telão`;
+    document.title = `Sala ${pretty(code)} · BAGRENATION`;
+    $('title').hidden = true;
     $('home').hidden = true;
     $('room').hidden = false;
     const id = $('roomId');
@@ -841,7 +842,7 @@
     if (wakeLock) wakeLock.release().catch(() => {});
     room = null;
     history.replaceState(null, '', location.pathname);
-    document.title = 'Telão — compartilhe sua tela com um ID';
+    document.title = 'BAGRENATION — transmita sua tela com um ID';
     $('room').hidden = true;
     $('home').hidden = false;
   }
@@ -901,6 +902,44 @@
     for (const v of m.buf) sum += v * v;
     return Math.sqrt(sum / m.buf.length);
   }
+  // ---------- sons 8-bit da interface (desligados por padrão; liga no botão "Som 8-bit") ----------
+  const SFX = { // [frequência em Hz, duração em s] em sequência
+    tap: [[660, 0.04]],
+    ok: [[660, 0.06], [990, 0.1]],
+    err: [[196, 0.09], [147, 0.14]],
+    in: [[523, 0.06], [784, 0.09]],
+    out: [[523, 0.06], [392, 0.09]],
+    start: [[392, 0.07], [523, 0.07], [659, 0.07], [784, 0.16]],
+  };
+  const sfxOn = () => store('sfx') === '1';
+  function sfx(name) {
+    if (!sfxOn() || (navigator.userActivation && !navigator.userActivation.hasBeenActive)) return;
+    if (!ac) ac = new AudioContext();
+    if (ac.state === 'suspended') ac.resume().catch(() => {});
+    let t = ac.currentTime;
+    for (const [hz, dur] of SFX[name]) {
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.type = 'square';
+      osc.frequency.value = hz;
+      gain.gain.value = 0.04;
+      osc.connect(gain).connect(ac.destination);
+      osc.start(t); osc.stop(t += dur);
+    }
+  }
+  function renderSfx() {
+    for (const b of document.querySelectorAll('.js-sfx')) {
+      b.setAttribute('aria-pressed', String(sfxOn()));
+      setIcon(b.querySelector('use'), sfxOn() ? 'vol' : 'mute');
+      b.querySelector('.lbl').textContent = sfxOn() ? 'Som 8-bit: on' : 'Som 8-bit: off';
+    }
+  }
+  for (const b of document.querySelectorAll('.js-sfx')) {
+    b.addEventListener('click', () => { store('sfx', sfxOn() ? '0' : '1'); renderSfx(); });
+  }
+  document.addEventListener('click', (ev) => { if (ev.target.closest('button')) sfx('tap'); });
+  renderSfx();
+
   const SOUND = 0.015; // acima disso a tela "acende" (alguém falando, música, tiro…)
   setInterval(() => {
     if (!room) return;
@@ -1037,7 +1076,23 @@
   if (QUALITY[store('quality')]) $('quality').value = store('quality');
   if (store('hint') === 'detail') $('hint').value = 'detail';
   renderDiscord();
+  // Abertura (PRESS START): clique em qualquer lugar ou qualquer tecla leva ao início
+  function start() {
+    if ($('title').hidden) return;
+    $('title').hidden = true;
+    $('home').hidden = false;
+    sfx('start');
+    if (window.matchMedia('(hover: hover)').matches) $('homeName').focus(); // no celular não abre o teclado sozinho
+  }
+  $('title').addEventListener('click', start);
+  document.addEventListener('keydown', (ev) => {
+    if (!ev.ctrlKey && !ev.metaKey && !ev.altKey && !['Tab', 'Shift', 'Escape'].includes(ev.key) && !/^F\d+$/.test(ev.key)) start();
+  });
+
   const initial = parseCode(location.hash);
   if (initial) enterRoom(initial);
-  else if (location.hash.length > 1) $('joinError').textContent = 'O link aberto não é de uma sala válida. Confira se ele veio inteiro ou digite o ID.';
+  else if (location.hash.length > 1) {
+    start();
+    $('joinError').textContent = 'O link aberto não é de uma sala válida. Confira se ele veio inteiro ou digite o ID.';
+  }
 })();

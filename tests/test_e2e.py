@@ -1,4 +1,4 @@
-"""Teste de ponta a ponta do Telão com navegadores reais (Playwright + mídia falsa).
+"""Teste de ponta a ponta do BAGRENATION com navegadores reais (Playwright + mídia falsa).
 
 Uso:  python tests/test_e2e.py                 (sobe um servidor local com os arquivos do projeto)
       python tests/test_e2e.py https://...     (testa um endereço já publicado)
@@ -99,12 +99,28 @@ def shot(pg, name):
 def run(base):
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        step = lambda s: print("ok:", s, flush=True)
+        steps = []
+        step = lambda s: (steps.append(s), print("ok:", s, flush=True))
 
         # 1. início sem erro; ID com formato errado e ID de sala que não existe são recusados
         a = page(browser, "A")
         a.goto(base)
+        # 0. abertura: PRESS START leva ao início; nome novo na aba; som 8-bit nasce desligado
+        assert a.title().startswith("BAGRENATION"), a.title()
+        expect(a.locator("#title .logo")).to_have_text("BAGRENATION")
+        expect(a.locator("#home")).to_be_hidden()
+        shot(a, "00_abertura_desktop")
+        a.click("#startBtn")
+        expect(a.locator("#title")).to_be_hidden()
         expect(a.locator("h1")).to_be_visible()
+        sfx = a.locator("#home .js-sfx")
+        expect(sfx).to_have_attribute("aria-pressed", "false")
+        sfx.click()
+        expect(sfx).to_have_attribute("aria-pressed", "true")
+        expect(sfx).to_contain_text("on")
+        sfx.click()
+        expect(sfx).to_have_attribute("aria-pressed", "false")
+        step("abertura PRESS START, título BAGRENATION, som 8-bit desligado por padrão e alternável")
         a.fill("#joinInput", "isso nao e sala")
         a.click("#joinForm [type=submit]")
         expect(a.locator("#joinError")).to_contain_text("6 letras")
@@ -112,6 +128,7 @@ def run(base):
         a.click("#joinForm [type=submit]")
         expect(a.locator("#joinError")).to_contain_text("Nenhuma sala ZZZ-ZZZ", timeout=20000)
         expect(a.locator("#home")).to_be_visible()
+        a_crt = a.evaluate("getComputedStyle(document.body, '::after').display")
         shot(a, "01_inicio_desktop")
         step("início + ID inválido e ID inexistente recusados")
 
@@ -119,6 +136,8 @@ def run(base):
         a.fill("#homeName", "Ana")
         a.click("#createBtn")
         connected(a)
+        assert a.title().endswith("BAGRENATION"), a.title()
+        shot(a, "01b_sala_vazia_desktop")
         link = a.url
         code = link.split("#")[1]
         assert len(code) == 7 and code[3] == "-" and code == code.upper(), code
@@ -132,6 +151,7 @@ def run(base):
         # 3. segundo navegador entra DIGITANDO o ID (minúsculo, sem hífen); os dois se veem
         b = page(browser, "B")
         b.goto(base)
+        b.keyboard.press("Enter")  # qualquer tecla passa da abertura
         b.fill("#homeName", "Bruno")
         b.fill("#joinInput", code.replace("-", "").lower())
         expect(b.locator("#joinInput")).to_have_value(code.replace("-", ""))
@@ -305,6 +325,10 @@ def run(base):
         m = page(browser, "celular", viewport={"width": 390, "height": 844})
         m.goto(base)
         assert m.evaluate("document.documentElement.scrollWidth") <= 390
+        shot(m, "04a_abertura_celular")
+        m.click("#startBtn")
+        expect(m.locator("#home")).to_be_visible()
+        assert m.evaluate("document.documentElement.scrollWidth") <= 390
         shot(m, "04_inicio_celular")
         m.goto(link)  # só muda o #código: entra na sala sem recarregar
         connected(m)
@@ -323,10 +347,20 @@ def run(base):
         expect(b.locator("#peopleCount")).to_have_text("3", timeout=30000)  # b, c, celular
         step("sair volta ao início")
 
+        # 16. menos movimento: sem linhas de CRT e sem animação no logo; link de sala pula a abertura
+        r = browser.new_context(reduced_motion="reduce").new_page()
+        r.on("console", lambda msg: msg.type == "error" and errors.append(f"[reduzido] console: {msg.text}"))
+        r.goto(base)
+        assert r.evaluate("getComputedStyle(document.body, '::after').display") == "none"
+        assert r.evaluate("getComputedStyle(document.querySelector('.glitch'), '::before').animationName") == "none"
+        assert a_crt == "block", a_crt
+        expect(d.locator("#title")).to_be_hidden()
+        step("prefers-reduced-motion desliga CRT e glitch")
+
         browser.close()
 
     assert not errors, "erros de console:\n" + "\n".join(errors)
-    print("TUDO OK — 19 etapas, 0 erro de console")
+    print(f"TUDO OK — {len(steps)} etapas, 0 erro de console")
 
 
 if __name__ == "__main__":
