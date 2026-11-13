@@ -6,6 +6,7 @@ Requer: pip install playwright && playwright install chromium
 Usa o servidor público de sinalização do PeerJS, então precisa de internet.
 """
 import functools
+import re
 import http.server
 import pathlib
 import sys
@@ -18,7 +19,8 @@ SHOTS = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None
 
 # Substitui o seletor de tela por um canvas animado 1920x1080 + tom de 440 Hz.
 FAKE_SCREEN = """
-navigator.mediaDevices.getDisplayMedia = async () => {
+navigator.mediaDevices.getDisplayMedia = async (opts) => {
+  window.__gdm = opts;
   const c = Object.assign(document.createElement('canvas'), { width: 1920, height: 1080 });
   const g = c.getContext('2d');
   let n = 0;
@@ -29,7 +31,10 @@ navigator.mediaDevices.getDisplayMedia = async () => {
   const ac = new AudioContext();
   const osc = ac.createOscillator(), dest = ac.createMediaStreamDestination();
   osc.connect(dest); osc.start();
-  return new MediaStream([...c.captureStream(30).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+  const v = c.captureStream(30).getVideoTracks()[0];
+  const real = v.getSettings.bind(v);
+  v.getSettings = () => ({ ...real(), displaySurface: window.__surface }); // simula o tipo escolhido no seletor
+  return new MediaStream([v, ...dest.stream.getAudioTracks()]);
 };
 """
 
@@ -96,37 +101,56 @@ def run(base):
         browser = p.chromium.launch()
         step = lambda s: print("ok:", s, flush=True)
 
-        # 1. início sem erro; código inválido é recusado com mensagem
+        # 1. início sem erro; ID com formato errado e ID de sala que não existe são recusados
         a = page(browser, "A")
         a.goto(base)
         expect(a.locator("h1")).to_be_visible()
         a.fill("#joinInput", "isso nao e sala")
-        a.click("#joinForm button")
-        expect(a.locator("#joinError")).to_contain_text("não parece")
+        a.click("#joinForm [type=submit]")
+        expect(a.locator("#joinError")).to_contain_text("6 letras")
+        a.fill("#joinInput", "zzzzzz")
+        a.click("#joinForm [type=submit]")
+        expect(a.locator("#joinError")).to_contain_text("Nenhuma sala ZZZ-ZZZ", timeout=20000)
+        expect(a.locator("#home")).to_be_visible()
         shot(a, "01_inicio_desktop")
-        step("início + validação do código")
+        step("início + ID inválido e ID inexistente recusados")
 
-        # 2. criar sala gera link com código forte e conecta
+        # 2. criar sala gera ID de 6 caracteres; copiar ID e copiar link
+        a.fill("#homeName", "Ana")
         a.click("#createBtn")
         connected(a)
         link = a.url
         code = link.split("#")[1]
-        assert len(code) == 11 and code[5] == "-", code
+        assert len(code) == 7 and code[3] == "-" and code == code.upper(), code
+        expect(a.locator("#roomId b")).to_have_count(6)
         a.click("#copyBtn")
+        assert a.evaluate("navigator.clipboard.readText()") == code
+        a.click("#copyLinkBtn")
         assert a.evaluate("navigator.clipboard.readText()") == link
-        step(f"sala criada e link copiado ({len(code) - 1} caracteres)")
+        step(f"sala {code} criada; ID e link copiados")
 
-        # 3. segundo navegador entra pelo link; os dois se veem
+        # 3. segundo navegador entra DIGITANDO o ID (minúsculo, sem hífen); os dois se veem
         b = page(browser, "B")
-        b.goto(link)
+        b.goto(base)
+        b.fill("#homeName", "Bruno")
+        b.fill("#joinInput", code.replace("-", "").lower())
+        expect(b.locator("#joinInput")).to_have_value(code.replace("-", ""))
+        b.click("#joinForm [type=submit]")
         connected(b)
+        assert b.url.endswith("#" + code)
         for pg in (a, b):
             expect(pg.locator("#peopleCount")).to_have_text("2", timeout=45000)
-        step("B entrou pelo link (2 na sala)")
+        step("B entrou digitando o ID (2 na sala)")
+
+        # 3b. recarregar a página não perde a sala
+        b.reload()
+        connected(b)
+        assert b.url.endswith("#" + code)
+        for pg in (a, b):
+            expect(pg.locator("#peopleCount")).to_have_text("2", timeout=45000)
+        step("B recarregou e continua na mesma sala")
 
         # 4. A transmite; B recebe vídeo e áudio
-        a.fill("#nameInput", "Ana")
-        a.locator("#nameInput").blur()
         a.click("#shareBtn")
         expect(a.locator(".tile")).to_have_count(1)
         playing(b)
@@ -153,6 +177,9 @@ def run(base):
         expect(b.locator(".js-mute")).to_have_attribute("aria-pressed", "true")
         b.click(".js-mute")  # sair do volume zero pelo botão devolve som audível
         assert vid.evaluate("v => v.volume") == 0.5 and not vid.evaluate("v => v.muted")
+        expect(b.locator(".tile")).to_have_class(re.compile("speaking"), timeout=5000)  # tela acende com som
+        expect(b.locator("#people li.is-live .avatar.speaking")).to_have_count(1)
+        assert a.locator("#meter i.on").count() >= 3, "medidor de áudio enviado parado"
         step("ativar som, mutar, volume e saída do volume zero")
 
         # 6. quem transmite silencia o próprio áudio para todos
@@ -164,10 +191,40 @@ def run(base):
         step("transmissor silencia e reativa o áudio enviado")
 
         # 7. trocar qualidade e prioridade ao vivo não derruba a transmissão
+        a.click("#settingsBtn")
         a.select_option("#quality", "720p30")
         a.select_option("#hint", "detail")
+        a.keyboard.press("Escape")
+        expect(a.locator("#settings")).to_be_hidden()
         playing(b)
         step("qualidade/prioridade trocadas ao vivo")
+
+        # 7b. Sem Discord: seletor sem tela inteira; tela inteira escolhida mesmo assim = áudio cortado; janela mantém áudio
+        local_audio = "document.querySelector('.tile video').srcObject.getAudioTracks().length"
+        a.evaluate("window.__surface = 'monitor'")
+        a.click("#discordBtn")  # transmitindo: reabre o seletor na hora
+        expect(a.locator("#discordBtn")).to_have_attribute("aria-pressed", "true")
+        a.wait_for_function("window.__gdm && window.__gdm.monitorTypeSurfaces === 'exclude'")
+        assert a.evaluate("[window.__gdm.systemAudio, window.__gdm.windowAudio]") == ["exclude", "window"]
+        a.wait_for_function(f"{local_audio} === 0")
+        expect(a.locator("#toasts")).to_contain_text("áudio foi cortado")
+        expect(a.locator("#audioBtn")).to_be_disabled()
+        a.evaluate("window.__surface = 'window'")
+        a.click("#swapBtn")
+        a.wait_for_function(f"{local_audio} === 1")
+        expect(a.locator("#toasts")).to_contain_text("só o som desta janela")
+        a.click("#discordBtn")
+        expect(a.locator("#discordBtn")).to_have_attribute("aria-pressed", "false")
+        a.evaluate("window.__surface = undefined")
+        a.click("#swapBtn")
+        a.wait_for_function("window.__gdm.monitorTypeSurfaces === 'include'")
+        playing(b)
+        assert b.evaluate(AUDIO_PEAK) > 0.1, "áudio não voltou depois de desligar Sem Discord"
+        a.click("#guideBtn")
+        expect(a.locator("#guideDlg")).to_be_visible()
+        shot(a, "07_guia_discord")
+        a.keyboard.press("Escape")
+        step("Sem Discord: opções do seletor, corte na tela inteira, janela com áudio, guia")
 
         # 8. chat: entrega e não interpreta HTML
         a.click("#panelBtn") if a.locator("#panel").is_hidden() else None
@@ -202,6 +259,17 @@ def run(base):
         shot(c, "03_duas_telas_destaque")
         c.locator(".tile.focused .js-focus").click()
         step("duas transmissões simultâneas e modo destaque")
+
+        # 10b. dentro da sala, ID inexistente não troca a sala
+        c.click("#joinOtherBtn")
+        c.fill("#joinOtherInput", "zzzzzz")
+        c.click("#joinOtherForm [type=submit]")
+        expect(c.locator("#joinOtherError")).to_contain_text("Nenhuma sala", timeout=20000)
+        c.keyboard.press("Escape")
+        assert c.url.endswith("#" + code)
+        connected(c)
+        expect(c.locator(".tile")).to_have_count(2)
+        step("ID inexistente dentro da sala não troca a sala")
 
         # 11. parar remove a tela de quem assiste
         b.click("#shareBtn")
@@ -244,6 +312,7 @@ def run(base):
         assert m.evaluate("document.documentElement.scrollWidth") <= 390
         shot(m, "05_assistindo_celular")
         m.click("#panelBtn")
+        expect(m.locator("#roomId b")).to_have_count(6)
         shot(m, "06_painel_celular")
         m.click("#panelClose")
         step("celular 390×844 assiste sem estouro lateral")
@@ -257,7 +326,7 @@ def run(base):
         browser.close()
 
     assert not errors, "erros de console:\n" + "\n".join(errors)
-    print("TUDO OK — 15 etapas, 0 erro de console")
+    print("TUDO OK — 19 etapas, 0 erro de console")
 
 
 if __name__ == "__main__":

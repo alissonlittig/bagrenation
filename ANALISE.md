@@ -73,8 +73,10 @@ Não há servidor próprio, build nem testes.
 
 | Tema | Original | Telão |
 |---|---|---|
-| Convite | Digitar código de 5 caracteres | Link direto (`#código`), entra sem digitar nada; também aceita colar código |
-| Código da sala | 5 caracteres, `Math.random` | 10 caracteres, gerador criptográfico (≈ 8 × 10¹⁴ combinações) |
+| Convite | Digitar código de 5 caracteres | ID de 6 caracteres sem símbolos ambíguos, digitado em casas; o link fica como extra |
+| Código da sala | 5 caracteres, `Math.random` | 6 caracteres, gerador criptográfico (≈ 8,9 × 10⁸ combinações) |
+| ID que não existe | Troca a sala exibida e cria participante fantasma | Pergunta ao servidor antes; avisa e não sai da sala atual (testado) |
+| Áudio do Discord | Vai junto | "Sem Discord": só janela/guia no seletor, corte do áudio da tela inteira, guia de roteamento (testado) |
 | Recarregar a página | Perde a sala | Volta para a mesma sala |
 | Dono sai | Sala órfã | Outro participante assume a função sozinho; o link continua valendo (testado) |
 | Queda de rede | Nada acontece | Indicador "Reconectando"/"Sem internet" e reconexão automática com espera progressiva (testado) |
@@ -90,7 +92,7 @@ Não há servidor próprio, build nem testes.
 | Acessibilidade | Sem rótulos, contraste 4,2:1 | Rótulos em tudo, foco visível, contraste ≥ 5,9:1, respeita "reduzir movimento" |
 | Dependências | 4 CDNs sem integridade | Zero CDN: PeerJS e fonte hospedados junto, CSP restritiva, sem `onclick` embutido |
 | Dados de outros participantes | Lista de IDs aceita sem validação | Só aceita IDs da própria sala, nomes e mensagens limitados e exibidos como texto puro |
-| Testes | Nenhum | 15 etapas automatizadas com 5 navegadores reais (`tests/test_e2e.py`) |
+| Testes | Nenhum | 19 etapas automatizadas com 5 navegadores reais (`tests/test_e2e.py`) |
 
 ## Limites que continuam (valem para os dois)
 

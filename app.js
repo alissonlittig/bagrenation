@@ -13,7 +13,8 @@
 
   const $ = (id) => document.getElementById(id);
   const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // sem 0/o, 1/l/i
-  const CODE_RE = new RegExp(`^[${ALPHABET}]{10}$`);
+  // ID novo: 6 caracteres (31^6 ≈ 887 milhões), fácil de ditar. Links antigos de 10 seguem valendo.
+  const CODE_RE = new RegExp(`^(?:[${ALPHABET}]{6}|[${ALPHABET}]{10})$`);
   const QUALITY = {
     '720p30': { w: 1280, h: 720, fps: 30, bitrate: 3_000_000 },
     '1080p30': { w: 1920, h: 1080, fps: 30, bitrate: 6_000_000 },
@@ -74,10 +75,18 @@
     const code = raw.slice(raw.lastIndexOf('#') + 1).replace(/[^a-z0-9]/g, '');
     return CODE_RE.test(code) ? code : null;
   }
-  const pretty = (code) => `${code.slice(0, 5)}-${code.slice(5)}`;
+  const half = (code) => Math.ceil(code.length / 2);
+  const pretty = (code) => `${code.slice(0, half(code))}-${code.slice(half(code))}`.toUpperCase();
   const dirId = () => `telao-${room}-dir`;
   const isMember = (id) => typeof id === 'string' && id.startsWith(`telao-${room}-m-`) && id.length < 64;
   const setIcon = (use, name) => use.setAttribute('href', `#i-${name}`);
+  const narrow = () => window.matchMedia('(max-width: 960px)').matches;
+  function paintAvatar(el, name) { // cor fixa por nome: a mesma pessoa tem a mesma cor em todas as telas
+    let h = 0;
+    for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 360;
+    el.style.setProperty('--h', String(h));
+    el.textContent = [...name.trim()][0] || '?';
+  }
 
   function toast(msg, ms = 3200) {
     const el = document.createElement('div');
@@ -335,16 +344,23 @@
     for (const e of peers.values()) if (e.out && e.out.peerConnection) tune(e.out.peerConnection);
   }
 
+  // "Sem Discord": nenhum navegador separa um app de dentro do som do sistema. O que dá certo é
+  // não oferecer a tela inteira (som do sistema = Discord junto) e pedir só janela ou guia, cujo
+  // áudio é só delas (windowAudio 'window' no Chrome/Edge recentes; guia em qualquer Chromium).
+  const noDiscord = () => store('nodiscord') === '1';
+
   async function capture() {
     const q = QUALITY[$('quality').value];
+    const nd = noDiscord();
     try {
       return await navigator.mediaDevices.getDisplayMedia({
         video: { width: { max: q.w }, height: { max: q.h }, frameRate: { ideal: q.fps, max: q.fps } },
         // áudio de jogo/vídeo: sem os filtros de voz, que abafam música e efeitos
         // restrictOwnAudio: ao capturar o som do sistema, deixa de fora o que o próprio Telão está tocando (evita eco entre duas transmissões)
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2, restrictOwnAudio: true },
-        systemAudio: 'include',
+        systemAudio: nd ? 'exclude' : 'include',
         windowAudio: 'window',
+        monitorTypeSurfaces: nd ? 'exclude' : 'include',
         selfBrowserSurface: 'exclude', // não oferecer a própria guia do Telão (efeito espelho infinito)
         surfaceSwitching: 'include',
       });
@@ -368,8 +384,14 @@
       return;
     }
     const video = stream.getVideoTracks()[0];
-    const audio = stream.getAudioTracks()[0];
+    let audio = stream.getAudioTracks()[0];
     if (!video) { stream.getTracks().forEach((t) => t.stop()); return; }
+    const surface = video.getSettings().displaySurface;
+    let cut = false;
+    if (audio && noDiscord() && surface === 'monitor') {
+      // navegador sem monitorTypeSurfaces deixou escolher a tela inteira: o som dela leva o Discord
+      stream.removeTrack(audio); audio.stop(); audio = null; cut = true;
+    }
     video.contentHint = $('hint').value;
     video.addEventListener('ended', () => { if (local && local.stream === stream) stopShare(); });
     if (audio) { audio.contentHint = 'music'; audio.enabled = !audioMuted; }
@@ -384,10 +406,15 @@
     renderShareUi();
     renderPeople();
     layout();
-    if (!audio) {
-      toast(video.getSettings().displaySurface === 'window'
-        ? 'Sem áudio: este navegador não envia o som de janelas. Para ter som, use "Trocar tela" e escolha uma guia ou a tela inteira.'
+    if (cut) toast('Tela inteira com "Sem Discord" ligado: o áudio foi cortado, porque o som do sistema leva o Discord junto. Para ter som, troque para a janela do jogo ou uma guia.', 9000);
+    else if (!audio) {
+      toast(surface === 'window'
+        ? 'Sem áudio: este navegador não envia o som de janelas. Para ter som, use "Trocar tela" e escolha uma guia' + (noDiscord() ? '.' : ' ou a tela inteira.')
         : 'Sem áudio nesta transmissão. Para enviar som, use "Trocar tela" e marque "Compartilhar áudio" no seletor.', 8000);
+    } else if (noDiscord()) {
+      toast(surface === 'browser' ? 'Enviando só o som desta guia. O Discord fica de fora.' : 'Enviando só o som desta janela. O Discord fica de fora.', 5000);
+    } else if (surface === 'monitor') {
+      toast('Enviando o som do computador todo, Discord incluído. Para tirar, ligue "Sem Discord".', 6000);
     }
   }
 
@@ -407,13 +434,16 @@
     const on = !!local;
     const audio = on && local.stream.getAudioTracks()[0];
     $('shareBtn').classList.toggle('is-live', on);
-    $('shareLabel').textContent = on ? 'Parar de transmitir' : 'Compartilhar tela';
-    setIcon($('shareIcon'), on ? 'stop' : 'screen');
+    $('shareLabel').textContent = on ? 'Parar' : 'Compartilhar tela';
+    $('shareBtn').setAttribute('aria-label', on ? 'Parar de transmitir' : 'Compartilhar tela');
+    setIcon($('shareIcon'), on ? 'stop' : 'cast');
     $('swapBtn').hidden = !on;
     $('audioBtn').hidden = !on;
     $('audioBtn').disabled = !audio;
     $('audioBtn').setAttribute('aria-pressed', String(!!audio && audioMuted));
-    $('audioLabel').textContent = !audio ? 'Sem áudio' : audioMuted ? 'Áudio silenciado' : 'Áudio ligado';
+    $('audioLabel').textContent = !audio ? 'Sem áudio' : audioMuted ? 'Áudio mudo' : 'Áudio';
+    $('audioBtn').setAttribute('aria-label', !audio ? 'Transmissão sem áudio' : audioMuted ? 'Seu áudio está silenciado para todos. Reativar' : 'Seu áudio está indo para todos. Silenciar');
+    $('meter').hidden = !audio;
     setIcon($('audioIcon'), !audio || audioMuted ? 'mute' : 'vol');
   }
 
@@ -470,6 +500,7 @@
 
     function labels() {
       q('.tile-name').textContent = isLocal ? `${myName} (você)` : e.name;
+      paintAvatar(q('.avatar'), isLocal ? myName : e.name);
       el.setAttribute('aria-label', isLocal ? 'Sua transmissão' : `Transmissão de ${e.name}`);
       q('.js-focus').setAttribute('aria-label', `Destacar ${who()}`);
       q('.js-pip').setAttribute('aria-label', `Janela flutuante: ${who()}`);
@@ -488,6 +519,7 @@
       muteBtn.setAttribute('aria-label', `${silent ? 'Ativar' : 'Silenciar'} som da ${who()}`);
       muteBtn.title = muteBtn.getAttribute('aria-label');
       q('.unblock').hidden = !e.blocked;
+      el.classList.toggle('blocked', e.blocked);
     }
 
     if (isLocal) {
@@ -637,30 +669,38 @@
   function renderPeople() {
     const list = $('people');
     list.textContent = '';
-    const row = (name, you, sharing) => {
+    const row = (id, name, you, sharing, stats) => {
       const li = document.createElement('li');
+      li.dataset.id = id;
+      li.classList.toggle('is-live', sharing);
       const av = document.createElement('span');
-      av.className = 'avatar'; av.textContent = [...name][0] || '?'; av.setAttribute('aria-hidden', 'true');
+      av.className = 'avatar'; av.setAttribute('aria-hidden', 'true');
+      paintAvatar(av, name);
       const who = document.createElement('span');
-      who.className = 'who'; who.textContent = name;
-      if (you) { const y = document.createElement('span'); y.className = 'you'; y.textContent = ' (você)'; who.append(y); }
+      who.className = 'who';
+      const nm = document.createElement('span');
+      nm.className = 'nm'; nm.textContent = you ? `${name} (você)` : name;
+      const sub = document.createElement('span');
+      sub.className = 'sub'; sub.textContent = sharing ? `transmitindo${stats ? ` · ${stats}` : ''}` : 'assistindo';
+      who.append(nm, sub);
       li.append(av, who);
       if (sharing) {
         const tag = document.createElement('span');
-        tag.className = 'tag-live';
-        const dot = document.createElement('span'); dot.className = 'live'; dot.setAttribute('aria-hidden', 'true');
-        tag.append(dot, 'ao vivo');
+        tag.className = 'pill-live'; tag.textContent = 'ao vivo';
         li.append(tag);
       }
       list.append(li);
     };
-    row(myName, true, !!local);
+    const res = (s) => (s && s.height ? `${s.height}p` : '');
+    row('me', myName, true, !!local, local && res(local.stream.getVideoTracks()[0].getSettings()));
     let n = 1;
-    for (const e of peers.values()) if (e.ready) { row(e.name, false, e.sharing); n++; }
+    for (const e of peers.values()) if (e.ready) { row(e.id, e.name, false, e.sharing, e.tile && e.tile.video.videoHeight ? `${e.tile.video.videoHeight}p` : ''); n++; }
     $('peopleCount').textContent = String(n);
+    $('peopleCountSide').textContent = String(n);
+    paintAvatar($('meAvatar'), myName);
     $('emptyText').textContent = n > 1
       ? 'Quem compartilhar a tela aparece aqui para todos da sala.'
-      : 'Mande o link da sala para quem vai assistir e comece quando quiser.';
+      : 'Passe o ID para a galera e comece quando quiser.';
   }
 
   function addChat(from, text, kind) {
@@ -690,17 +730,77 @@
     if (open) { $('unread').hidden = true; $('unread').textContent = ''; $('chatLog').scrollTop = $('chatLog').scrollHeight; }
   }
 
-  async function copyLink(btn) {
+  async function copy(text, btn, done) {
     try {
-      await navigator.clipboard.writeText(location.href);
-      toast('Link copiado. Quem abrir entra direto na sala.');
+      await navigator.clipboard.writeText(text);
+      toast(done);
       if (btn === $('copyBtn')) {
-        btn.classList.add('done'); setIcon($('copyIcon'), 'check');
-        setTimeout(() => { btn.classList.remove('done'); setIcon($('copyIcon'), 'link'); }, 1600);
+        btn.classList.add('done'); setIcon($('copyIcon'), 'check'); $('copyLabel').textContent = 'Copiado';
+        setTimeout(() => { btn.classList.remove('done'); setIcon($('copyIcon'), 'copy'); $('copyLabel').textContent = 'Copiar ID'; }, 1600);
       }
     } catch {
-      toast('Não deu para copiar sozinho. Copie o endereço da barra do navegador.', 5000);
+      toast(`Não deu para copiar sozinho. O ID é ${pretty(room)}.`, 6000);
     }
+  }
+
+  // ---------- campo de ID em casas ----------
+  function otp(input) {
+    const box = input.parentElement;
+    const cells = [...box.querySelectorAll('.otp-cells span:not(.gap)')];
+    const paint = () => {
+      let v = input.value;
+      if (/[#/]/.test(v)) { const c = parseCode(v); if (c) v = c; } // colou o link inteiro
+      v = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
+      if (input.value !== v) input.value = v;
+      const focused = document.activeElement === input;
+      cells.forEach((c, i) => {
+        c.textContent = v[i] || '';
+        c.classList.toggle('filled', !!v[i]);
+        c.classList.toggle('cur', focused && i === v.length);
+      });
+      box.classList.remove('bad');
+    };
+    for (const ev of ['input', 'focus', 'blur']) input.addEventListener(ev, paint);
+    return { reset() { input.value = ''; paint(); }, bad() { box.classList.add('bad'); } };
+  }
+
+  // A sala existe? Pergunta ao servidor se o "diretório" dela está no ar, sem entrar nela.
+  // true = existe · false = ninguém nessa sala · null = sem resposta (rede)
+  function probe(code) {
+    return new Promise((resolve) => {
+      if (typeof Peer === 'undefined') { resolve(null); return; }
+      const p = new Peer(`telao-${code}-q-${randomCode(8)}`, PEER_OPTS);
+      let over = false;
+      const end = (v) => { if (over) return; over = true; clearTimeout(t); p.destroy(); resolve(v); };
+      const t = setTimeout(() => end(null), 12000);
+      p.on('open', () => { p.connect(`telao-${code}-dir`, CONN_OPTS).on('open', () => end(true)); });
+      p.on('error', (err) => end(err.type === 'peer-unavailable' ? false : null));
+    });
+  }
+
+  async function tryJoin(input, errEl, field, btn) {
+    const code = parseCode(input.value);
+    errEl.textContent = '';
+    if (!code) {
+      errEl.textContent = 'O ID tem 6 letras e números, como K7Q-M4P. Não usamos 0, O, 1, I nem L.';
+      field.bad(); input.focus();
+      return;
+    }
+    if (code === room) { errEl.textContent = 'Você já está nesta sala.'; return; }
+    btn.disabled = true;
+    const lbl = btn.querySelector('.lbl'); const was = lbl.textContent;
+    lbl.textContent = 'Procurando a sala…';
+    const found = await probe(code);
+    btn.disabled = false; lbl.textContent = was;
+    if (found) {
+      if (room) location.hash = pretty(code); // troca de sala: a página recomeça limpa na nova
+      else enterRoom(code);
+      return;
+    }
+    errEl.textContent = found === false
+      ? `Nenhuma sala ${pretty(code)} aberta agora. Confira o ID com quem te passou.`
+      : 'O servidor de conexão não respondeu. Confira a internet e tente de novo.';
+    field.bad();
   }
 
   // ---------- entrar e sair ----------
@@ -711,10 +811,20 @@
     document.title = `Sala ${pretty(code)} · Telão`;
     $('home').hidden = true;
     $('room').hidden = false;
-    $('copyLabel').textContent = pretty(code);
+    const id = $('roomId');
+    id.textContent = '';
+    id.classList.toggle('long', code.length > 6);
+    for (const ch of pretty(code)) {
+      const el = document.createElement(ch === '-' ? 'i' : 'b');
+      if (ch !== '-') el.textContent = ch;
+      id.append(el);
+    }
+    id.setAttribute('aria-label', `ID da sala: ${[...code.toUpperCase()].join(' ')}`);
+    $('roomTitle').textContent = pretty(code);
+    $('emptyId').textContent = pretty(code);
     $('nameInput').value = myName;
     $('chatLog').textContent = '';
-    togglePanel(window.matchMedia('(min-width: 1100px)').matches);
+    togglePanel(!narrow());
     renderShareUi(); renderPeople(); layout(); refreshStatus();
     if (typeof Peer === 'undefined') { toast('A biblioteca de conexão não carregou. Recarregue a página.', 8000); return; }
     connect();
@@ -731,7 +841,7 @@
     if (wakeLock) wakeLock.release().catch(() => {});
     room = null;
     history.replaceState(null, '', location.pathname);
-    document.title = 'Telão — compartilhe sua tela por um link';
+    document.title = 'Telão — compartilhe sua tela com um ID';
     $('room').hidden = true;
     $('home').hidden = false;
   }
@@ -764,19 +874,108 @@
   }, 5000);
   setInterval(() => { if (room) updateStats(); }, 2000);
 
+  // ---------- nível de áudio: medidor de quem transmite e "som tocando" em cada tela ----------
+  let ac = null;
+  const meters = new WeakMap(); // faixa de áudio -> analisador
+  function level(stream) { // RMS 0..1 do áudio que está saindo/chegando
+    const track = stream && stream.getAudioTracks()[0];
+    if (!track || !track.enabled || track.readyState !== 'live') return 0;
+    if (!ac) {
+      // antes do primeiro clique o navegador recusa o AudioContext (e reclama no console)
+      if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return 0;
+      ac = new AudioContext();
+    }
+    if (ac.state === 'suspended') { ac.resume().catch(() => {}); return 0; }
+    let m = meters.get(track);
+    if (!m) {
+      const an = ac.createAnalyser();
+      an.fftSize = 512;
+      const src = ac.createMediaStreamSource(new MediaStream([track]));
+      src.connect(an);
+      track.addEventListener('ended', () => src.disconnect());
+      m = { an, buf: new Float32Array(an.fftSize) };
+      meters.set(track, m);
+    }
+    m.an.getFloatTimeDomainData(m.buf);
+    let sum = 0;
+    for (const v of m.buf) sum += v * v;
+    return Math.sqrt(sum / m.buf.length);
+  }
+  const SOUND = 0.015; // acima disso a tela "acende" (alguém falando, música, tiro…)
+  setInterval(() => {
+    if (!room) return;
+    const mine = local ? level(local.stream) : 0;
+    const db = mine > 0 ? 20 * Math.log10(mine) : -99;
+    const lit = Math.max(0, Math.min(5, Math.round(((db + 50) / 44) * 5))); // -50 dB..-6 dB -> 0..5 barras
+    [...$('meter').children].forEach((bar, i) => bar.classList.toggle('on', i < lit));
+    const on = mine > SOUND;
+    if (local) local.tile.el.classList.toggle('speaking', on);
+    $('meAvatar').classList.toggle('speaking', on);
+    const meRow = $('people').querySelector('li[data-id="me"] .avatar');
+    if (meRow) meRow.classList.toggle('speaking', on);
+    for (const e of peers.values()) {
+      const loud = !!e.tile && level(e.tile.video.srcObject) > SOUND;
+      if (e.tile) e.tile.el.classList.toggle('speaking', loud);
+      const row = $('people').querySelector(`li[data-id="${CSS.escape(e.id)}"] .avatar`);
+      if (row) row.classList.toggle('speaking', loud);
+    }
+  }, 120);
+
   // ---------- eventos da página ----------
-  $('createBtn').addEventListener('click', () => enterRoom(randomCode(10)));
+  function setName(v) {
+    myName = clean(v) || myName;
+    $('nameInput').value = $('homeName').value = myName;
+    store('name', myName);
+  }
+  $('homeName').value = store('name') ? myName : '';
+  $('homeName').addEventListener('change', () => setName($('homeName').value));
+  $('createBtn').addEventListener('click', () => { setName($('homeName').value); enterRoom(randomCode(6)); });
+  const homeOtp = otp($('joinInput'));
   $('joinForm').addEventListener('submit', (ev) => {
     ev.preventDefault();
-    const code = parseCode($('joinInput').value);
-    $('joinError').textContent = code ? '' : 'Esse link ou código não parece de uma sala. O código tem 10 letras e números, como abcde-fgh23.';
-    if (code) enterRoom(code);
+    setName($('homeName').value);
+    tryJoin($('joinInput'), $('joinError'), homeOtp, ev.target.querySelector('[type=submit]'));
+  });
+  const otherOtp = otp($('joinOtherInput'));
+  $('joinOtherBtn').addEventListener('click', () => {
+    otherOtp.reset(); $('joinOtherError').textContent = '';
+    $('joinDlg').showModal();
+  });
+  $('joinOtherForm').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    tryJoin($('joinOtherInput'), $('joinOtherError'), otherOtp, ev.target.querySelector('[type=submit]'));
+  });
+  for (const b of document.querySelectorAll('.dlg .js-close')) b.addEventListener('click', () => b.closest('dialog').close());
+  for (const d of document.querySelectorAll('.dlg')) d.addEventListener('click', (ev) => { if (ev.target === d) d.close(); }); // clique fora fecha
+
+  // Sem Discord: vale para a próxima escolha de tela; durante a transmissão, reabre o seletor na hora
+  function renderDiscord() {
+    const on = noDiscord();
+    $('discordBtn').setAttribute('aria-pressed', String(on));
+    setIcon($('discordIcon'), on ? 'headset-off' : 'headset');
+    $('discordBtn').title = on ? 'Sem Discord ligado: o seletor só oferece janela e guia' : 'Ligar para o som do Discord não ir junto';
+  }
+  $('discordBtn').addEventListener('click', () => {
+    store('nodiscord', noDiscord() ? '0' : '1');
+    renderDiscord();
+    if (!noDiscord()) { toast('Sem Discord desligado. A tela inteira volta a aparecer no seletor.'); return; }
+    if (local) { toast('Escolha a janela do jogo ou uma guia para tirar o Discord.', 5000); share(); }
+    else toast('Ao compartilhar, escolha a janela do jogo ou uma guia: o som do Discord não vai junto.', 6000);
+  });
+  $('guideBtn').addEventListener('click', () => $('guideDlg').showModal());
+  function toggleSettings(open) {
+    $('settings').hidden = !open;
+    $('settingsBtn').setAttribute('aria-expanded', String(open));
+  }
+  $('settingsBtn').addEventListener('click', () => toggleSettings($('settings').hidden));
+  document.addEventListener('pointerdown', (ev) => {
+    if (!$('settings').hidden && !ev.target.closest('#settings, #settingsBtn')) toggleSettings(false);
   });
   for (const b of document.querySelectorAll('.js-share')) {
     b.addEventListener('click', () => (local && b === $('shareBtn') ? stopShare() : share()));
     if (!CAN_SHARE) b.hidden = true;
   }
-  if (!CAN_SHARE) { $('noShare').hidden = false; document.querySelector('.dock-opts').hidden = true; }
+  if (!CAN_SHARE) { $('noShare').hidden = false; for (const el of document.querySelectorAll('.js-sender')) el.hidden = true; }
   $('swapBtn').addEventListener('click', share);
   $('audioBtn').addEventListener('click', () => {
     audioMuted = !audioMuted;
@@ -787,7 +986,8 @@
   });
   $('quality').addEventListener('change', applyQuality);
   $('hint').addEventListener('change', applyQuality);
-  for (const b of [$('copyBtn'), ...document.querySelectorAll('.js-copy')]) b.addEventListener('click', () => copyLink(b));
+  $('copyBtn').addEventListener('click', () => copy(pretty(room), $('copyBtn'), `ID ${pretty(room)} copiado. Quem digitar entra na sala.`));
+  $('copyLinkBtn').addEventListener('click', () => copy(location.href, null, 'Link copiado. Quem abrir entra direto na sala.'));
   $('leaveBtn').addEventListener('click', leaveRoom);
   $('brandLeave').addEventListener('click', (ev) => { ev.preventDefault(); leaveRoom(); });
   $('panelBtn').addEventListener('click', () => {
@@ -796,12 +996,12 @@
   });
   $('panelClose').addEventListener('click', () => { togglePanel(false); $('panelBtn').focus(); });
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && !$('panel').hidden && !document.fullscreenElement) { togglePanel(false); $('panelBtn').focus(); }
+    if (ev.key !== 'Escape' || document.fullscreenElement || document.querySelector('dialog[open]')) return;
+    if (!$('settings').hidden) { toggleSettings(false); $('settingsBtn').focus(); }
+    else if (!$('panel').hidden && narrow()) { togglePanel(false); $('panelBtn').focus(); }
   });
   $('nameInput').addEventListener('change', () => {
-    myName = clean($('nameInput').value) || myName;
-    $('nameInput').value = myName;
-    store('name', myName);
+    setName($('nameInput').value);
     if (local) local.tile.setName();
     broadcast(hello());
     renderPeople();
@@ -836,7 +1036,8 @@
   // ---------- início ----------
   if (QUALITY[store('quality')]) $('quality').value = store('quality');
   if (store('hint') === 'detail') $('hint').value = 'detail';
+  renderDiscord();
   const initial = parseCode(location.hash);
   if (initial) enterRoom(initial);
-  else if (location.hash.length > 1) $('joinError').textContent = 'O link aberto não é de uma sala válida. Confira se ele veio inteiro.';
+  else if (location.hash.length > 1) $('joinError').textContent = 'O link aberto não é de uma sala válida. Confira se ele veio inteiro ou digite o ID.';
 })();
