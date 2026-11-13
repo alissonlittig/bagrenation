@@ -2,10 +2,12 @@
 
 Uso:  python tests/test_e2e.py                 (sobe um servidor local com os arquivos do projeto)
       python tests/test_e2e.py https://...     (testa um endereço já publicado)
+      PW_CHANNEL=msedge python tests/test_e2e.py ...   (mesmo teste no Edge instalado)
 Requer: pip install playwright && playwright install chromium
 Usa o servidor público de sinalização do PeerJS, então precisa de internet.
 """
 import functools
+import os
 import re
 import http.server
 import pathlib
@@ -98,7 +100,7 @@ def shot(pg, name):
 
 def run(base):
     with sync_playwright() as p:
-        browser = p.chromium.launch()
+        browser = p.chromium.launch(channel=os.environ.get("PW_CHANNEL"))  # PW_CHANNEL=msedge testa no Edge instalado
         steps = []
         step = lambda s: (steps.append(s), print("ok:", s, flush=True))
 
