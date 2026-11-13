@@ -46,7 +46,7 @@ O vídeo e o áudio vão de navegador para navegador por WebRTC, criptografados,
 
 Cada sala tem um ID de 6 caracteres (31 símbolos, ≈ 887 milhões de combinações) sorteado com gerador criptográfico. Links antigos com código de 10 caracteres continuam valendo. Um dos participantes mantém o "diretório" da sala (a lista de quem está dentro); se ele sai, outro assume automaticamente. Os participantes se ligam em malha, e quem transmite envia uma cópia para cada espectador.
 
-O site é estático: `index.html`, `style.css`, `app.js`, a biblioteca PeerJS e as fontes, todos servidos do próprio repositório. Não há build.
+O site é estático: `index.html`, `style.css`, `app.js`, a biblioteca PeerJS (carregada só ao apertar Press Start ou abrir um link de sala) e as fontes, todos servidos do próprio repositório. Não há build.
 
 ## Limites
 

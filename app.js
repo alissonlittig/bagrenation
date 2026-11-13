@@ -51,6 +51,21 @@
   let myName = clean(store('name')) || `Visitante ${100 + Math.floor(Math.random() * 900)}`;
 
   // ---------- utilidades ----------
+  // A biblioteca PeerJS testa o WebRTC do navegador ao iniciar (centenas de ms em aparelho fraco):
+  // só é carregada quando vai ser usada (Press Start ou link de sala), não junto com a página.
+  let peerLib = null;
+  function loadPeer() { // Promise<boolean>: a biblioteca está pronta?
+    if (!peerLib) {
+      peerLib = new Promise((resolve) => {
+        const s = document.createElement('script');
+        s.src = 'vendor/peerjs.min.js';
+        s.onload = () => resolve(true);
+        s.onerror = () => { peerLib = null; s.remove(); resolve(false); }; // falhou: a próxima tentativa baixa de novo
+        document.head.append(s);
+      });
+    }
+    return peerLib;
+  }
   function store(key, value) {
     try {
       if (value === undefined) return localStorage.getItem(`bagrenation:${key}`);
@@ -766,9 +781,9 @@
 
   // A sala existe? Pergunta ao servidor se o "diretório" dela está no ar, sem entrar nela.
   // true = existe · false = ninguém nessa sala · null = sem resposta (rede)
-  function probe(code) {
+  async function probe(code) {
+    if (!(await loadPeer())) return null;
     return new Promise((resolve) => {
-      if (typeof Peer === 'undefined') { resolve(null); return; }
       const p = new Peer(`bagrenation-${code}-q-${randomCode(8)}`, PEER_OPTS);
       let over = false;
       const end = (v) => { if (over) return; over = true; clearTimeout(t); p.destroy(); resolve(v); };
@@ -804,7 +819,9 @@
   }
 
   // ---------- entrar e sair ----------
+  let visits = 0;
   function enterRoom(code) {
+    const visit = ++visits;
     room = code;
     leaving = false; everOk = false; backoff = 0;
     if (parseCode(location.hash) !== code) location.hash = pretty(code);
@@ -827,8 +844,11 @@
     $('chatLog').textContent = '';
     togglePanel(!narrow());
     renderShareUi(); renderPeople(); layout(); refreshStatus();
-    if (typeof Peer === 'undefined') { toast('A biblioteca de conexão não carregou. Recarregue a página.', 8000); return; }
-    connect();
+    loadPeer().then((ok) => {
+      if (visit !== visits || room !== code) return; // saiu ou trocou de sala enquanto a biblioteca carregava
+      if (ok) connect();
+      else toast('A biblioteca de conexão não carregou. Confira a internet e recarregue a página.', 8000);
+    });
   }
 
   function leaveRoom() {
@@ -1082,6 +1102,7 @@
     $('title').hidden = true;
     $('home').hidden = false;
     sfx('start');
+    loadPeer(); // adianta o carregamento enquanto a pessoa digita o nick
     if (window.matchMedia('(hover: hover)').matches) $('homeName').focus(); // no celular não abre o teclado sozinho
   }
   $('title').addEventListener('click', start);
