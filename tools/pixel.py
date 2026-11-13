@@ -417,6 +417,91 @@ ICONS = {
 ................
 ................
 ................""",
+    "mic": """
+................
+......####......
+.....######.....
+.....######.....
+.....######.....
+.....######.....
+.....######.....
+...#.######.#...
+...#..####..#...
+....#......#....
+.....######.....
+.......##.......
+.......##.......
+.....######.....
+................
+................""",
+    "mic-off": """
+..............#.
+......####...#..
+.....######.#...
+.....#####.#....
+.....####.#.....
+.....###.#.#....
+.....##.#.##....
+...#.#.#.###.#..
+...#..#.###..#..
+....##.....#....
+....#.#####.....
+...#...##.......
+..#....##.......
+.#...######.....
+................
+................""",
+    "gear": """
+................
+......####......
+..##..####..##..
+..############..
+...##########...
+.####......####.
+.###........###.
+.###...##...###.
+.###...##...###.
+.###........###.
+.####......####.
+...##########...
+..############..
+..##..####..##..
+......####......
+................""",
+    "chat-off": """
+...............#
+.############.#.
+.#..........#...
+.#..##.##..#..#.
+.#........#...#.
+.#.......#....#.
+.######.#.#####.
+......##........
+.....###........
+....#.#.........
+...#............
+..#.............
+.#..............
+................
+................
+................""",
+    "pencil": """
+................
+...........##...
+..........####..
+.........##.##..
+........##.##...
+.......##.##....
+......##.##.....
+.....##.##......
+....##.##.......
+...#.###........
+...#..#.........
+..####..........
+................
+................
+................
+................""",
 }
 
 # Mascote: bagre cyberpunk de perfil, olhando para a direita. Dois quadros de idle.
@@ -433,6 +518,9 @@ PAL = {
     "Y": "#ffe600",  # barbilhões
     "C": "#00f0ff",  # circuito
     "R": "#ff3355",  # led
+    # cores extras dos avatares
+    "N": "#39ff88", "n": "#168a4a", "O": "#ff8a1f", "P": "#9b6dff", "p": "#2a2160",
+    "S": "#f2b58a", "T": "#f4f0ff", "E": "#a9a2d6", "e": "#4a4470",
 }
 BAGRE = ["""
 ........................................
@@ -490,13 +578,260 @@ def grid_of(art):
     return [r for r in art.strip("\n").split("\n")]
 
 
+# Avatares 16x16. Desenho de 8 colunas = metade esquerda (espelhada); de 16 = inteiro.
+# "." é o fundo do avatar (a cor que vem junto com o desenho).
+HEAD = """
+................
+................
+....KKKKKKKK....
+..KKBBBBBBBBKK..
+.KBBHHBBBBBBBBK.
+.KBBBBKKKKKKKBK.
+.KBBBKVVVVWWVKK.
+.KBBBKVVVVVVVKK.
+.KBBBBKKKKKKKBK.
+.KLLLLBBBBBBBBK.
+.KLLLLLLKKKKKKY.
+..KKKKKKLLLLLKY.
+.......KKKKKKY..
+.........Y..Y...
+........Y...Y...
+................"""
+
+
+def variant(swap, top=None, edits=()):
+    """Bagre com outras cores (swap), topo redesenhado (2 linhas) e retoques (linha, coluna, texto)."""
+    g = [r.translate(str.maketrans(swap)) for r in grid_of(HEAD)]
+    if top:
+        g[0:2] = top
+    for y, x, txt in edits:
+        g[y] = g[y][:x] + txt + g[y][x + len(txt):]
+    return "\n".join(g)
+
+
+AVATARS = {
+    "bagre": ("#ff2bd6", HEAD),
+    "bagre-dj": ("#00f0ff", variant({"B": "F", "H": "T", "L": "T", "V": "p", "W": "C", "Y": "T"},
+                                   edits=[(1, 3, "KKKKKKKKKK"), (2, 2, "KeeeeeeeeeeK"), (3, 1, "Ke"), (4, 0, "KeeK"),
+                                          (5, 0, "KEeK"), (6, 0, "KEeK"), (7, 0, "KeeK"), (8, 1, "KK")])),
+    "bagre-rei": ("#7b2dff", variant({"B": "V", "H": "W", "L": "W", "V": "R", "W": "T", "Y": "O"},
+                                    top=["...O..OO..O.....", "...OOOOOOOO....."], edits=[(2, 3, "OROOOORO")])),
+    "bagre-toxico": ("#1a1433", variant({"B": "N", "H": "T", "L": "T", "V": "F", "W": "T", "Y": "N"},
+                                       top=["....F.F.F.F.....", "....FFFFFFFF...."])),
+    "robo": ("#ffe600", """
+.......R
+.......E
+..KKKKKK
+.KEEEEEE
+.KETEEEE
+KKEKKKKK
+KeEKCCKK
+KeEKCCKK
+KKEKKKKK
+.KEEEEEE
+.KEEKTKT
+.KEEKKKK
+.KEEEEEE
+..KKKKKK
+....Keee
+...KKKKK"""),
+    "caveira": ("#7b2dff", """
+........
+...KKKKK
+..KTTTTT
+.KTTTTTT
+.KTTTTTT
+.KTKKKTT
+.KTKFKTT
+.KTKKKTT
+.KTTTTTK
+..KTTTTK
+..KETTTT
+..KTKTKT
+..KTKTKT
+...KKKKK
+........
+........"""),
+    "gato": ("#00f0ff", """
+........
+.KK.....
+.KOK....
+.KOOKKKK
+.KOFOOOO
+.KOOOOOO
+KOOOOOOO
+KOOKKOOO
+KOONKOOO
+KOOOOOOO
+KOTTOOOF
+KOTTTTTK
+.KOTTTTT
+..KOOOOO
+...KKKKK
+........"""),
+    "alien": ("#2a0f33", """
+........
+....KKKK
+..KKNNNN
+.KNNNNNN
+.KNTNNNN
+KNNNNNNN
+KNKKKNNN
+KNKKKKNN
+KNNKKKNN
+KNNNNNNN
+.KNNNNNN
+.KNNNNnn
+..KNNNKK
+...KNNNN
+....KKKK
+........"""),
+    "fantasma": ("#ff2bd6", """
+........
+....KKKK
+..KKTTTT
+.KTTTTTT
+.KTTTTTT
+KTTTTTTT
+KTTKKTTT
+KTTKKTTT
+KTTTTTTT
+KTTTTTKK
+KTTTTTKK
+KTTTTTTT
+KTTTTTTT
+KTTKTTTK
+KTK.KTK.
+.K...K.."""),
+    "sapo": ("#ffe600", """
+........
+........
+..KKKK..
+.KTTTTK.
+.KTKKTKK
+.KTKKTNN
+KKNTTNNN
+KNNNNNNN
+KNNNNNNN
+KNNNNNNN
+KNKNNNNN
+KNNKKKKK
+KNNNNNNN
+.KNNLLLL
+..KKKKKK
+........"""),
+    "polvo": ("#39ff88", """
+........
+....KKKK
+..KKPPPP
+.KPPPPPP
+.KPTPPPP
+KPPPPPPP
+KPPTTPPP
+KPPTKPPP
+KPPPPPPP
+KPPPPPKK
+KPPPPPPP
+.KPPPPPP
+KPKPPKPP
+KPKKPKKP
+KPK.KPKK
+.K...K.."""),
+    "ninja": ("#00f0ff", """
+........
+....KKKK
+..KKeeee
+.Keeeeee
+.KRRRRRR
+KRRRRRRR
+Keeeeeee
+KeSSSSSS
+KeSTKSSS
+Keeeeeee
+Keeeeeee
+.Keeeeee
+.Keeeeee
+..KKeeee
+....KKKK
+........"""),
+    "astronauta": ("#1a1433", """
+........
+....KKKK
+..KKTTTT
+.KTTTTTT
+.KTKKKKK
+KTKppppp
+KTKpCCpp
+KTKpCppp
+KTKppppp
+KTKppppp
+KTTKKKKK
+.KTTTTTT
+.KETTTTT
+..KKTTOO
+....KKKK
+........"""),
+    "slime": ("#2a0f33", """
+........
+........
+........
+.....KKK
+...KKCCC
+..KCTCCC
+.KCTCCCC
+.KCCCCCC
+KCCKKCCC
+KCCKKCCC
+KCCCCCCC
+KCCCCKCC
+KCCCCCKK
+KBCCCCCC
+.KKKKKKK
+........"""),
+    "cogumelo": ("#39ff88", """
+........
+....KKKK
+..KKRRRR
+.KRRTTRR
+KRRRTTRR
+KTRRRRRR
+KTTRRRRT
+KRRRRRRT
+.KKKKKKK
+..KLLLLL
+..KLKLLL
+..KLKLLL
+..KLLLLF
+..KLLLLL
+...KKKKK
+........"""),
+}
+
+
+def avatar_grid(art):
+    g = grid_of(art)
+    if len(g[0]) == 8:
+        g = [r + r[::-1] for r in g]
+    assert len(g) == 16 and all(len(r) == 16 for r in g), art
+    return g
+
+
+def avatar_symbols():
+    out = []
+    for name, (bg, art) in AVATARS.items():
+        g = avatar_grid(art)
+        body = "".join(f'<path fill="{PAL[c]}" d="{runs(g, c)}"/>' for c in PAL if any(c in r for r in g))
+        out.append(f'  <symbol id="av-{name}" viewBox="0 0 16 16"><path fill="{bg}" d="M0 0h16v16H0z"/>{body}</symbol>')
+    return "\n".join(out)
+
+
 def icon_symbols():
     syms = []
     for name, art in ICONS.items():
         g = grid_of(art)
         assert len(g) == 16 and all(len(r) == 16 for r in g), name
         syms.append(f'  <symbol id="i-{name}" viewBox="0 0 16 16"><path d="{runs(g, "#")}"/></symbol>')
-    return "\n".join(syms + [favicon(symbol=True)])
+    return "\n".join(syms + [favicon(symbol=True), avatar_symbols()])
 
 
 def sprite_paths(art):
