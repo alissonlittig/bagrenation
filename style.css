@@ -569,6 +569,8 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
   .empty { padding: 16px 8px 18px; }
   .empty-mascot .bagre { width: 160px; }
   .av-grid { gap: 12px 6px; min-height: 214px; }
+  .av-tabs { gap: 4px; }
+  .av-tabs .chip { min-width: 0; padding: 0 2px; font-size: 8px; }
   .av-grid .avatar { width: 60px; height: 60px; }
   .voice-grid { gap: 14px 6px; }
   .vcard { width: 84px; }
