@@ -597,3 +597,8 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
   .tile-actions .js-unwatch .ic { display: block; margin: auto; }
   .vwatch { white-space: normal; line-height: 1.3; padding: 4px 6px; }
 }
+/* celular em paisagem: o botao nao passa da largura do cartao */
+@media (max-height: 500px) {
+  .vwatch { white-space: normal; line-height: 1.3; padding: 4px 6px; }
+  .vcard .vwatch { width: 100%; }
+}
