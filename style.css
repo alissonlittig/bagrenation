@@ -581,3 +581,9 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
   *, *::before, *::after { animation: none !important; transition: none !important; }
   body::after { display: none; }
 }
+
+/* parar de assistir (S-1202) */
+.people .wbtn { grid-column: 2 / -1; justify-self: start; min-height: 30px; margin: 4px 0 2px; padding: 0 8px; font-size: 9px; }
+.people .wbtn[hidden], .tile-actions .js-unwatch[hidden] { display: none; }
+.people li.is-stopped .nm { opacity: .75; }
+.tile-actions .js-unwatch { min-height: 36px; margin-right: 6px; padding: 0 8px; font-size: 9px; align-self: center; }

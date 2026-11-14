@@ -302,7 +302,7 @@
       e.vdeaf = d.deaf === true;
       e.talking = d.talking === true && !e.vmuted; // quem chega no meio de uma fala já vê o anel aceso
       if (first) { note(`${e.name} entrou`); sfx('in'); e.wanted = Date.now(); }
-      if (!e.sharing) removeStream(e);
+      if (!e.sharing) { e.stopped = false; removeStream(e); }
       if (e.tile) e.tile.setName(e.name);
       renderPeople();
     } else if (d.t === 'chat') {
@@ -313,6 +313,14 @@
       if (text) addChat(e.name, text);
     } else if (d.t === 'want') {
       if (local) callPeer(e);
+    } else if (d.t === 'unwatch') { // parou de assistir: some só para ele, a voz (outra conexão) segue
+      e.nowatch = true;
+      if (e.out) { const c = e.out; e.out = null; c.close(); } // fecha o par de vídeo/áudio da tela: nada mais é enviado a ele
+      renderPeople();
+    } else if (d.t === 'watch') {
+      e.nowatch = false;
+      if (local) callPeer(e);
+      renderPeople();
     } else if (d.t === 'talk') {
       e.talking = d.on === true && !e.vmuted;
       ring(e.id, e.talking);
@@ -373,7 +381,7 @@
   }
 
   function callPeer(e) {
-    if (!local || !peer || !peer.open || !e.conn || !e.conn.open) return;
+    if (e.nowatch || !local || !peer || !peer.open || !e.conn || !e.conn.open) return;
     if (e.out) e.out.close();
     const call = peer.call(e.id, local.stream, { sdpTransform: hifi });
     if (!call) return;
@@ -493,7 +501,7 @@
     local.stream.getTracks().forEach((t) => t.stop());
     local.tile.el.remove();
     local = null;
-    for (const e of peers.values()) if (e.out) e.out.close();
+    for (const e of peers.values()) { e.nowatch = false; if (e.out) e.out.close(); }
     broadcast(hello());
     renderShareUi();
     renderPeople();
@@ -520,7 +528,7 @@
   // ---------- mídia: receber ----------
   function onCall(call) {
     const e = peers.get(call.peer);
-    if (!e) { call.close(); return; } // só aceito mídia de quem já está na malha da sala
+    if (!e || e.stopped) { call.close(); return; } // só aceito mídia de quem já está na malha da sala (e que eu não parei de assistir)
     const prev = e.call;
     e.call = call;
     if (prev) prev.close();
@@ -550,6 +558,21 @@
     });
     call.on('close', () => { if (e.call === call) { e.call = null; if (e.tile) e.tile.wait(true); } });
     call.on('error', () => {});
+  }
+
+  // "Parar de assistir" (como no Discord): fecha a chamada da tela (vídeo e som dela) e avisa quem transmite
+  // para parar de enviar a esta pessoa. A voz é outra conexão e continua.
+  function unwatch(e) {
+    e.stopped = true;
+    send(e, { t: 'unwatch' });
+    removeStream(e);
+    renderPeople();
+  }
+  function watch(e) {
+    e.stopped = false;
+    e.wanted = Date.now();
+    send(e, { t: 'watch' });
+    renderPeople();
   }
 
   function removeStream(e) {
@@ -635,7 +658,10 @@
     } else q('.js-pip').hidden = true;
 
     labels();
-    if (!isLocal) { volume(); sink(video); }
+    if (!isLocal) {
+      volume(); sink(video);
+      q('.js-unwatch').addEventListener('click', () => unwatch(e));
+    } else q('.js-unwatch').hidden = true;
     $('stage').append(el);
 
     return {
@@ -755,7 +781,7 @@
       if (!e.ready) continue;
       const on = !!e.vpc && e.vpc.connectionState === 'connected';
       all.push({
-        id: e.id, name: e.name, av: e.av, e, sharing: e.sharing, talking: e.talking, muted: e.vmuted, deaf: e.vdeaf, off: !on,
+        id: e.id, name: e.name, av: e.av, e, sharing: e.sharing, stopped: e.stopped, talking: e.talking, muted: e.vmuted, deaf: e.vdeaf, off: !on,
         sub: !on ? 'conectando a voz…' : e.ping === null ? 'na voz' : `ping ${e.ping} ms · atraso ${e.lat} ms`,
         tip: on ? e.vinfo : '',
       });
@@ -775,7 +801,8 @@
             range.style.setProperty('--fill', `${range.value * 100}%`);
             voiceOut(p.e);
           });
-        } else range.remove();
+          li.querySelector('.wbtn').addEventListener('click', () => (p.e.stopped ? watch(p.e) : unwatch(p.e)));
+        } else { range.remove(); li.querySelector('.wbtn').remove(); }
         list.append(li);
       }
       let card = find(grid, p.id);
@@ -789,11 +816,18 @@
       li.querySelector('.sub').textContent = p.sub;
       li.title = p.tip || '';
       card.querySelector('.vname').textContent = label;
+      const wb = li.querySelector('.wbtn');
+      if (wb) {
+        wb.hidden = !p.sharing;
+        wb.textContent = p.stopped ? 'Assistir' : 'Parar de assistir';
+        wb.setAttribute('aria-label', `${p.stopped ? 'Assistir' : 'Parar de assistir'} a tela de ${p.name}`);
+      }
       if (p.e) li.querySelector('.pvol').setAttribute('aria-label', `Volume da voz de ${p.name}`);
       for (const el of [li, card]) {
         paintAvatar(el.querySelector('.avatar'), p.name, p.av);
         el.querySelector('.avatar').classList.toggle('speaking', p.talking);
         el.classList.toggle('is-live', p.sharing);
+        el.classList.toggle('is-stopped', !!p.stopped);
         el.classList.toggle('is-muted', p.muted);
         el.classList.toggle('is-deaf', p.deaf);
         el.classList.toggle('is-off', p.off);
@@ -1332,6 +1366,11 @@
   // Para conferir no console (e no teste automático): números e codec reais de cada conexão de voz.
   window.BAGRENATION = {
     voiceStats: async () => (await Promise.all([...peers.values()].map(voiceStats))).filter(Boolean),
+    // bytes de vídeo da tela enviados/recebidos por pessoa (teste de ponta a ponta)
+    screen: async () => Promise.all([...peers.values()].map(async (e) => {
+      const sum = async (c, kind) => { let n = 0; if (c && c.peerConnection) (await c.peerConnection.getStats()).forEach((r) => { if (r.kind === 'video' && r.type === kind) n += r.bytesSent || r.bytesReceived || 0; }); return n; };
+      return { name: e.name, out: !!e.out, call: !!e.call, sent: await sum(e.out, 'outbound-rtp'), got: await sum(e.call, 'inbound-rtp') };
+    })),
     mic: () => (voice.track ? { ...voice.track.getSettings(), enabled: voice.track.enabled, levelDb: Math.round(voice.db), talking: voice.talking } : null),
   };
 
@@ -1344,7 +1383,7 @@
       if (now - e.seen > 20000) { dropPeer(e.id); continue; } // aba fechada sem avisar
       send(e, { t: 'ping' });
       // diz que transmite mas a imagem não chegou (ou caiu): pede de novo
-      if (e.sharing && !e.call && now - e.wanted > 8000) { e.wanted = now; send(e, { t: 'want' }); }
+      if (e.sharing && !e.stopped && !e.call && now - e.wanted > 8000) { e.wanted = now; send(e, { t: 'want' }); }
       // voz que não fechou (ou caiu): quem oferece tenta de novo
       if (myId > e.id && (!e.vpc || e.vpc.connectionState !== 'connected') && now - e.vAt > 15000) voiceStart(e);
     }
