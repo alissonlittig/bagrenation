@@ -21,7 +21,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/vt323-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=1202">
+<link rel="stylesheet" href="style.css?v=1209">
 </head>
 <body>
 
@@ -423,6 +423,7 @@
     <span class="avatar avatar-xl" aria-hidden="true"></span>
     <span class="vname"></span>
     <svg class="ic st-mic" role="img" aria-label="microfone mudo"><use href="#i-mic-off"/></svg>
+    <button class="btn vwatch" type="button" hidden>Ao vivo · Assistir</button>
   </li>
 </template>
 
@@ -447,7 +448,7 @@
         <button class="icon-btn js-preview" type="button" aria-pressed="true" hidden><svg class="ic" aria-hidden="true"><use href="#i-eye"/></svg></button>
         <span class="tile-stats" aria-live="off"></span>
         <div class="tile-actions">
-          <button class="btn js-unwatch" type="button">Parar de assistir</button>
+          <button class="btn js-unwatch" type="button" aria-label="Parar de assistir"><svg class="ic" aria-hidden="true"><use href="#i-eye"/><path d="M4 20 20 4" stroke="currentColor" stroke-width="2.4" stroke-linecap="square"/></svg><span class="lbl">Parar de assistir</span></button>
           <button class="icon-btn js-focus" type="button" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-focus"/></svg></button>
           <button class="icon-btn js-pip" type="button"><svg class="ic" aria-hidden="true"><use href="#i-pip"/></svg></button>
           <button class="icon-btn js-full" type="button"><svg class="ic" aria-hidden="true"><use href="#i-full"/></svg></button>
@@ -458,6 +459,6 @@
 </template>
 
 <noscript><p class="noscript">O BAGRENATION precisa de JavaScript para conectar as pessoas da sala.</p></noscript>
-<script src="app.js?v=1202" defer></script>
+<script src="app.js?v=1209" defer></script>
 </body>
 </html>

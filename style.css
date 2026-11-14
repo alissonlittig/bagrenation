@@ -587,3 +587,13 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
 .people .wbtn[hidden], .tile-actions .js-unwatch[hidden] { display: none; }
 .people li.is-stopped .nm { opacity: .75; }
 .tile-actions .js-unwatch { min-height: 36px; margin-right: 6px; padding: 0 8px; font-size: 9px; align-self: center; }
+
+.vwatch { min-height: 30px; padding: 0 8px; font-size: 9px; white-space: nowrap; }
+.vwatch[hidden] { display: none; }
+.tile-actions .js-unwatch .ic { display: none; }
+@media (max-width: 560px) {
+  .tile-actions .js-unwatch { width: 36px; padding: 0; margin-right: 2px; }
+  .tile-actions .js-unwatch .lbl { display: none; }
+  .tile-actions .js-unwatch .ic { display: block; margin: auto; }
+  .vwatch { white-space: normal; line-height: 1.3; padding: 4px 6px; }
+}

@@ -809,8 +809,12 @@
       if (!card) {
         card = $('vcardTpl').content.firstElementChild.cloneNode(true);
         card.dataset.id = p.id;
+        if (p.e) card.querySelector('.vwatch').addEventListener('click', () => watch(p.e));
+        else card.querySelector('.vwatch').remove();
         grid.append(card);
       }
+      const vw = card.querySelector('.vwatch');
+      if (vw) { vw.hidden = !(p.sharing && p.stopped); vw.setAttribute('aria-label', `Assistir a tela de ${p.name}`); }
       const label = p.you ? `${p.name} (você)` : p.name;
       li.querySelector('.nm').textContent = label;
       li.querySelector('.sub').textContent = p.sub;
