@@ -15,6 +15,22 @@ Chat de voz e compartilhamento de tela com um ID de 6 caracteres, direto no nave
 
 Mais de uma pessoa pode transmitir ao mesmo tempo na mesma sala.
 
+## App para PC (Windows)
+
+O mesmo BAGRENATION do site, num programa leve (Tauri 2 + WebView2, instalador de ~2 MB). App e site entram nas mesmas salas.
+
+**Baixar:** https://github.com/alissonlittig/bagrenation/releases/latest
+
+O que o app faz a mais que a aba do navegador:
+- **Tecla global** de push-to-talk e de mutar: funcionam com qualquer janela em foco, inclusive jogo em tela cheia (gancho de teclado do Windows que só observa a tecla; o jogo continua recebendo). Vale tecla do teclado ou botão do meio/laterais do mouse. Configura em Voz > Tecla.
+- **Bandeja** perto do relógio: abrir, microfone mudo, ensurdecer, sair. O X da janela manda para a bandeja e a voz continua.
+- **Abrir com o Windows** (já na bandeja), **aviso** quando alguém entra na sala com a janela escondida, **animações paradas** com a janela escondida ou minimizada.
+- **Atualização automática** pelo GitHub Releases (assinada; o app pergunta antes de atualizar).
+
+O instalador não tem certificado pago: o Windows mostra "O Windows protegeu o computador". Clique em **Mais informações** > **Executar assim mesmo**. O SHA-256 de cada versão está no `SHA256SUMS.txt` do Release.
+
+Código: `desktop/` (o `copy-site.mjs` copia os arquivos do site para dentro do app no build, então não existe uma segunda cópia do código). Build: `cd desktop && npm install && npx tauri build` (precisa de Rust; a assinatura do updater usa `TAURI_SIGNING_PRIVATE_KEY`). Teste app + site na mesma sala: `python tests/test_app.py desktop/src-tauri/target/release/bagrenation.exe`.
+
 ## O que tem
 
 - **Chat de voz** como um canal de voz: microfone mudo, ensurdecer (corta a sala e o seu microfone), volume separado para cada pessoa, anel verde no avatar de quem está falando, microfone aberto por padrão (detecção de voz com sensibilidade ajustável, se quiser um portão) ou **push-to-talk** com a tecla que você escolher, faixa de estado sempre à vista (conectado, microfone ligado/mudo/sem microfone, quem está falando), escolha de microfone e de saída, teste de microfone com retorno e medidor.

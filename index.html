@@ -21,7 +21,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/vt323-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=1214">
+<link rel="stylesheet" href="style.css?v=1215">
 </head>
 <body>
 
@@ -282,8 +282,13 @@
               <span id="pttLabel">Tecla (com esta guia em foco)</span>
               <button id="pttKeyBtn" class="btn btn-quiet" type="button" aria-labelledby="pttLabel pttKeyBtn">V</button>
             </div>
+            <div class="select js-app" hidden>
+              <span id="muteKeyLabel">Tecla de mutar (qualquer janela)</span>
+              <button id="muteKeyBtn" class="btn btn-quiet" type="button" aria-labelledby="muteKeyLabel muteKeyBtn">nenhuma</button>
+            </div>
             <label class="check"><input id="ecToggle" type="checkbox" checked><span class="switch" aria-hidden="true"></span>Cancelamento de eco</label>
             <label class="check"><input id="nsToggle" type="checkbox" checked><span class="switch" aria-hidden="true"></span>Supressão de ruído</label>
+            <label class="check js-app" hidden><input id="autoStart" type="checkbox"><span class="switch" aria-hidden="true"></span>Abrir com o Windows</label>
             <p class="pop-note">De fone, desligue os dois: menos atraso e som estéreo sem filtro.</p>
           </div>
         </div>
@@ -459,6 +464,6 @@
 </template>
 
 <noscript><p class="noscript">O BAGRENATION precisa de JavaScript para conectar as pessoas da sala.</p></noscript>
-<script src="app.js?v=1209" defer></script>
+<script src="app.js?v=1215" defer></script>
 </body>
 </html>

@@ -32,6 +32,9 @@
   const PEER_OPTS = { debug: 0, config: { iceServers: ICE } };
   const CONN_OPTS = { reliable: true, serialization: 'json' };
   const CAN_SHARE = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+  // App para PC (desktop/, Tauri): esta mesma página com tecla global, bandeja e avisos. No navegador é undefined.
+  const DESK = window.__TAURI__ || null;
+  const SITE = 'https://alissonlittig.github.io/bagrenation/';
 
   // ---------- estado ----------
   let room = null;          // código da sala (10 caracteres)
@@ -65,6 +68,7 @@
     mode: store('vmode') === 'ptt' ? 'ptt' : 'vad',
     sens: Math.min(100, Math.max(0, Number(store('vsens') ?? 0) || 0)), // 0 = sempre aberto (padrão)
     key: store('vkey') || 'KeyV',
+    muteKey: store('vmutekey') || '', // só no app para PC: tecla global de mutar
     ec: store('vec') !== '0', ns: store('vns') !== '0',
     mic: store('vmic') || '', out: store('vout') || '',
     keyDown: false, loudAt: 0, talking: false, db: -100, testing: false,
@@ -301,7 +305,10 @@
       e.vmuted = d.muted === true;
       e.vdeaf = d.deaf === true;
       e.talking = d.talking === true && !e.vmuted; // quem chega no meio de uma fala já vê o anel aceso
-      if (first) { note(`${e.name} entrou`); sfx('in'); e.wanted = Date.now(); }
+      if (first) {
+        note(`${e.name} entrou`); sfx('in'); e.wanted = Date.now();
+        if (DESK && (!document.hasFocus() || document.documentElement.classList.contains('app-hidden'))) DESK.core.invoke('notify', { body: `${e.name} entrou na sala ${pretty(room)}` }).catch(() => {});
+      }
       if (!e.sharing) { e.stopped = false; removeStream(e); }
       if (e.tile) e.tile.setName(e.name);
       renderPeople();
@@ -1136,7 +1143,7 @@
     renderVoice();
   }
 
-  const keyName = (code) => code.replace(/^(Key|Digit)/, '').replace(/^Numpad/, 'Num ');
+  const keyName = (code) => (code ? code.replace(/^(Key|Digit)/, '').replace(/^Numpad/, 'Num ').replace(/^Mouse(\d)$/, 'Mouse $1') : 'nenhuma');
   function renderVoice() {
     const has = !!voice.track;
     const mic = $('micBtn');
@@ -1158,8 +1165,15 @@
     $('sensOut').textContent = voice.sens ? `${Math.round(threshold())} dB` : 'sempre aberto';
     $('vuMark').style.left = `${voice.sens}%`;
     $('vuMark').hidden = voice.mode !== 'vad' || !voice.sens;
-    $('pttKeyBtn').textContent = pickingKey ? 'Aperte…' : keyName(voice.key);
-    $('pttKeyBtn').setAttribute('aria-pressed', String(pickingKey));
+    $('pttKeyBtn').textContent = pickingKey === 'ptt' ? 'Aperte…' : keyName(voice.key);
+    $('pttKeyBtn').setAttribute('aria-pressed', String(pickingKey === 'ptt'));
+    if (DESK) {
+      $('muteKeyBtn').textContent = pickingKey === 'mute' ? 'Aperte… (Backspace: nenhuma)' : keyName(voice.muteKey);
+      $('muteKeyBtn').setAttribute('aria-pressed', String(pickingKey === 'mute'));
+      DESK.core.invoke('tray_state', { inRoom: !!room, muted: !!voice.track && voice.muted, deaf: voice.deaf }).catch(() => {});
+      DESK.core.invoke('set_keys', { ptt: voice.mode === 'ptt' && !pickingKey ? voice.key : '', mute: pickingKey ? '' : voice.muteKey })
+        .catch((err) => toast(`Essa tecla não funciona fora da janela (${err}). Escolha outra.`, 6000));
+    }
     $('ecToggle').checked = voice.ec;
     $('nsToggle').checked = voice.ns;
     $('micTestBtn').disabled = !has;
@@ -1643,22 +1657,31 @@
       openMic(true); // os filtros são do navegador: reabre o microfone com a nova combinação
     });
   }
-  let pickingKey = false;
-  $('pttKeyBtn').addEventListener('click', () => { pickingKey = true; renderVoice(); });
+  let pickingKey = false; // 'ptt' | 'mute' enquanto escolhe a tecla
+  $('pttKeyBtn').addEventListener('click', () => { pickingKey = 'ptt'; renderVoice(); });
+  function pickKey(code) {
+    if (code !== 'Escape') {
+      if (pickingKey === 'mute') { voice.muteKey = code === 'Backspace' ? '' : code; store('vmutekey', voice.muteKey); }
+      else { voice.key = code; store('vkey', code); }
+    }
+    pickingKey = false;
+    renderVoice();
+  }
   const typing = (el) => !!(el && el.closest && el.closest('input:not([type="range"]):not([type="checkbox"]), textarea, select, [contenteditable]'));
   document.addEventListener('keydown', (ev) => {
-    if (pickingKey) { // escolhendo a tecla do push-to-talk (Esc cancela)
+    if (pickingKey) { // escolhendo a tecla do push-to-talk ou de mutar (Esc cancela)
       ev.preventDefault(); ev.stopPropagation();
-      if (ev.code !== 'Escape') { voice.key = ev.code; store('vkey', ev.code); }
-      pickingKey = false;
-      renderVoice();
+      pickKey(ev.code);
+    } else if (DESK) { // no app quem cuida da tecla é o gancho global (evento 'ptt'), com ou sem foco
     } else if (room && voice.mode === 'ptt' && ev.code === voice.key && !typing(ev.target)) {
       ev.preventDefault(); // Espaço como tecla não aciona o botão em foco
       voice.keyDown = true;
     }
   }, true);
-  document.addEventListener('keyup', (ev) => { if (ev.code === voice.key) voice.keyDown = false; }, true);
-  window.addEventListener('blur', () => { voice.keyDown = false; }); // o navegador só entrega teclas com a guia em foco
+  if (!DESK) {
+    document.addEventListener('keyup', (ev) => { if (ev.code === voice.key) voice.keyDown = false; }, true);
+    window.addEventListener('blur', () => { voice.keyDown = false; }); // o navegador só entrega teclas com a guia em foco
+  }
   if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', listDevices);
   for (const b of document.querySelectorAll('.js-share')) {
     b.addEventListener('click', () => (local && b === $('shareBtn') ? stopShare() : share()));
@@ -1676,7 +1699,7 @@
   $('quality').addEventListener('change', applyQuality);
   $('hint').addEventListener('change', applyQuality);
   $('copyBtn').addEventListener('click', () => copy(pretty(room), $('copyBtn'), `ID ${pretty(room)} copiado. Quem digitar entra na sala.`));
-  $('copyLinkBtn').addEventListener('click', () => copy(location.href, null, 'Link copiado. Quem abrir entra direto na sala.'));
+  $('copyLinkBtn').addEventListener('click', () => copy(DESK ? SITE + location.hash : location.href, null, 'Link copiado. Quem abrir entra direto na sala.'));
   $('leaveBtn').addEventListener('click', leaveRoom);
   $('brandLeave').addEventListener('click', (ev) => { ev.preventDefault(); leaveRoom(); });
   $('panelBtn').addEventListener('click', () => {
@@ -1722,6 +1745,51 @@
     if (peer) peer.destroy();
   });
   window.addEventListener('pageshow', (ev) => { if (ev.persisted && leaving) location.reload(); });
+
+  // ---------- app para PC (Tauri) ----------
+  // Tecla global (push-to-talk e mutar valem com o jogo em foco), bandeja, abrir com o Windows,
+  // animações paradas com a janela escondida e links externos no navegador padrão.
+  if (DESK) {
+    const { invoke } = DESK.core;
+    const { listen } = DESK.event;
+    document.documentElement.classList.add('is-app');
+    for (const el of document.querySelectorAll('.js-app')) el.hidden = false;
+    $('pttLabel').textContent = 'Tecla (vale em qualquer janela, até no jogo)';
+    $('muteKeyBtn').addEventListener('click', () => { pickingKey = 'mute'; renderVoice(); });
+    document.addEventListener('mousedown', (ev) => { // botão do meio e laterais do mouse também servem de tecla
+      if (pickingKey && [1, 3, 4].includes(ev.button)) { ev.preventDefault(); pickKey(`Mouse${ev.button + 2}`); }
+    }, true);
+    listen('ptt', ({ payload }) => {
+      if (!room || voice.mode !== 'ptt' || pickingKey) return;
+      if (payload && document.hasFocus() && typing(document.activeElement)) return; // digitando no chat
+      voice.keyDown = payload === true;
+      gate();
+    });
+    listen('hotkey-mute', () => {
+      if (!room || pickingKey) return;
+      if (voice.track) setMuted(!voice.muted); else openMic(true);
+      sfx(voice.muted ? 'out' : 'in');
+    });
+    listen('tray', ({ payload }) => {
+      if (!room) return;
+      if (payload === 'deaf') setDeaf(!voice.deaf);
+      else if (voice.track) setMuted(!voice.muted); else openMic(true);
+    });
+    const shown = (on) => document.documentElement.classList.toggle('app-hidden', on !== true);
+    listen('visible', ({ payload }) => shown(payload));
+    invoke('is_visible').then(shown).catch(() => {}); // aberto com o Windows já nasce escondido na bandeja
+    listen('quit', () => { leaveRoom(); invoke('quit_now'); });
+    invoke('autostart').then((on) => { $('autoStart').checked = on; }).catch(() => {});
+    $('autoStart').addEventListener('change', () => {
+      invoke('autostart', { on: $('autoStart').checked })
+        .then((on) => { $('autoStart').checked = on; toast(on ? 'O BAGRENATION abre com o Windows, direto na bandeja.' : 'O BAGRENATION não abre mais com o Windows.'); })
+        .catch((err) => { $('autoStart').checked = !$('autoStart').checked; toast(`Não deu para mudar: ${err}`); });
+    });
+    document.addEventListener('click', (ev) => {
+      const a = ev.target.closest('a[href^="http"]');
+      if (a) { ev.preventDefault(); DESK.opener.openUrl(a.href).catch(() => {}); }
+    });
+  }
 
   // ---------- início ----------
   if (QUALITY[store('quality')]) $('quality').value = store('quality');
