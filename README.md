@@ -2,29 +2,29 @@
 
 ![BAGRENATION: tela de abertura com o bagre cyberpunk em pixel art](og.png)
 
-Chat de voz e compartilhamento de tela com um ID de 6 caracteres, direto no navegador. Sem conta e sem instalar nada: entrou na sala, entrou no canal de voz, e qualquer um pode mostrar a tela (ou a janela, a guia, o jogo) com o áudio junto.
+Um servidor fixo, como um servidor do Discord: abriu o BAGRENATION (site ou app), já está lá, vendo quem está online, o **#chat** (com imagem, GIF e vídeo, e o histórico fica) e o **Canal de voz**. Entra no canal com um clique e qualquer um no canal pode mostrar a tela (ou a janela, a guia, o jogo) com o áudio junto. Sem conta.
 
 **Abrir:** https://alissonlittig.github.io/bagrenation/
 
 ## Como usar
 
-1. Aperte **Press Start**, escolha um avatar se quiser, clique em **Criar sala** e passe o ID (ex.: `K7Q-M4P`) para quem vai assistir. Ele não tem 0, O, 1, I nem L, então dá para ditar por voz. Se preferir, **copiar link** também funciona.
-2. Quem vai entrar digita o ID. Se a sala não existir, o BAGRENATION avisa e ninguém sai da sala onde está.
-3. O navegador pede o microfone: aceitou, já está falando com a sala. Sem microfone (ou negando), você só ouve.
-4. Clique em **Compartilhar tela** e escolha a guia, a janela ou o monitor. Para enviar som, marque "Compartilhar áudio" no seletor do navegador.
+1. Abra o site (ou o app). Na primeira vez ele pergunta o nome e o avatar; depois abre direto.
+2. **#chat**: escreva, ou mande imagem, GIF ou vídeo (botão de imagem, Ctrl+V ou arrastar para o chat; até 25 MB cada, 5 por vez, com prévia antes de enviar). O histórico fica salvo mesmo quando todo mundo sai.
+3. **Canal de voz**: clique no canal (ou em **Entrar no canal de voz**). O navegador pede o microfone: aceitou, já está falando. Sem microfone (ou negando), você só ouve. Para sair, o botão vermelho no dock ou em **Voz conectada**.
+4. Dentro do canal, **Compartilhar tela** e escolha a guia, a janela ou o monitor. Para enviar som, marque "Compartilhar áudio" no seletor do navegador.
 
-Mais de uma pessoa pode transmitir ao mesmo tempo na mesma sala.
+Mais de uma pessoa pode transmitir ao mesmo tempo no canal. Quem está fora do canal continua online e no chat, sem receber voz nem tela.
 
 ## App para PC (Windows)
 
-O mesmo BAGRENATION do site, num programa leve (Tauri 2 + WebView2, instalador de ~2 MB). App e site entram nas mesmas salas.
+O mesmo BAGRENATION do site, num programa leve (Tauri 2 + WebView2, instalador de ~2 MB). App e site são o mesmo servidor.
 
 **Baixar:** https://github.com/alissonlittig/bagrenation/releases/latest
 
 O que o app faz a mais que a aba do navegador:
 - **Tecla global** de push-to-talk e de mutar: funcionam com qualquer janela em foco, inclusive jogo em tela cheia (gancho de teclado do Windows que só observa a tecla; o jogo continua recebendo). Vale tecla do teclado ou botão do meio/laterais do mouse. Configura em Voz > Tecla.
 - **Bandeja** perto do relógio: abrir, microfone mudo, ensurdecer, sair. O X da janela manda para a bandeja e a voz continua.
-- **Abrir com o Windows** (já na bandeja), **aviso** quando alguém entra na sala com a janela escondida, **animações paradas** com a janela escondida ou minimizada.
+- **Abrir com o Windows** (já na bandeja), **aviso** quando alguém entra no canal de voz ou manda mensagem com a janela escondida, **animações paradas** com a janela escondida ou minimizada.
 - **Atualização automática** pelo GitHub Releases (assinada; o app pergunta antes de atualizar).
 
 O instalador não tem certificado pago: o Windows mostra "O Windows protegeu o computador". Clique em **Mais informações** > **Executar assim mesmo**. O SHA-256 de cada versão está no `SHA256SUMS.txt` do Release.
@@ -45,8 +45,7 @@ Código: `desktop/` (o `copy-site.mjs` copia os arquivos do site para dentro do 
 - Tela cheia, janela flutuante (picture-in-picture) e modo destaque.
 - Números reais de cada transmissão: resolução, quadros por segundo, taxa e latência; quem transmite vê quantos estão assistindo e se o limite é a rede ou o processador.
 - Indicador de conexão e reconexão automática.
-- A sala continua existindo quando quem criou sai, e o mesmo link segue valendo.
-- Chat leve, sem histórico.
+- **#chat permanente**: texto (links clicáveis), imagem, GIF e vídeo com prévia; mensagens seguidas da mesma pessoa agrupadas; imagem amplia no clique; vídeo toca no próprio chat; "Carregar mensagens antigas" para trás das últimas 150.
 - Funciona no celular para falar, ouvir e assistir.
 - Sons 8-bit opcionais na interface (desligados por padrão): cliques e teclado mecânico antigo ao digitar.
 
@@ -81,11 +80,13 @@ Com `prefers-reduced-motion`, as linhas de CRT, o glitch e as animações são d
 
 ## Como funciona
 
-O vídeo e o áudio vão de navegador para navegador por WebRTC, criptografados, sem passar por servidor. O único serviço externo é o servidor público de sinalização do [PeerJS](https://peerjs.com/), usado só para os navegadores se encontrarem.
+O vídeo e o áudio vão de navegador para navegador por WebRTC, criptografados, sem passar por servidor. A sinalização é o servidor público do [PeerJS](https://peerjs.com/), usado só para os navegadores se encontrarem.
 
-Cada sala tem um ID de 6 caracteres (31 símbolos, ≈ 887 milhões de combinações) sorteado com gerador criptográfico. Links antigos com código de 10 caracteres continuam valendo. Um dos participantes mantém o "diretório" da sala (a lista de quem está dentro); se ele sai, outro assume automaticamente. Os participantes se ligam em malha, e quem transmite envia uma cópia para cada espectador.
+Todo mundo que abre entra no mesmo servidor (`bagrenation`). Um dos participantes mantém o "diretório" (a lista de quem está online); se ele sai, outro assume automaticamente. Os participantes se ligam em malha por canal de dados (presença); voz e tela só abrem entre quem está no canal de voz, e quem transmite envia uma cópia para cada espectador. Links antigos de sala (`#K7Q-M4P`) abrem o servidor.
 
-O site é estático: `index.html`, `style.css`, `app.js`, a biblioteca PeerJS (carregada só ao apertar Press Start ou abrir um link de sala) e as fontes, todos servidos do próprio repositório. Não há build.
+O **#chat** fica num Worker da Cloudflare (`server/worker.js`, plano grátis, sem cartão): um Durable Object com SQLite guarda as mensagens e os arquivos (em pedaços de 1 MB), manda o histórico ao conectar e as mensagens novas por WebSocket. Para estranhos não escreverem de outras páginas, enviar exige a origem do site ou do app (não é senha: um script fora do navegador consegue forjar); apagar mensagem exige a chave de moderação (`ADMIN_KEY`, secret do Worker). Acima de 3 GB de arquivos os mais antigos saem (a mensagem fica com "arquivo expirou"). Publicar o Worker: `cd server && npx wrangler deploy`.
+
+O site é estático: `index.html`, `style.css`, `app.js`, a biblioteca PeerJS e as fontes, todos servidos do próprio repositório. Não há build. `?servidor=nome` abre outro servidor (os testes usam isso para não aparecer no de verdade).
 
 ## Limites
 
@@ -97,7 +98,8 @@ O site é estático: `index.html`, `style.css`, `app.js`, a biblioteca PeerJS (c
 - **Upload.** Quem transmite envia uma cópia por espectador. Em 1080p/60 cada cópia pode chegar a 10 Mb/s; para grupos grandes, reduza a qualidade.
 - **Áudio.** Chrome e Edge enviam o áudio de uma guia em qualquer sistema e o áudio do sistema inteiro só no Windows. Firefox e Safari não capturam áudio de tela.
 - **Celular** não transmite tela (os navegadores móveis não oferecem essa função); fala, ouve e assiste.
-- **Quem tem o ID entra.** Não há senha; todo participante aparece na lista da sala. O ID curto é mais fácil de adivinhar que um código longo: para algo sigiloso, não use o BAGRENATION.
+- **Quem tem o link entra.** Não há senha nem conta: qualquer um que abrir o site entra no servidor, lê o #chat e aparece online. Nome é só um apelido (dá para usar o de outra pessoa). Para algo sigiloso, não use o BAGRENATION.
+- **Chat sem apagar pelo app.** Apagar mensagem só pela chave de moderação (`POST /s/bagrenation/del?id=N` com `Authorization: Bearer <ADMIN_KEY>`). GIF é arquivo `.gif` (não há busca de GIFs, que exigiria chave de um serviço de terceiros).
 - **Sem Discord** não separa aplicativos dentro do som do sistema (nenhum navegador permite isso). Ele funciona escolhendo uma fonte sem o Discord: guia (Chrome/Edge) ou janela (Chrome/Edge recentes, que oferecem o áudio só da janela).
 - **Sinalização de terceiros.** O servidor público do PeerJS é gratuito, sem garantia de disponibilidade, e enxerga os identificadores das salas (não o vídeo nem o áudio). Se ele cair, ninguém novo entra; as transmissões abertas continuam.
 
@@ -107,10 +109,11 @@ O site é estático: `index.html`, `style.css`, `app.js`, a biblioteca PeerJS (c
 python -m http.server 8000        # abra http://localhost:8000
 ```
 
-O teste de ponta a ponta abre vários navegadores reais com tela e microfone simulados, em dois cenários. **Tela**: 20 etapas (abertura, ID inválido e inexistente recusados, entrada digitando o ID, recarregar sem perder a sala, vídeo e áudio chegando, volume, Sem Discord, chat, duas transmissões, queda de rede, saída de quem criou a sala, celular, menos movimento). **Voz**: 11 etapas com 3 abas falando, 1 sem microfone e 1 celular (avatares, codec e pacotes por segundo negociados, anel de quem fala, mudo, ensurdecer, push-to-talk, sensibilidade, filtros, teste de microfone, volume por pessoa, tela junto com voz, sair e voltar), com o ping e o atraso medidos impressos:
+Os testes abrem navegadores reais com tela e microfone simulados, sempre num servidor de teste próprio (`?servidor=teste-...`). `tests/test_servidor.py`: dois navegadores ao mesmo tempo entram direto, se veem online, entram e saem do canal de voz, e trocam texto, imagem, GIF e vídeo que continuam lá depois de recarregar. `tests/test_e2e.py`: **Tela** (nome na primeira vez, recarregar, vídeo e áudio chegando, volume, Sem Discord, chat sem HTML, duas transmissões, queda de rede, celular, sair do canal, menos movimento), **Voz** (3 abas falando, 1 sem microfone e 1 celular: avatares, codec e pacotes por segundo, anel de quem fala, mudo, ensurdecer, push-to-talk, sensibilidade, filtros, teste de microfone, volume por pessoa, tela junto com voz, sair e voltar ao canal) e **Navegadores** (Chromium com Edge e Firefox), com o ping e o atraso medidos impressos:
 
 ```bash
 pip install playwright && playwright install chromium
+python tests/test_servidor.py                              # servidor fixo + chat permanente
 python tests/test_e2e.py                                   # servidor local
 python tests/test_e2e.py https://alissonlittig.github.io/bagrenation/   # site publicado
 ONLY=voz python tests/test_e2e.py                           # só o cenário de voz

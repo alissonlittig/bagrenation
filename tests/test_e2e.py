@@ -1,7 +1,9 @@
 """Teste de ponta a ponta do BAGRENATION com navegadores reais (Playwright + mídia falsa).
 
 Três cenários: tela (compartilhamento), voz (3 abas com microfone falso + 1 sem microfone + celular)
-e navegadores (Chromium com Edge e com Firefox: um cria, o outro entra pelo ID, os dois se ouvem).
+e navegadores (Chromium com Edge e com Firefox no mesmo canal de voz, os dois se ouvem).
+Cada execução usa um servidor de teste próprio (?servidor=teste-...): não aparece no BAGRENATION de verdade.
+O chat permanente com imagem/GIF/vídeo tem o teste dele: tests/test_servidor.py.
 Uso:  python tests/test_e2e.py                 (sobe um servidor local com os arquivos do projeto)
       ONLY=voz python tests/test_e2e.py        (só um cenário: tela, voz ou navegadores)
       python tests/test_e2e.py https://...     (testa um endereço já publicado)
@@ -13,6 +15,7 @@ import functools
 import math
 import os
 import re
+import secrets
 import http.server
 import pathlib
 import struct
@@ -57,20 +60,31 @@ AUDIO_PEAK = """async () => {
   return Math.max(...d.map(Math.abs));
 }"""
 
-# O Chromium sem janela ignora a política de autoplay (e já nasce "ativado"); isto reproduz a regra do Chrome real:
-# tocar com som antes do primeiro clique na página é recusado.
-BLOCK_AUTOPLAY = """
-let clicked = false;
-addEventListener('pointerdown', (e) => { clicked = clicked || e.isTrusted; }, true);
-const realPlay = HTMLMediaElement.prototype.play;
-HTMLMediaElement.prototype.play = function () {
-  if (!this.muted && !clicked)
-    return Promise.reject(new DOMException('play() sem gesto', 'NotAllowedError'));
-  return realPlay.call(this);
-};
-"""
-
 errors = []
+SRV = f"teste-e2e-{secrets.token_hex(3)}"
+
+
+def srv_url(base):
+    return f"{base}?servidor={SRV}"
+
+
+def enter(pg, base, name, voice=True):
+    """Abre o servidor de teste, responde o nome (primeira vez) e entra no canal de voz."""
+    pg.goto(srv_url(base))
+    if pg.locator("#nameDlg").is_visible():
+        pg.fill("#homeName", name)
+        pg.click("#nameForm [type=submit]")
+    connected(pg)
+    if voice:
+        join_voice(pg)
+
+
+def join_voice(pg):
+    if not pg.locator("#chanVoice").is_visible():  # celular: os canais ficam na gaveta
+        pg.click("#panelBtn")
+    pg.click("#chanVoice")
+    expect(pg.locator("#vconn")).to_be_attached()
+    expect(pg.locator("#dockWrap")).to_be_visible()
 
 
 def page(browser, name, viewport=None, fake=True):
@@ -124,73 +138,39 @@ def run(base):
         steps = []
         step = lambda s: (steps.append(s), print("ok:", s, flush=True))
 
-        # 1. início sem erro; ID com formato errado e ID de sala que não existe são recusados
+        # 1. abrir = já estar no servidor: só pede o nome na primeira vez; som 8-bit nasce desligado
         a = page(browser, "A")
-        a.goto(base)
-        # 0. abertura: PRESS START leva ao início; nome novo na aba; som 8-bit nasce desligado
+        a.goto(srv_url(base))
         assert a.title().startswith("BAGRENATION"), a.title()
-        expect(a.locator("#title .logo")).to_have_text("BAGRENATION")
-        expect(a.locator("#home")).to_be_hidden()
-        shot(a, "00_abertura_desktop")
-        a.click("#startBtn")
-        expect(a.locator("#title")).to_be_hidden()
-        expect(a.locator("h1")).to_be_visible()
-        sfx = a.locator("#home .js-sfx")
+        expect(a.locator("#nameDlg")).to_be_visible()
+        shot(a, "00_boas_vindas_desktop")
+        a.fill("#homeName", "Ana")
+        a.click("#nameForm [type=submit]")
+        connected(a)
+        sfx = a.locator(".side-head .js-sfx")
         expect(sfx).to_have_attribute("aria-pressed", "false")
         sfx.click()
         expect(sfx).to_have_attribute("aria-pressed", "true")
-        expect(sfx).to_contain_text("on")
         sfx.click()
         expect(sfx).to_have_attribute("aria-pressed", "false")
-        step("abertura PRESS START, título BAGRENATION, som 8-bit desligado por padrão e alternável")
-        a.fill("#joinInput", "isso nao e sala")
-        a.click("#joinForm [type=submit]")
-        expect(a.locator("#joinError")).to_contain_text("6 letras")
-        a.fill("#joinInput", "zzzzzz")
-        a.click("#joinForm [type=submit]")
-        expect(a.locator("#joinError")).to_contain_text("Nenhuma sala ZZZ-ZZZ", timeout=20000)
-        expect(a.locator("#home")).to_be_visible()
         a_crt = a.evaluate("getComputedStyle(document.body, '::after').display")
-        shot(a, "01_inicio_desktop")
-        step("início + ID inválido e ID inexistente recusados")
+        step("abre direto no servidor (nome na primeira vez), som 8-bit desligado por padrão e alternável")
+        join_voice(a)
+        shot(a, "01b_canal_vazio_desktop")
 
-        # 2. criar sala gera ID de 6 caracteres; copiar ID e copiar link
-        a.fill("#homeName", "Ana")
-        a.click("#createBtn")
-        connected(a)
-        assert a.title().endswith("BAGRENATION"), a.title()
-        shot(a, "01b_sala_vazia_desktop")
-        link = a.url
-        code = link.split("#")[1]
-        assert len(code) == 7 and code[3] == "-" and code == code.upper(), code
-        expect(a.locator("#roomId b")).to_have_count(6)
-        a.click("#copyBtn")
-        assert a.evaluate("navigator.clipboard.readText()") == code
-        a.click("#copyLinkBtn")
-        assert a.evaluate("navigator.clipboard.readText()") == link
-        step(f"sala {code} criada; ID e link copiados")
-
-        # 3. segundo navegador entra DIGITANDO o ID (minúsculo, sem hífen); os dois se veem
+        # 2. segundo navegador abre e entra no canal; recarregar mantém o nome e o servidor
         b = page(browser, "B")
-        b.goto(base)
-        b.keyboard.press("Enter")  # qualquer tecla passa da abertura
-        b.fill("#homeName", "Bruno")
-        b.fill("#joinInput", code.replace("-", "").lower())
-        expect(b.locator("#joinInput")).to_have_value(code.replace("-", ""))
-        b.click("#joinForm [type=submit]")
-        connected(b)
-        assert b.url.endswith("#" + code)
+        enter(b, base, "Bruno")
         for pg in (a, b):
             expect(pg.locator("#peopleCount")).to_have_text("2", timeout=45000)
-        step("B entrou digitando o ID (2 na sala)")
-
-        # 3b. recarregar a página não perde a sala
+        step("B abriu e entrou no canal (2 online)")
         b.reload()
         connected(b)
-        assert b.url.endswith("#" + code)
+        expect(b.locator("#nameDlg")).to_be_hidden()
+        join_voice(b)
         for pg in (a, b):
             expect(pg.locator("#peopleCount")).to_have_text("2", timeout=45000)
-        step("B recarregou e continua na mesma sala")
+        step("B recarregou: nome lembrado, mesmo servidor, volta ao canal com um clique")
 
         # 4. A transmite; B recebe vídeo e áudio
         a.click("#shareBtn")
@@ -267,34 +247,24 @@ def run(base):
         a.keyboard.press("Escape")
         step("Sem Discord: opções do seletor, corte na tela inteira, janela com áudio, guia")
 
-        # 8. chat: entrega e não interpreta HTML
-        a.click("#panelBtn") if a.locator("#panel").is_hidden() else None
+        # 8. chat: entrega e não interpreta HTML (no canal de voz o chat fica ao lado, em 1366)
         a.fill("#chatInput", '<img src=x onerror="document.title=1">oi')
         a.press("#chatInput", "Enter")
-        b.click("#panelBtn") if b.locator("#panel").is_hidden() else None
-        expect(b.locator("#chatLog")).to_contain_text("<img src=x")
+        expect(b.locator("#chatLog")).to_contain_text("<img src=x", timeout=15000)
         assert b.locator("#chatLog img").count() == 0
         step("chat entregue como texto puro")
 
         # 9. quem chega depois já recebe a transmissão em andamento
         c = page(browser, "C")
-        c.add_init_script(BLOCK_AUTOPLAY)
-        c.goto(link)
-        connected(c)
+        enter(c, base, "Caio")
         playing(c)
-        expect(c.locator(".unblock")).to_be_visible()
-        assert c.locator(".tile video").evaluate("v => v.muted")
-        expect(c.locator("#hearBtn")).to_be_visible()  # navegador bloqueou o som: botão grande "Clique para ouvir"
-        expect(c.locator("#hearBtn")).to_contain_text("Clique para ouvir")
-        shot(c, "02b_clique_para_ouvir")
-        c.click("#hearBtn")
-        expect(c.locator("#hearBtn")).to_be_hidden()
-        expect(c.locator(".unblock")).to_be_hidden()
+        if c.locator(".unblock").is_visible():
+            c.click(".unblock")
         assert not c.locator(".tile video").evaluate("v => v.muted")
-        c.wait_for_function("() => [...document.querySelectorAll('audio')].every(el => !el.paused && !el.muted)")
+        c.wait_for_function("() => [...document.querySelectorAll('audio')].filter(el => el.srcObject).every(el => !el.paused && !el.muted)")
         for pg in (a, b, c):
             expect(pg.locator("#peopleCount")).to_have_text("3", timeout=45000)
-        step("C entrou depois e recebeu a transmissão (3 na sala); som bloqueado vira botão 'Clique para ouvir'")
+        step("C entrou depois no canal e recebeu a transmissão (3 online)")
 
         # 10. duas transmissões ao mesmo tempo + destaque
         b.click("#shareBtn")
@@ -305,17 +275,6 @@ def run(base):
         shot(c, "03_duas_telas_destaque")
         c.locator(".tile.focused .js-focus").click()
         step("duas transmissões simultâneas e modo destaque")
-
-        # 10b. dentro da sala, ID inexistente não troca a sala
-        c.click("#joinOtherBtn")
-        c.fill("#joinOtherInput", "zzzzzz")
-        c.click("#joinOtherForm [type=submit]")
-        expect(c.locator("#joinOtherError")).to_contain_text("Nenhuma sala", timeout=20000)
-        c.keyboard.press("Escape")
-        assert c.url.endswith("#" + code)
-        connected(c)
-        expect(c.locator(".tile")).to_have_count(2)
-        step("ID inexistente dentro da sala não troca a sala")
 
         # 11. parar remove a tela de quem assiste
         b.click("#shareBtn")
@@ -331,57 +290,52 @@ def run(base):
         playing(c)
         step("queda de rede sinalizada e recuperada")
 
-        # 13. quem criou a sala sai: a sala continua e o link segue valendo
+        # 13. a primeira a entrar fecha a aba: o servidor continua e quem chega entra normal
         a.close()
         for pg in (b, c):
             expect(pg.locator("#peopleCount")).to_have_text("2", timeout=45000)
             expect(pg.locator(".tile")).to_have_count(0, timeout=20000)
         d = page(browser, "D")
-        d.goto(link)
-        connected(d)
+        enter(d, base, "Davi")
         for pg in (b, c, d):
             connected(pg)
             expect(pg.locator("#peopleCount")).to_have_text("3", timeout=60000)
         b.click("#shareBtn")
         playing(d)
         playing(c)
-        step("criador saiu, sala sobreviveu, D entrou pelo mesmo link e assiste B")
+        step("Ana fechou, o servidor seguiu, D entrou no canal e assiste B")
 
         # 14. celular: assiste, sem estouro lateral
         m = page(browser, "celular", viewport={"width": 390, "height": 844})
-        m.goto(base)
+        m.goto(srv_url(base))
         assert m.evaluate("document.documentElement.scrollWidth") <= 390
-        shot(m, "04a_abertura_celular")
-        m.click("#startBtn")
-        expect(m.locator("#home")).to_be_visible()
-        assert m.evaluate("document.documentElement.scrollWidth") <= 390
-        shot(m, "04_inicio_celular")
-        m.goto(link)  # só muda o #código: entra na sala sem recarregar
-        connected(m)
+        shot(m, "04_boas_vindas_celular")
+        enter(m, base, "Cel")
         playing(m)
         assert m.evaluate("document.documentElement.scrollWidth") <= 390
         shot(m, "05_assistindo_celular")
         m.click("#panelBtn")
-        expect(m.locator("#roomId b")).to_have_count(6)
+        expect(m.locator("#chanVoice")).to_be_visible()
         shot(m, "06_painel_celular")
         m.click("#panelClose")
         step("celular 390×844 assiste sem estouro lateral")
 
-        # 15. sair volta ao início e avisa a sala
+        # 15. sair do canal: some da voz, continua online
         d.click("#leaveBtn")
-        expect(d.locator("#home")).to_be_visible()
-        expect(b.locator("#peopleCount")).to_have_text("3", timeout=30000)  # b, c, celular
-        step("sair volta ao início")
+        expect(d.locator("#vconn")).to_be_hidden()
+        expect(d.locator(".tile")).to_have_count(0)
+        expect(b.locator("#people li")).to_have_count(3, timeout=30000)  # b, c, celular no canal
+        expect(b.locator("#peopleCount")).to_have_text("4")  # d segue online
+        step("sair do canal fecha voz e tela; a pessoa segue online")
 
-        # 16. menos movimento: sem linhas de CRT e sem animação no logo; link de sala pula a abertura
+        # 16. menos movimento: sem linhas de CRT e sem animação
         r = browser.new_context(reduced_motion="reduce").new_page()
         r.on("console", lambda msg: msg.type == "error" and errors.append(f"[reduzido] console: {msg.text}"))
-        r.goto(base)
+        r.goto(srv_url(base))
         assert r.evaluate("getComputedStyle(document.body, '::after').display") == "none"
-        assert r.evaluate("getComputedStyle(document.querySelector('.glitch'), '::before').animationName") == "none"
+        assert r.evaluate("getComputedStyle(document.querySelector('.status-dot')).animationName") == "none"
         assert a_crt == "block", a_crt
-        expect(d.locator("#title")).to_be_hidden()
-        step("prefers-reduced-motion desliga CRT e glitch")
+        step("prefers-reduced-motion desliga CRT e animações")
 
         browser.close()
 
@@ -432,18 +386,12 @@ def run_voice(base):
         steps = []
         step = lambda s: (steps.append(s), print("ok:", s, flush=True))
 
-        # 1. avatares: galeria no início, escolha lembrada, aparece para os outros; sem escolha = inicial
+        # 1. avatares: galeria na primeira vez, escolha lembrada, aparece para os outros; sem escolha = inicial
         a = page(browser, "vA")
         a.add_init_script(CLACKS)
-        a.goto(base)
-        a.click("#startBtn")
+        a.goto(srv_url(base))
         a.locator("#homeName").press_sequentially("Ana")
         assert a.evaluate("window.__clacks") == 0  # som desligado por padrão: digitar não toca nada
-        a.click("#home .js-sfx")
-        a.locator("#joinInput").press_sequentially("k7q")
-        assert a.evaluate("window.__clacks") == 3, a.evaluate("window.__clacks")  # som ligado: um estalo por tecla
-        a.click("#home .js-sfx")
-        a.fill("#joinInput", "")
         expect(a.locator("#homeAvatar")).to_have_text("A")  # padrão: inicial do nome
         a.click("#homeAvatar")
         expect(a.locator("#avatarTabs")).to_have_count(0)  # sem abas: só os 4 bagres + inicial
@@ -454,35 +402,35 @@ def run_voice(base):
         a.click('#avatarGrid button[title="bagre rei"]')
         expect(a.locator('#homeAvatar use[href="#av-bagre-rei"]')).to_have_count(1)
         assert a.evaluate("localStorage.getItem('bagrenation:avatar')") == "bagre-rei"
-        shot(a, "11_inicio_com_avatar")
-        a.click("#createBtn")
+        shot(a, "11_boas_vindas_com_avatar")
+        a.click("#nameForm [type=submit]")
         connected(a)
-        link = a.url
-        code = link.split("#")[1]
+        a.click(".side-head .js-sfx")
+        a.locator("#chatInput").press_sequentially("k7q")
+        assert a.evaluate("window.__clacks") == 3, a.evaluate("window.__clacks")  # som ligado: um estalo por tecla
+        a.click(".side-head .js-sfx")
+        a.fill("#chatInput", "")
+        join_voice(a)
         b = page(browser, "vB")
-        b.goto(base)
-        b.click("#startBtn")
+        b.goto(srv_url(base))
         b.fill("#homeName", "Bruno")
         pick_avatar(b, "#homeAvatar", "bagre toxico")
-        b.fill("#joinInput", code)
-        b.click("#joinForm [type=submit]")
+        b.click("#nameForm [type=submit]")
         connected(b)
+        join_voice(b)
         c = page(browser, "vC")
-        c.goto(link)  # entra direto pelo link, sem avatar
-        connected(c)
-        c.fill("#nameInput", "Caio")
-        c.press("#nameInput", "Enter")
+        enter(c, base, "Caio")  # sem escolher avatar
         for pg in (a, b, c):
             expect(pg.locator("#peopleCount")).to_have_text("3", timeout=45000)
         expect(row(b, "Ana").locator('use[href="#av-bagre-rei"]')).to_have_count(1)
         expect(row(a, "Bruno").locator('use[href="#av-bagre-toxico"]')).to_have_count(1)
         expect(row(a, "Caio").locator(".avatar")).to_have_text("C")
-        pick_avatar(c, "#meAvatar", "bagre dj")  # trocar depois, já dentro da sala
+        pick_avatar(c, "#meAvatar", "bagre dj")  # trocar depois, já dentro do servidor
         expect(row(a, "Caio").locator('use[href="#av-bagre-dj"]')).to_have_count(1)
         expect(a.locator('#voiceGrid .vcard use[href="#av-bagre-dj"]')).to_have_count(1)
-        step(f"teclado retrô só com o som ligado; avatares: galeria com {n_av - 1} + inicial, escolha salva, vista pelos outros, troca dentro da sala")
+        step(f"teclado retrô só com o som ligado; avatares: galeria com {n_av - 1} + inicial, escolha salva, vista pelos outros, troca depois")
 
-        # 2. entrar na sala = entrar na voz; todos se ouvem; Opus 48 kHz estéreo 128 kb/s, quadros de 10 ms
+        # 2. entrar no canal = microfone ligado; todos se ouvem; Opus 48 kHz estéreo 128 kb/s, quadros de 10 ms
         for pg in (a, b, c):
             voice_ready(pg, 2)
             expect(pg.locator("#micBtn")).to_have_attribute("data-state", "on")
@@ -510,7 +458,7 @@ def run_voice(base):
             expect(pg.locator("#micFixBtn")).to_be_hidden()
         expect(b.locator("#vbTalk")).to_contain_text("Ana")
         assert a.evaluate("localStorage.getItem('bagrenation:vmode')") is None  # padrão: detecção de voz, microfone aberto
-        step("voz ligada ao entrar: 3 abas se ouvem; Opus 48 kHz estéreo, 128 kb/s, FEC, ~100 pacotes/s (10 ms); ping e atraso na lista")
+        step("voz ligada ao entrar no canal: 3 abas se ouvem; Opus 48 kHz estéreo, 128 kb/s, FEC, ~100 pacotes/s (10 ms); ping e atraso na lista")
 
         # 3. indicador de quem fala + mudo: só o anel de quem está falando acende
         b.click("#micBtn")
@@ -639,7 +587,7 @@ def run_voice(base):
         assert not b.locator(".tile video").evaluate("v => v.muted")
         assert a.evaluate("document.documentElement.scrollWidth") <= 1366
         box = a.locator(".dock").bounding_box()
-        main = a.locator(".main").bounding_box()
+        main = a.locator(".voice-col").bounding_box()
         assert box["x"] >= main["x"] and box["x"] + box["width"] <= main["x"] + main["width"], "barra de controles estourou a largura"
         shot(b, "15_tela_e_voz_desktop")
         shot(a, "15b_transmitindo_com_voz_desktop")
@@ -648,8 +596,7 @@ def run_voice(base):
         # 9. sem microfone (permissão negada): ouve a sala, aparece mudo, botão oferece ligar
         d = page(browser, "vD")
         d.add_init_script(NO_MIC)
-        d.goto(link)
-        connected(d)
+        enter(d, base, "Dani")
         expect(d.locator("#micBtn")).to_have_attribute("data-state", "none")
         voice_ready(d, 3)
         hears(d, "Ana")
@@ -663,31 +610,30 @@ def run_voice(base):
         expect(d.locator("#toasts")).to_contain_text("Libere no cadeado")
         step("sem microfone: entra, ouve a sala, aparece como mudo, aviso claro e botão 'Ativar microfone'")
 
-        # 10. sair e voltar: a voz fecha e reabre
+        # 10. sair e voltar ao canal: a voz fecha e reabre
         b.click("#leaveBtn")
-        expect(b.locator("#home")).to_be_visible()
-        assert b.evaluate("document.querySelectorAll('audio').length") == 0
-        expect(b.locator('#homeAvatar use[href="#av-bagre-toxico"]')).to_have_count(1)  # avatar lembrado
+        expect(b.locator("#vconn")).to_be_hidden()
+        assert b.evaluate("[...document.querySelectorAll('audio')].every(el => !el.srcObject)")
+        expect(b.locator('#meAvatar use[href="#av-bagre-toxico"]')).to_have_count(1)
         for pg in (a, c, d):
-            expect(pg.locator("#peopleCount")).to_have_text("3", timeout=30000)
+            expect(pg.locator("#people li")).to_have_count(3, timeout=30000)
+            expect(pg.locator("#peopleCount")).to_have_text("4")  # Bruno segue online
         voice_ready(a, 2)
-        b.fill("#joinInput", code)
-        b.click("#joinForm [type=submit]")
-        connected(b)
+        join_voice(b)
         voice_ready(b, 3)
         voice_ready(a, 3)
         hears(a, "Bruno"); hears(b, "Ana")
         playing(b)  # a tela da Ana volta junto
         b.reload()  # recarregar: avatar e preferências continuam
         connected(b)
+        join_voice(b)
         voice_ready(b, 3)
         expect(row(a, "Bruno").locator('use[href="#av-bagre-toxico"]')).to_have_count(1, timeout=30000)
-        step("sair e voltar (e recarregar): voz reconecta, avatar lembrado")
+        step("sair do canal e voltar (e recarregar): voz reconecta, avatar lembrado")
 
         # 11. celular: entra na voz, controles cabem, configurações abrem dentro da tela
         m = page(browser, "vCel", viewport={"width": 390, "height": 844})
-        m.goto(link)
-        connected(m)
+        enter(m, base, "Cel")
         voice_ready(m, 4)
         hears(m, "Ana")
         assert m.evaluate("document.documentElement.scrollWidth") <= 390
@@ -714,8 +660,8 @@ def run_voice(base):
 
 
 # ---------------------------------------------------------------------------------------------
-# Caso real: dois navegadores DIFERENTES (processos e perfis separados). Um cria a sala, o outro
-# entra pelo ID, e os dois têm de se ouvir sem apertar mais nada.
+# Caso real: dois navegadores DIFERENTES (processos e perfis separados) entram no canal de voz
+# e os dois têm de se ouvir sem apertar mais nada.
 # ---------------------------------------------------------------------------------------------
 def run_cross(base):
     with sync_playwright() as p:
@@ -732,19 +678,9 @@ def run_cross(base):
                 print(f"pulado: {kind} indisponível ({str(err).splitlines()[0][:80]})", flush=True)
                 continue
             a = page(home, "xChromium")
-            a.goto(base)
-            a.click("#startBtn")
-            a.fill("#homeName", "Ana")
-            a.click("#createBtn")
-            connected(a)
-            code = a.url.split("#")[1]
+            enter(a, base, "Ana")
             b = page(other, f"x{kind}")
-            b.goto(base)
-            b.click("#startBtn")
-            b.fill("#homeName", "Edu")
-            b.fill("#joinInput", code)
-            b.click("#joinForm [type=submit]")
-            connected(b)
+            enter(b, base, "Edu")
             # daqui em diante ninguém aperta nada
             voice_ready(a, 1)
             voice_ready(b, 1)
@@ -763,7 +699,7 @@ def run_cross(base):
                       f" · {x['sendCodec'].get('mimeType')} {x['sendCodec'].get('sdpFmtpLine')}", flush=True)
             shot(b, f"20_{kind.lower()}_ouve_chromium")
             done.append(kind)
-            print(f"ok: Chromium cria, {kind} entra pelo ID: os dois se ouvem sem apertar nada, microfone ligado, anel de quem fala", flush=True)
+            print(f"ok: Chromium e {kind} no mesmo canal: os dois se ouvem sem apertar mais nada, microfone ligado, anel de quem fala", flush=True)
             a.context.close()
             other.close()
         home.close()

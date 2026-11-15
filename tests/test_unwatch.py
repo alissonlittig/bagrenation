@@ -16,12 +16,10 @@ def run(base, shots):
     T.SHOTS = shots
     with sync_playwright() as p:
         br = T.launch(p)
-        a = T.page(br, "Ana"); a.goto(base); a.click("#startBtn"); a.fill("#homeName", "Ana"); a.click("#createBtn"); T.connected(a)
-        code = a.url.split("#")[1]
+        a = T.page(br, "Ana"); T.enter(a, base, "Ana")
         others = {}
         for n in ("Bruno", "Caio"):
-            pg = T.page(br, n); pg.goto(base); pg.click("#startBtn"); pg.fill("#homeName", n); pg.fill("#joinInput", code)
-            pg.click("#joinForm [type=submit]"); T.connected(pg); others[n] = pg
+            pg = T.page(br, n); T.enter(pg, base, n); others[n] = pg
         b, c = others["Bruno"], others["Caio"]
         for pg in (a, b, c): T.voice_ready(pg, 2)
         a.click("#shareBtn")

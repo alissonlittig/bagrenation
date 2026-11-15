@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>BAGRENATION</title>
-<meta name="description" content="Chat de voz e tela compartilhada com ID de sala.">
+<meta name="description" content="Servidor de voz, chat e tela compartilhada dos bagres.">
 <meta name="theme-color" content="#07040f">
 <meta name="color-scheme" content="dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; media-src 'self' blob: mediastream:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob: https://bagrenation-chat.alissondelittig.workers.dev; media-src 'self' blob: mediastream: https://bagrenation-chat.alissondelittig.workers.dev; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com https://bagrenation-chat.alissondelittig.workers.dev wss://bagrenation-chat.alissondelittig.workers.dev; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="referrer" content="no-referrer">
 <meta property="og:site_name" content="BAGRENATION">
 <meta property="og:title" content="BAGRENATION">
-<meta property="og:description" content="Chat de voz e tela compartilhada com ID de sala.">
+<meta property="og:description" content="Servidor de voz, chat e tela compartilhada dos bagres.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://alissonlittig.github.io/bagrenation/">
 <meta property="og:image" content="https://alissonlittig.github.io/bagrenation/og.png">
@@ -21,7 +21,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/vt323-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=1215">
+<link rel="stylesheet" href="style.css?v=1318">
 </head>
 <body>
 
@@ -57,6 +57,8 @@
   <symbol id="i-gear" viewBox="0 0 16 16"><path d="M6 1h4v1h-4zM2 2h2v1h-2zM6 2h4v1h-4zM12 2h2v1h-2zM2 3h12v1h-12zM3 4h10v1h-10zM1 5h4v1h-4zM11 5h4v1h-4zM1 6h3v1h-3zM12 6h3v1h-3zM1 7h3v1h-3zM7 7h2v1h-2zM12 7h3v1h-3zM1 8h3v1h-3zM7 8h2v1h-2zM12 8h3v1h-3zM1 9h3v1h-3zM12 9h3v1h-3zM1 10h4v1h-4zM11 10h4v1h-4zM3 11h10v1h-10zM2 12h12v1h-12zM2 13h2v1h-2zM6 13h4v1h-4zM12 13h2v1h-2zM6 14h4v1h-4z"/></symbol>
   <symbol id="i-chat-off" viewBox="0 0 16 16"><path d="M15 0h1v1h-1zM1 1h12v1h-12zM14 1h1v1h-1zM1 2h1v1h-1zM12 2h1v1h-1zM1 3h1v1h-1zM4 3h2v1h-2zM7 3h2v1h-2zM11 3h1v1h-1zM14 3h1v1h-1zM1 4h1v1h-1zM10 4h1v1h-1zM14 4h1v1h-1zM1 5h1v1h-1zM9 5h1v1h-1zM14 5h1v1h-1zM1 6h6v1h-6zM8 6h1v1h-1zM10 6h5v1h-5zM6 7h2v1h-2zM5 8h3v1h-3zM4 9h1v1h-1zM6 9h1v1h-1zM3 10h1v1h-1zM2 11h1v1h-1zM1 12h1v1h-1z"/></symbol>
   <symbol id="i-pencil" viewBox="0 0 16 16"><path d="M11 1h2v1h-2zM10 2h4v1h-4zM9 3h2v1h-2zM12 3h2v1h-2zM8 4h2v1h-2zM11 4h2v1h-2zM7 5h2v1h-2zM10 5h2v1h-2zM6 6h2v1h-2zM9 6h2v1h-2zM5 7h2v1h-2zM8 7h2v1h-2zM4 8h2v1h-2zM7 8h2v1h-2zM3 9h1v1h-1zM5 9h3v1h-3zM3 10h1v1h-1zM6 10h1v1h-1zM2 11h4v1h-4z"/></symbol>
+  <symbol id="i-hash" viewBox="0 0 16 16"><path d="M4 1h2v1h-2zM10 1h2v1h-2zM4 2h2v1h-2zM10 2h2v1h-2zM2 3h12v1h-12zM2 4h12v1h-12zM3 5h2v1h-2zM9 5h2v1h-2zM3 6h2v1h-2zM9 6h2v1h-2zM3 7h2v1h-2zM9 7h2v1h-2zM2 8h12v1h-12zM2 9h12v1h-12zM2 10h2v1h-2zM8 10h2v1h-2zM2 11h2v1h-2zM8 11h2v1h-2zM2 12h2v1h-2zM8 12h2v1h-2z"/></symbol>
+  <symbol id="i-image" viewBox="0 0 16 16"><path d="M1 1h14v1h-14zM1 2h1v1h-1zM14 2h1v1h-1zM1 3h1v1h-1zM4 3h2v1h-2zM14 3h1v1h-1zM1 4h1v1h-1zM4 4h2v1h-2zM14 4h1v1h-1zM1 5h1v1h-1zM11 5h1v1h-1zM14 5h1v1h-1zM1 6h1v1h-1zM10 6h3v1h-3zM14 6h1v1h-1zM1 7h1v1h-1zM5 7h1v1h-1zM9 7h4v1h-4zM14 7h1v1h-1zM1 8h1v1h-1zM4 8h3v1h-3zM8 8h5v1h-5zM14 8h1v1h-1zM1 9h1v1h-1zM3 9h10v1h-10zM14 9h1v1h-1zM1 10h1v1h-1zM14 10h1v1h-1zM1 11h14v1h-14z"/></symbol>
   <symbol id="mark" viewBox="0 0 16 16"><path fill="#07040f" d="M4 2h8v1h-8zM2 3h2v1h-2zM12 3h2v1h-2zM1 4h1v1h-1zM14 4h1v1h-1zM1 5h1v1h-1zM6 5h7v1h-7zM14 5h1v1h-1zM1 6h1v1h-1zM5 6h1v1h-1zM13 6h2v1h-2zM1 7h1v1h-1zM5 7h1v1h-1zM13 7h2v1h-2zM1 8h1v1h-1zM6 8h7v1h-7zM14 8h1v1h-1zM1 9h1v1h-1zM14 9h1v1h-1zM1 10h1v1h-1zM8 10h6v1h-6zM2 11h6v1h-6zM13 11h1v1h-1zM7 12h6v1h-6z"/><path fill="#13b5c9" d="M4 3h8v1h-8zM2 4h2v1h-2zM6 4h8v1h-8zM2 5h4v1h-4zM13 5h1v1h-1zM2 6h3v1h-3zM2 7h3v1h-3zM2 8h4v1h-4zM13 8h1v1h-1zM6 9h8v1h-8z"/><path fill="#7ef4ff" d="M4 4h2v1h-2z"/><path fill="#d8fbff" d="M2 9h4v1h-4zM2 10h6v1h-6zM8 11h5v1h-5z"/><path fill="#ffe600" d="M6 6h4v1h-4zM12 6h1v1h-1zM6 7h7v1h-7z"/><path fill="#fffbd0" d="M10 6h2v1h-2z"/><path fill="#ffe600" d="M14 10h1v1h-1zM14 11h1v1h-1zM13 12h1v1h-1zM9 13h1v1h-1zM12 13h1v1h-1zM8 14h1v1h-1zM12 14h1v1h-1z"/></symbol>
   <symbol id="av-bagre" data-g="Bagres" viewBox="0 0 16 16"><path fill="#ff2bd6" d="M0 0h16v16H0z"/><path fill="#07040f" d="M4 2h8v1h-8zM2 3h2v1h-2zM12 3h2v1h-2zM1 4h1v1h-1zM14 4h1v1h-1zM1 5h1v1h-1zM6 5h7v1h-7zM14 5h1v1h-1zM1 6h1v1h-1zM5 6h1v1h-1zM13 6h2v1h-2zM1 7h1v1h-1zM5 7h1v1h-1zM13 7h2v1h-2zM1 8h1v1h-1zM6 8h7v1h-7zM14 8h1v1h-1zM1 9h1v1h-1zM14 9h1v1h-1zM1 10h1v1h-1zM8 10h6v1h-6zM2 11h6v1h-6zM13 11h1v1h-1zM7 12h6v1h-6z"/><path fill="#13b5c9" d="M4 3h8v1h-8zM2 4h2v1h-2zM6 4h8v1h-8zM2 5h4v1h-4zM13 5h1v1h-1zM2 6h3v1h-3zM2 7h3v1h-3zM2 8h4v1h-4zM13 8h1v1h-1zM6 9h8v1h-8z"/><path fill="#7ef4ff" d="M4 4h2v1h-2z"/><path fill="#d8fbff" d="M2 9h4v1h-4zM2 10h6v1h-6zM8 11h5v1h-5z"/><path fill="#ffe600" d="M6 6h4v1h-4zM12 6h1v1h-1zM6 7h7v1h-7z"/><path fill="#fffbd0" d="M10 6h2v1h-2z"/><path fill="#ffe600" d="M14 10h1v1h-1zM14 11h1v1h-1zM13 12h1v1h-1zM9 13h1v1h-1zM12 13h1v1h-1zM8 14h1v1h-1zM12 14h1v1h-1z"/></symbol>
   <symbol id="av-bagre-dj" data-g="Bagres" viewBox="0 0 16 16"><path fill="#00f0ff" d="M0 0h16v16H0z"/><path fill="#07040f" d="M3 1h10v1h-10zM2 2h1v1h-1zM13 2h1v1h-1zM1 3h1v1h-1zM3 3h1v1h-1zM12 3h2v1h-2zM0 4h1v1h-1zM3 4h1v1h-1zM14 4h1v1h-1zM0 5h1v1h-1zM3 5h1v1h-1zM6 5h7v1h-7zM14 5h1v1h-1zM0 6h1v1h-1zM3 6h1v1h-1zM5 6h1v1h-1zM13 6h2v1h-2zM0 7h1v1h-1zM3 7h1v1h-1zM5 7h1v1h-1zM13 7h2v1h-2zM1 8h2v1h-2zM6 8h7v1h-7zM14 8h1v1h-1zM1 9h1v1h-1zM14 9h1v1h-1zM1 10h1v1h-1zM8 10h6v1h-6zM2 11h6v1h-6zM13 11h1v1h-1zM7 12h6v1h-6z"/><path fill="#ff2bd6" d="M4 3h8v1h-8zM6 4h8v1h-8zM4 5h2v1h-2zM13 5h1v1h-1zM4 6h1v1h-1zM4 7h1v1h-1zM3 8h3v1h-3zM13 8h1v1h-1zM6 9h8v1h-8z"/><path fill="#00f0ff" d="M10 6h2v1h-2z"/><path fill="#2a2160" d="M6 6h4v1h-4zM12 6h1v1h-1zM6 7h7v1h-7z"/><path fill="#f4f0ff" d="M4 4h2v1h-2zM2 9h4v1h-4zM2 10h6v1h-6zM14 10h1v1h-1zM8 11h5v1h-5zM14 11h1v1h-1zM13 12h1v1h-1zM9 13h1v1h-1zM12 13h1v1h-1zM8 14h1v1h-1zM12 14h1v1h-1z"/><path fill="#a9a2d6" d="M1 5h1v1h-1zM1 6h1v1h-1z"/><path fill="#4a4470" d="M3 2h10v1h-10zM2 3h1v1h-1zM1 4h2v1h-2zM2 5h1v1h-1zM2 6h1v1h-1zM1 7h2v1h-2z"/></symbol>
@@ -65,87 +67,14 @@
 </svg>
 <!-- /PIXEL:ICONES -->
 
-<!-- ============ ABERTURA ============ -->
-<main id="title" class="title" aria-label="Abertura">
-  <p class="title-hud" aria-hidden="true"><span>1UP <b>000000</b></span><span>HI-SCORE <b>1440P60</b></span><span>CREDIT <b>00</b></span></p>
-  <div class="title-mid">
-    <p class="logo glitch" data-text="BAGRENATION">BAGRENATION</p>
-    <!-- PIXEL:BAGRE -->
-<svg class="bagre" viewBox="0 0 40 19" width="240" height="114" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><g class="f1"><path fill="#07040f" d="M17 1h2v1h-2zM16 2h1v1h-1zM19 2h1v1h-1zM32 2h1v1h-1zM15 3h1v1h-1zM20 3h1v1h-1zM32 3h1v1h-1zM14 4h1v1h-1zM21 4h1v1h-1zM27 4h8v1h-8zM3 5h2v1h-2zM13 5h14v1h-14zM35 5h2v1h-2zM2 6h1v1h-1zM5 6h1v1h-1zM11 6h2v1h-2zM37 6h1v1h-1zM2 7h1v1h-1zM6 7h1v1h-1zM9 7h2v1h-2zM27 7h9v1h-9zM38 7h1v1h-1zM2 8h1v1h-1zM7 8h2v1h-2zM26 8h1v1h-1zM36 8h1v1h-1zM38 8h1v1h-1zM3 9h1v1h-1zM26 9h1v1h-1zM36 9h1v1h-1zM38 9h1v1h-1zM3 10h1v1h-1zM27 10h9v1h-9zM38 10h1v1h-1zM2 11h1v1h-1zM7 11h2v1h-2zM37 11h1v1h-1zM2 12h1v1h-1zM6 12h1v1h-1zM9 12h2v1h-2zM32 12h6v1h-6zM2 13h1v1h-1zM5 13h1v1h-1zM11 13h2v1h-2zM36 13h1v1h-1zM3 14h2v1h-2zM13 14h4v1h-4zM19 14h3v1h-3zM34 14h2v1h-2zM16 15h1v1h-1zM20 15h1v1h-1zM22 15h12v1h-12zM17 16h1v1h-1zM20 16h1v1h-1zM18 17h2v1h-2z"/><path fill="#13b5c9" d="M27 5h8v1h-8zM13 6h16v1h-16zM32 6h5v1h-5zM11 7h10v1h-10zM22 7h5v1h-5zM36 7h2v1h-2zM9 8h12v1h-12zM24 8h2v1h-2zM37 8h1v1h-1zM8 9h4v1h-4zM13 9h10v1h-10zM24 9h2v1h-2zM37 9h1v1h-1zM8 10h4v1h-4zM14 10h13v1h-13zM36 10h2v1h-2zM9 11h4v1h-4zM14 11h23v1h-23zM23 12h9v1h-9z"/><path fill="#0b6c80" d="M12 9h1v1h-1zM12 10h2v1h-2zM13 11h1v1h-1z"/><path fill="#7ef4ff" d="M29 6h3v1h-3z"/><path fill="#d8fbff" d="M11 12h12v1h-12zM13 13h23v1h-23zM22 14h12v1h-12z"/><path fill="#ff2bd6" d="M17 2h2v1h-2zM16 3h4v1h-4zM15 4h1v1h-1zM17 4h4v1h-4zM3 6h2v1h-2zM3 7h3v1h-3zM3 8h1v1h-1zM5 8h2v1h-2zM4 9h1v1h-1zM6 9h2v1h-2zM4 10h1v1h-1zM6 10h2v1h-2zM3 11h1v1h-1zM5 11h2v1h-2zM3 12h3v1h-3zM3 13h2v1h-2zM17 14h2v1h-2zM17 15h1v1h-1zM19 15h1v1h-1zM18 16h2v1h-2z"/><path fill="#8c1478" d="M16 4h1v1h-1zM4 8h1v1h-1zM5 9h1v1h-1zM5 10h1v1h-1zM4 11h1v1h-1zM18 15h1v1h-1z"/><path fill="#ffe600" d="M27 8h5v1h-5zM34 8h2v1h-2zM27 9h9v1h-9z"/><path fill="#fffbd0" d="M32 8h2v1h-2z"/><path fill="#ffe600" d="M39 10h1v1h-1zM38 11h1v1h-1zM38 12h2v1h-2zM39 13h1v1h-1zM36 14h1v1h-1zM34 15h1v1h-1zM36 15h1v1h-1zM30 16h1v1h-1zM33 16h1v1h-1zM36 16h1v1h-1zM29 17h1v1h-1zM33 17h1v1h-1zM28 18h1v1h-1zM33 18h1v1h-1z"/><path fill="#00f0ff" d="M21 7h1v1h-1zM21 8h3v1h-3zM23 9h1v1h-1z"/><path fill="#ff3355" d="M32 1h1v1h-1z"/></g><g class="f2"><path fill="#07040f" d="M17 1h2v1h-2zM16 2h1v1h-1zM19 2h1v1h-1zM15 3h1v1h-1zM20 3h1v1h-1zM32 3h1v1h-1zM14 4h1v1h-1zM21 4h1v1h-1zM27 4h8v1h-8zM13 5h14v1h-14zM35 5h2v1h-2zM3 6h2v1h-2zM11 6h2v1h-2zM37 6h1v1h-1zM2 7h1v1h-1zM5 7h1v1h-1zM9 7h2v1h-2zM27 7h9v1h-9zM38 7h1v1h-1zM2 8h1v1h-1zM6 8h1v1h-1zM8 8h1v1h-1zM26 8h1v1h-1zM36 8h1v1h-1zM38 8h1v1h-1zM2 9h1v1h-1zM7 9h1v1h-1zM26 9h1v1h-1zM36 9h1v1h-1zM38 9h1v1h-1zM3 10h1v1h-1zM27 10h9v1h-9zM38 10h1v1h-1zM3 11h1v1h-1zM8 11h1v1h-1zM37 11h1v1h-1zM2 12h1v1h-1zM7 12h1v1h-1zM9 12h2v1h-2zM32 12h6v1h-6zM2 13h1v1h-1zM6 13h1v1h-1zM11 13h2v1h-2zM36 13h1v1h-1zM2 14h1v1h-1zM5 14h1v1h-1zM13 14h4v1h-4zM19 14h3v1h-3zM34 14h2v1h-2zM3 15h2v1h-2zM17 15h1v1h-1zM20 15h1v1h-1zM22 15h12v1h-12zM17 16h1v1h-1zM20 16h1v1h-1zM18 17h2v1h-2z"/><path fill="#13b5c9" d="M27 5h8v1h-8zM13 6h16v1h-16zM32 6h5v1h-5zM11 7h10v1h-10zM22 7h5v1h-5zM36 7h2v1h-2zM9 8h12v1h-12zM24 8h2v1h-2zM37 8h1v1h-1zM8 9h4v1h-4zM13 9h10v1h-10zM24 9h2v1h-2zM37 9h1v1h-1zM8 10h4v1h-4zM14 10h13v1h-13zM36 10h2v1h-2zM9 11h4v1h-4zM14 11h23v1h-23zM23 12h9v1h-9z"/><path fill="#0b6c80" d="M12 9h1v1h-1zM12 10h2v1h-2zM13 11h1v1h-1z"/><path fill="#7ef4ff" d="M29 6h3v1h-3z"/><path fill="#d8fbff" d="M11 12h12v1h-12zM13 13h23v1h-23zM22 14h12v1h-12z"/><path fill="#ff2bd6" d="M17 2h2v1h-2zM16 3h4v1h-4zM15 4h1v1h-1zM17 4h4v1h-4zM3 7h2v1h-2zM3 8h3v1h-3zM3 9h1v1h-1zM5 9h2v1h-2zM4 10h1v1h-1zM6 10h2v1h-2zM4 11h1v1h-1zM6 11h2v1h-2zM3 12h1v1h-1zM5 12h2v1h-2zM3 13h3v1h-3zM3 14h2v1h-2zM17 14h2v1h-2zM18 15h1v1h-1zM18 16h2v1h-2z"/><path fill="#8c1478" d="M16 4h1v1h-1zM4 9h1v1h-1zM5 10h1v1h-1zM5 11h1v1h-1zM4 12h1v1h-1zM19 15h1v1h-1z"/><path fill="#ffe600" d="M27 8h2v1h-2zM31 8h5v1h-5zM27 9h9v1h-9z"/><path fill="#fffbd0" d="M29 8h2v1h-2z"/><path fill="#ffe600" d="M38 11h2v1h-2zM39 12h1v1h-1zM37 13h1v1h-1zM37 14h1v1h-1zM34 15h1v1h-1zM37 15h1v1h-1zM31 16h1v1h-1zM34 16h1v1h-1zM31 17h1v1h-1zM34 17h1v1h-1zM31 18h1v1h-1zM35 18h1v1h-1z"/><path fill="#00f0ff" d="M21 7h1v1h-1zM21 8h3v1h-3zM23 9h1v1h-1z"/><path fill="#ff3355" d="M32 2h1v1h-1z"/></g></svg>
-<!-- /PIXEL:BAGRE -->
-    <p class="coin" aria-hidden="true">Insert coin</p>
-    <button id="startBtn" class="btn btn-primary btn-xl" type="button" autofocus>Press Start</button>
-  </div>
-</main>
-
-<!-- ============ INÍCIO ============ -->
-<main id="home" class="lobby" hidden>
-  <header class="lobby-top">
-    <a class="brand" href="./" aria-label="BAGRENATION, página inicial">
-      <svg class="brand-mark" viewBox="0 0 16 16" aria-hidden="true"><use href="#mark"/></svg>
-      <span>BAGRENATION</span>
-    </a>
-    <div class="lobby-links">
-      <button class="chip js-sfx" type="button" aria-pressed="false">
-        <svg class="ic" aria-hidden="true"><use href="#i-mute"/></svg>
-        <span class="lbl">Som 8-bit: off</span>
-      </button>
-      <a class="chip" href="https://github.com/alissonlittig/bagrenation" rel="noopener">GitHub</a>
-    </div>
-  </header>
-
-  <section class="lobby-hero">
-    <div class="lobby-card">
-      <div class="card-mascot">
-        <!-- PIXEL:BAGRE2 -->
-<svg class="bagre" viewBox="0 0 40 19" width="240" height="114" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><g class="f1"><path fill="#07040f" d="M17 1h2v1h-2zM16 2h1v1h-1zM19 2h1v1h-1zM32 2h1v1h-1zM15 3h1v1h-1zM20 3h1v1h-1zM32 3h1v1h-1zM14 4h1v1h-1zM21 4h1v1h-1zM27 4h8v1h-8zM3 5h2v1h-2zM13 5h14v1h-14zM35 5h2v1h-2zM2 6h1v1h-1zM5 6h1v1h-1zM11 6h2v1h-2zM37 6h1v1h-1zM2 7h1v1h-1zM6 7h1v1h-1zM9 7h2v1h-2zM27 7h9v1h-9zM38 7h1v1h-1zM2 8h1v1h-1zM7 8h2v1h-2zM26 8h1v1h-1zM36 8h1v1h-1zM38 8h1v1h-1zM3 9h1v1h-1zM26 9h1v1h-1zM36 9h1v1h-1zM38 9h1v1h-1zM3 10h1v1h-1zM27 10h9v1h-9zM38 10h1v1h-1zM2 11h1v1h-1zM7 11h2v1h-2zM37 11h1v1h-1zM2 12h1v1h-1zM6 12h1v1h-1zM9 12h2v1h-2zM32 12h6v1h-6zM2 13h1v1h-1zM5 13h1v1h-1zM11 13h2v1h-2zM36 13h1v1h-1zM3 14h2v1h-2zM13 14h4v1h-4zM19 14h3v1h-3zM34 14h2v1h-2zM16 15h1v1h-1zM20 15h1v1h-1zM22 15h12v1h-12zM17 16h1v1h-1zM20 16h1v1h-1zM18 17h2v1h-2z"/><path fill="#13b5c9" d="M27 5h8v1h-8zM13 6h16v1h-16zM32 6h5v1h-5zM11 7h10v1h-10zM22 7h5v1h-5zM36 7h2v1h-2zM9 8h12v1h-12zM24 8h2v1h-2zM37 8h1v1h-1zM8 9h4v1h-4zM13 9h10v1h-10zM24 9h2v1h-2zM37 9h1v1h-1zM8 10h4v1h-4zM14 10h13v1h-13zM36 10h2v1h-2zM9 11h4v1h-4zM14 11h23v1h-23zM23 12h9v1h-9z"/><path fill="#0b6c80" d="M12 9h1v1h-1zM12 10h2v1h-2zM13 11h1v1h-1z"/><path fill="#7ef4ff" d="M29 6h3v1h-3z"/><path fill="#d8fbff" d="M11 12h12v1h-12zM13 13h23v1h-23zM22 14h12v1h-12z"/><path fill="#ff2bd6" d="M17 2h2v1h-2zM16 3h4v1h-4zM15 4h1v1h-1zM17 4h4v1h-4zM3 6h2v1h-2zM3 7h3v1h-3zM3 8h1v1h-1zM5 8h2v1h-2zM4 9h1v1h-1zM6 9h2v1h-2zM4 10h1v1h-1zM6 10h2v1h-2zM3 11h1v1h-1zM5 11h2v1h-2zM3 12h3v1h-3zM3 13h2v1h-2zM17 14h2v1h-2zM17 15h1v1h-1zM19 15h1v1h-1zM18 16h2v1h-2z"/><path fill="#8c1478" d="M16 4h1v1h-1zM4 8h1v1h-1zM5 9h1v1h-1zM5 10h1v1h-1zM4 11h1v1h-1zM18 15h1v1h-1z"/><path fill="#ffe600" d="M27 8h5v1h-5zM34 8h2v1h-2zM27 9h9v1h-9z"/><path fill="#fffbd0" d="M32 8h2v1h-2z"/><path fill="#ffe600" d="M39 10h1v1h-1zM38 11h1v1h-1zM38 12h2v1h-2zM39 13h1v1h-1zM36 14h1v1h-1zM34 15h1v1h-1zM36 15h1v1h-1zM30 16h1v1h-1zM33 16h1v1h-1zM36 16h1v1h-1zM29 17h1v1h-1zM33 17h1v1h-1zM28 18h1v1h-1zM33 18h1v1h-1z"/><path fill="#00f0ff" d="M21 7h1v1h-1zM21 8h3v1h-3zM23 9h1v1h-1z"/><path fill="#ff3355" d="M32 1h1v1h-1z"/></g><g class="f2"><path fill="#07040f" d="M17 1h2v1h-2zM16 2h1v1h-1zM19 2h1v1h-1zM15 3h1v1h-1zM20 3h1v1h-1zM32 3h1v1h-1zM14 4h1v1h-1zM21 4h1v1h-1zM27 4h8v1h-8zM13 5h14v1h-14zM35 5h2v1h-2zM3 6h2v1h-2zM11 6h2v1h-2zM37 6h1v1h-1zM2 7h1v1h-1zM5 7h1v1h-1zM9 7h2v1h-2zM27 7h9v1h-9zM38 7h1v1h-1zM2 8h1v1h-1zM6 8h1v1h-1zM8 8h1v1h-1zM26 8h1v1h-1zM36 8h1v1h-1zM38 8h1v1h-1zM2 9h1v1h-1zM7 9h1v1h-1zM26 9h1v1h-1zM36 9h1v1h-1zM38 9h1v1h-1zM3 10h1v1h-1zM27 10h9v1h-9zM38 10h1v1h-1zM3 11h1v1h-1zM8 11h1v1h-1zM37 11h1v1h-1zM2 12h1v1h-1zM7 12h1v1h-1zM9 12h2v1h-2zM32 12h6v1h-6zM2 13h1v1h-1zM6 13h1v1h-1zM11 13h2v1h-2zM36 13h1v1h-1zM2 14h1v1h-1zM5 14h1v1h-1zM13 14h4v1h-4zM19 14h3v1h-3zM34 14h2v1h-2zM3 15h2v1h-2zM17 15h1v1h-1zM20 15h1v1h-1zM22 15h12v1h-12zM17 16h1v1h-1zM20 16h1v1h-1zM18 17h2v1h-2z"/><path fill="#13b5c9" d="M27 5h8v1h-8zM13 6h16v1h-16zM32 6h5v1h-5zM11 7h10v1h-10zM22 7h5v1h-5zM36 7h2v1h-2zM9 8h12v1h-12zM24 8h2v1h-2zM37 8h1v1h-1zM8 9h4v1h-4zM13 9h10v1h-10zM24 9h2v1h-2zM37 9h1v1h-1zM8 10h4v1h-4zM14 10h13v1h-13zM36 10h2v1h-2zM9 11h4v1h-4zM14 11h23v1h-23zM23 12h9v1h-9z"/><path fill="#0b6c80" d="M12 9h1v1h-1zM12 10h2v1h-2zM13 11h1v1h-1z"/><path fill="#7ef4ff" d="M29 6h3v1h-3z"/><path fill="#d8fbff" d="M11 12h12v1h-12zM13 13h23v1h-23zM22 14h12v1h-12z"/><path fill="#ff2bd6" d="M17 2h2v1h-2zM16 3h4v1h-4zM15 4h1v1h-1zM17 4h4v1h-4zM3 7h2v1h-2zM3 8h3v1h-3zM3 9h1v1h-1zM5 9h2v1h-2zM4 10h1v1h-1zM6 10h2v1h-2zM4 11h1v1h-1zM6 11h2v1h-2zM3 12h1v1h-1zM5 12h2v1h-2zM3 13h3v1h-3zM3 14h2v1h-2zM17 14h2v1h-2zM18 15h1v1h-1zM18 16h2v1h-2z"/><path fill="#8c1478" d="M16 4h1v1h-1zM4 9h1v1h-1zM5 10h1v1h-1zM5 11h1v1h-1zM4 12h1v1h-1zM19 15h1v1h-1z"/><path fill="#ffe600" d="M27 8h2v1h-2zM31 8h5v1h-5zM27 9h9v1h-9z"/><path fill="#fffbd0" d="M29 8h2v1h-2z"/><path fill="#ffe600" d="M38 11h2v1h-2zM39 12h1v1h-1zM37 13h1v1h-1zM37 14h1v1h-1zM34 15h1v1h-1zM37 15h1v1h-1zM31 16h1v1h-1zM34 16h1v1h-1zM31 17h1v1h-1zM34 17h1v1h-1zM31 18h1v1h-1zM35 18h1v1h-1z"/><path fill="#00f0ff" d="M21 7h1v1h-1zM21 8h3v1h-3zM23 9h1v1h-1z"/><path fill="#ff3355" d="M32 2h1v1h-1z"/></g></svg>
-<!-- /PIXEL:BAGRE2 -->
-      </div>
-      <h1 class="card-tag">Sala</h1>
-      <div class="who-row">
-        <div>
-          <span class="field-label" aria-hidden="true">Avatar</span>
-          <button id="homeAvatar" class="avatar avatar-lg avatar-btn js-avatar" type="button" aria-label="Escolher avatar"></button>
-        </div>
-        <div class="who-name">
-          <label class="field-label" for="homeName">Nome</label>
-          <input id="homeName" class="field" type="text" maxlength="24" autocomplete="nickname" spellcheck="false" placeholder="Nome">
-        </div>
-      </div>
-
-      <button id="createBtn" class="btn btn-primary btn-lg btn-block" type="button">
-        <svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>
-        Criar sala
-      </button>
-
-      <div class="divider" role="presentation"><span>ou</span></div>
-
-      <form id="joinForm" class="join" novalidate>
-        <label class="field-label" for="joinInput">ID da sala</label>
-        <div class="otp">
-          <input id="joinInput" class="otp-input" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="200" aria-describedby="joinError joinHelp">
-          <div class="otp-cells" aria-hidden="true"><span></span><span></span><span></span><span class="gap"></span><span></span><span></span><span></span></div>
-        </div>
-        <p id="joinHelp" class="sr-only">6 letras e números, ou o link da sala.</p>
-        <p id="joinError" class="form-error" role="alert"></p>
-        <button class="btn btn-cyan btn-lg btn-block" type="submit">
-          <span class="lbl">Entrar na sala</span>
-          <svg class="ic" aria-hidden="true"><use href="#i-arrow"/></svg>
-        </button>
-      </form>
-    </div>
-  </section>
-
-</main>
-
-<!-- ============ SALA ============ -->
-<div id="room" class="room" hidden>
-  <aside id="panel" class="side" aria-label="Sala, pessoas e chat">
+<!-- ============ SERVIDOR (sala fixa, como um servidor do Discord) ============ -->
+<div id="room" class="room" data-view="chat">
+  <aside id="panel" class="side" aria-label="Canais e pessoas">
     <div class="side-head">
-      <a class="brand brand-sm" href="./" id="brandLeave" aria-label="BAGRENATION: sair da sala e voltar ao início">
+      <span class="brand brand-sm">
         <svg class="brand-mark" viewBox="0 0 16 16" aria-hidden="true"><use href="#mark"/></svg>
         <span>BAGRENATION</span>
-      </a>
+      </span>
       <button class="icon-btn js-sfx" type="button" aria-pressed="false" title="Sons 8-bit">
         <svg class="ic" aria-hidden="true"><use href="#i-mute"/></svg>
         <span class="lbl sr-only">Som 8-bit: off</span>
@@ -153,33 +82,34 @@
       <button id="panelClose" class="icon-btn side-close" type="button" aria-label="Fechar painel"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
     </div>
 
-    <section class="room-card" aria-label="ID da sala">
-      <p class="label">ID da sala</p>
-      <p id="roomId" class="room-id" aria-live="off"></p>
-      <div class="room-actions">
-        <button id="copyBtn" class="btn btn-soft" type="button">
-          <svg class="ic" aria-hidden="true"><use id="copyIcon" href="#i-copy"/></svg>
-          <span id="copyLabel">Copiar ID</span>
-        </button>
-        <button id="copyLinkBtn" class="linkish" type="button">copiar link</button>
+    <nav class="channels" aria-label="Canais">
+      <h2 class="label">Canais de texto</h2>
+      <button id="chanChat" class="chan" type="button" aria-current="page">
+        <svg class="ic" aria-hidden="true"><use href="#i-hash"/></svg>
+        <span class="chan-name">chat</span>
+        <span id="unread" class="badge chan-badge" hidden></span>
+      </button>
+      <h2 class="label">Canais de voz</h2>
+      <button id="chanVoice" class="chan" type="button">
+        <svg class="ic" aria-hidden="true"><use href="#i-vol"/></svg>
+        <span class="chan-name">Canal de voz</span>
+        <span id="voiceCount" class="chan-count"></span>
+      </button>
+      <ul id="people" class="people people-voice" aria-label="No canal de voz"></ul>
+    </nav>
+
+    <div class="side-section side-online">
+      <h2 class="label">Online <span id="peopleCountSide">1</span></h2>
+      <ul id="online" class="people people-online" aria-label="Online"></ul>
+    </div>
+
+    <div id="vconn" class="vconn" hidden>
+      <div class="vconn-text">
+        <b>Voz conectada</b>
+        <button id="vconnGo" class="linkish" type="button">Canal de voz</button>
       </div>
-    </section>
-
-    <div class="side-section">
-      <h2 class="label">Players <span id="peopleCountSide">1</span></h2>
-      <ul id="people" class="people"></ul>
+      <button id="vconnLeave" class="icon-btn vconn-leave" type="button" aria-label="Sair do canal de voz" title="Sair do canal de voz"><svg class="ic" aria-hidden="true"><use href="#i-leave"/></svg></button>
     </div>
-
-    <div class="side-section side-chat">
-      <h2 class="label">Chat</h2>
-      <ol id="chatLog" class="chat-log" aria-live="polite" aria-label="Mensagens"></ol>
-      <form id="chatForm" class="chat-form">
-        <label class="sr-only" for="chatInput">Mensagem</label>
-        <input id="chatInput" class="field field-sm" type="text" maxlength="500" autocomplete="off" placeholder="Mensagem para a sala">
-        <button class="icon-btn icon-btn-accent" type="submit" aria-label="Enviar mensagem"><svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></button>
-      </form>
-    </div>
-
     <div class="me">
       <button id="meAvatar" class="avatar avatar-btn js-avatar" type="button" aria-label="Trocar avatar"></button>
       <label class="me-name">
@@ -187,180 +117,219 @@
         <input id="nameInput" type="text" maxlength="24" autocomplete="nickname" spellcheck="false">
         <span class="me-sub">nome</span>
       </label>
+      <button id="sideMic" class="icon-btn me-btn" type="button" aria-pressed="false" aria-label="Silenciar microfone"><svg class="ic" aria-hidden="true"><use href="#i-mic"/></svg></button>
+      <button id="sideDeaf" class="icon-btn me-btn" type="button" aria-pressed="false" aria-label="Desligar o som da sala"><svg class="ic" aria-hidden="true"><use href="#i-headset"/></svg></button>
     </div>
   </aside>
 
   <section class="main">
     <header class="topbar">
       <div class="top-title">
-        <span class="top-label">Sala</span>
-        <span id="roomTitle" class="mono"></span>
+        <svg class="ic top-ic" aria-hidden="true"><use id="topIcon" href="#i-hash"/></svg>
+        <h1 id="roomTitle" class="top-name">chat</h1>
         <span id="status" class="status" data-state="connecting" role="status" aria-live="polite">
           <span class="status-dot" aria-hidden="true"></span><span id="statusText">Conectando</span>
         </span>
       </div>
       <div class="top-actions">
-        <button id="joinOtherBtn" class="btn btn-quiet" type="button">
-          <svg class="ic" aria-hidden="true"><use href="#i-enter"/></svg>
-          <span class="lbl">Entrar com ID</span>
-        </button>
         <button id="panelBtn" class="btn btn-quiet" type="button" aria-expanded="false" aria-controls="panel">
           <svg class="ic" aria-hidden="true"><use href="#i-people"/></svg>
           <span id="peopleCount">1</span>
-          <span class="sr-only">pessoas na sala. Mostrar ou ocultar pessoas e chat</span>
-          <span id="unread" class="badge" hidden></span>
+          <span class="sr-only">online. Mostrar ou ocultar canais e pessoas</span>
+          <span id="unreadTop" class="badge" hidden></span>
         </button>
       </div>
     </header>
 
-    <div id="voiceBar" class="voicebar" data-state="wait">
-      <span class="vb-dot" aria-hidden="true"></span>
-      <span id="vbText" class="vb-text" role="status" aria-live="polite"></span>
-      <span id="vbTalk" class="vb-talk" aria-live="off"></span>
-      <button id="micFixBtn" class="btn btn-primary vb-btn" type="button" hidden>
-        <svg class="ic" aria-hidden="true"><use href="#i-mic"/></svg>
-        Ativar microfone
-      </button>
-    </div>
-    <button id="hearBtn" class="btn btn-primary btn-xl hear" type="button" hidden>
-      <svg class="ic" aria-hidden="true"><use href="#i-vol"/></svg>
-      Clique para ouvir
-    </button>
+    <div class="views">
+      <section class="voice-col" aria-label="Canal de voz">
+        <div id="voiceBar" class="voicebar" data-state="wait" hidden>
+          <span class="vb-dot" aria-hidden="true"></span>
+          <span id="vbText" class="vb-text" role="status" aria-live="polite"></span>
+          <span id="vbTalk" class="vb-talk" aria-live="off"></span>
+          <button id="micFixBtn" class="btn btn-primary vb-btn" type="button" hidden>
+            <svg class="ic" aria-hidden="true"><use href="#i-mic"/></svg>
+            Ativar microfone
+          </button>
+        </div>
+        <button id="hearBtn" class="btn btn-primary btn-xl hear" type="button" hidden>
+          <svg class="ic" aria-hidden="true"><use href="#i-vol"/></svg>
+          Clique para ouvir
+        </button>
 
-    <main id="stage" class="stage" aria-label="Telas compartilhadas">
-      <div id="empty" class="empty">
-        <div class="empty-mascot">
-          <!-- PIXEL:BAGRE3 -->
+        <main id="stage" class="stage" aria-label="Canal de voz e telas compartilhadas">
+          <div id="empty" class="empty">
+            <div class="empty-mascot">
+<!-- PIXEL:BAGRE3 -->
 <svg class="bagre" viewBox="0 0 40 19" width="240" height="114" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><g class="f1"><path fill="#07040f" d="M17 1h2v1h-2zM16 2h1v1h-1zM19 2h1v1h-1zM32 2h1v1h-1zM15 3h1v1h-1zM20 3h1v1h-1zM32 3h1v1h-1zM14 4h1v1h-1zM21 4h1v1h-1zM27 4h8v1h-8zM3 5h2v1h-2zM13 5h14v1h-14zM35 5h2v1h-2zM2 6h1v1h-1zM5 6h1v1h-1zM11 6h2v1h-2zM37 6h1v1h-1zM2 7h1v1h-1zM6 7h1v1h-1zM9 7h2v1h-2zM27 7h9v1h-9zM38 7h1v1h-1zM2 8h1v1h-1zM7 8h2v1h-2zM26 8h1v1h-1zM36 8h1v1h-1zM38 8h1v1h-1zM3 9h1v1h-1zM26 9h1v1h-1zM36 9h1v1h-1zM38 9h1v1h-1zM3 10h1v1h-1zM27 10h9v1h-9zM38 10h1v1h-1zM2 11h1v1h-1zM7 11h2v1h-2zM37 11h1v1h-1zM2 12h1v1h-1zM6 12h1v1h-1zM9 12h2v1h-2zM32 12h6v1h-6zM2 13h1v1h-1zM5 13h1v1h-1zM11 13h2v1h-2zM36 13h1v1h-1zM3 14h2v1h-2zM13 14h4v1h-4zM19 14h3v1h-3zM34 14h2v1h-2zM16 15h1v1h-1zM20 15h1v1h-1zM22 15h12v1h-12zM17 16h1v1h-1zM20 16h1v1h-1zM18 17h2v1h-2z"/><path fill="#13b5c9" d="M27 5h8v1h-8zM13 6h16v1h-16zM32 6h5v1h-5zM11 7h10v1h-10zM22 7h5v1h-5zM36 7h2v1h-2zM9 8h12v1h-12zM24 8h2v1h-2zM37 8h1v1h-1zM8 9h4v1h-4zM13 9h10v1h-10zM24 9h2v1h-2zM37 9h1v1h-1zM8 10h4v1h-4zM14 10h13v1h-13zM36 10h2v1h-2zM9 11h4v1h-4zM14 11h23v1h-23zM23 12h9v1h-9z"/><path fill="#0b6c80" d="M12 9h1v1h-1zM12 10h2v1h-2zM13 11h1v1h-1z"/><path fill="#7ef4ff" d="M29 6h3v1h-3z"/><path fill="#d8fbff" d="M11 12h12v1h-12zM13 13h23v1h-23zM22 14h12v1h-12z"/><path fill="#ff2bd6" d="M17 2h2v1h-2zM16 3h4v1h-4zM15 4h1v1h-1zM17 4h4v1h-4zM3 6h2v1h-2zM3 7h3v1h-3zM3 8h1v1h-1zM5 8h2v1h-2zM4 9h1v1h-1zM6 9h2v1h-2zM4 10h1v1h-1zM6 10h2v1h-2zM3 11h1v1h-1zM5 11h2v1h-2zM3 12h3v1h-3zM3 13h2v1h-2zM17 14h2v1h-2zM17 15h1v1h-1zM19 15h1v1h-1zM18 16h2v1h-2z"/><path fill="#8c1478" d="M16 4h1v1h-1zM4 8h1v1h-1zM5 9h1v1h-1zM5 10h1v1h-1zM4 11h1v1h-1zM18 15h1v1h-1z"/><path fill="#ffe600" d="M27 8h5v1h-5zM34 8h2v1h-2zM27 9h9v1h-9z"/><path fill="#fffbd0" d="M32 8h2v1h-2z"/><path fill="#ffe600" d="M39 10h1v1h-1zM38 11h1v1h-1zM38 12h2v1h-2zM39 13h1v1h-1zM36 14h1v1h-1zM34 15h1v1h-1zM36 15h1v1h-1zM30 16h1v1h-1zM33 16h1v1h-1zM36 16h1v1h-1zM29 17h1v1h-1zM33 17h1v1h-1zM28 18h1v1h-1zM33 18h1v1h-1z"/><path fill="#00f0ff" d="M21 7h1v1h-1zM21 8h3v1h-3zM23 9h1v1h-1z"/><path fill="#ff3355" d="M32 1h1v1h-1z"/></g><g class="f2"><path fill="#07040f" d="M17 1h2v1h-2zM16 2h1v1h-1zM19 2h1v1h-1zM15 3h1v1h-1zM20 3h1v1h-1zM32 3h1v1h-1zM14 4h1v1h-1zM21 4h1v1h-1zM27 4h8v1h-8zM13 5h14v1h-14zM35 5h2v1h-2zM3 6h2v1h-2zM11 6h2v1h-2zM37 6h1v1h-1zM2 7h1v1h-1zM5 7h1v1h-1zM9 7h2v1h-2zM27 7h9v1h-9zM38 7h1v1h-1zM2 8h1v1h-1zM6 8h1v1h-1zM8 8h1v1h-1zM26 8h1v1h-1zM36 8h1v1h-1zM38 8h1v1h-1zM2 9h1v1h-1zM7 9h1v1h-1zM26 9h1v1h-1zM36 9h1v1h-1zM38 9h1v1h-1zM3 10h1v1h-1zM27 10h9v1h-9zM38 10h1v1h-1zM3 11h1v1h-1zM8 11h1v1h-1zM37 11h1v1h-1zM2 12h1v1h-1zM7 12h1v1h-1zM9 12h2v1h-2zM32 12h6v1h-6zM2 13h1v1h-1zM6 13h1v1h-1zM11 13h2v1h-2zM36 13h1v1h-1zM2 14h1v1h-1zM5 14h1v1h-1zM13 14h4v1h-4zM19 14h3v1h-3zM34 14h2v1h-2zM3 15h2v1h-2zM17 15h1v1h-1zM20 15h1v1h-1zM22 15h12v1h-12zM17 16h1v1h-1zM20 16h1v1h-1zM18 17h2v1h-2z"/><path fill="#13b5c9" d="M27 5h8v1h-8zM13 6h16v1h-16zM32 6h5v1h-5zM11 7h10v1h-10zM22 7h5v1h-5zM36 7h2v1h-2zM9 8h12v1h-12zM24 8h2v1h-2zM37 8h1v1h-1zM8 9h4v1h-4zM13 9h10v1h-10zM24 9h2v1h-2zM37 9h1v1h-1zM8 10h4v1h-4zM14 10h13v1h-13zM36 10h2v1h-2zM9 11h4v1h-4zM14 11h23v1h-23zM23 12h9v1h-9z"/><path fill="#0b6c80" d="M12 9h1v1h-1zM12 10h2v1h-2zM13 11h1v1h-1z"/><path fill="#7ef4ff" d="M29 6h3v1h-3z"/><path fill="#d8fbff" d="M11 12h12v1h-12zM13 13h23v1h-23zM22 14h12v1h-12z"/><path fill="#ff2bd6" d="M17 2h2v1h-2zM16 3h4v1h-4zM15 4h1v1h-1zM17 4h4v1h-4zM3 7h2v1h-2zM3 8h3v1h-3zM3 9h1v1h-1zM5 9h2v1h-2zM4 10h1v1h-1zM6 10h2v1h-2zM4 11h1v1h-1zM6 11h2v1h-2zM3 12h1v1h-1zM5 12h2v1h-2zM3 13h3v1h-3zM3 14h2v1h-2zM17 14h2v1h-2zM18 15h1v1h-1zM18 16h2v1h-2z"/><path fill="#8c1478" d="M16 4h1v1h-1zM4 9h1v1h-1zM5 10h1v1h-1zM5 11h1v1h-1zM4 12h1v1h-1zM19 15h1v1h-1z"/><path fill="#ffe600" d="M27 8h2v1h-2zM31 8h5v1h-5zM27 9h9v1h-9z"/><path fill="#fffbd0" d="M29 8h2v1h-2z"/><path fill="#ffe600" d="M38 11h2v1h-2zM39 12h1v1h-1zM37 13h1v1h-1zM37 14h1v1h-1zM34 15h1v1h-1zM37 15h1v1h-1zM31 16h1v1h-1zM34 16h1v1h-1zM31 17h1v1h-1zM34 17h1v1h-1zM31 18h1v1h-1zM35 18h1v1h-1z"/><path fill="#00f0ff" d="M21 7h1v1h-1zM21 8h3v1h-3zM23 9h1v1h-1z"/><path fill="#ff3355" d="M32 2h1v1h-1z"/></g></svg>
 <!-- /PIXEL:BAGRE3 -->
-        </div>
-        <h2 id="emptyTitle">Canal de voz</h2>
-        <ul id="voiceGrid" class="voice-grid" aria-label="Quem está no canal de voz"></ul>
-        <p class="say">ID: <span id="emptyId" class="mono"></span></p>
-        <div class="empty-actions">
-          <button class="btn btn-primary btn-lg js-share" type="button">
-            <svg class="ic" aria-hidden="true"><use href="#i-cast"/></svg>
-            Compartilhar minha tela
-          </button>
-        </div>
-        <p id="noShare" class="hint" hidden>Este navegador só assiste, não transmite tela.</p>
-      </div>
-    </main>
+            </div>
+            <h2 id="emptyTitle">Canal de voz</h2>
+            <ul id="voiceGrid" class="voice-grid" aria-label="Quem está no canal de voz"></ul>
+            <p id="emptySay" class="say">Ninguém no canal ainda</p>
+            <div class="empty-actions">
+              <button id="joinVoiceBtn" class="btn btn-primary btn-lg" type="button">
+                <svg class="ic" aria-hidden="true"><use href="#i-headset"/></svg>
+                Entrar no canal de voz
+              </button>
+              <button class="btn btn-primary btn-lg js-share" type="button" hidden>
+                <svg class="ic" aria-hidden="true"><use href="#i-cast"/></svg>
+                Compartilhar minha tela
+              </button>
+            </div>
+            <p id="noShare" class="hint" hidden>Este navegador só assiste, não transmite tela.</p>
+          </div>
+        </main>
 
-    <footer class="dock-wrap">
-      <div class="dock" role="toolbar" aria-label="Controles de voz e da transmissão">
-        <button id="micBtn" class="dock-icon dock-voice" type="button" aria-pressed="false" aria-label="Silenciar microfone"><svg class="ic" aria-hidden="true"><use id="micIcon" href="#i-mic"/></svg></button>
-        <button id="deafBtn" class="dock-icon dock-voice" type="button" aria-pressed="false" aria-label="Desligar o som da sala"><svg class="ic" aria-hidden="true"><use id="deafIcon" href="#i-headset"/></svg></button>
-        <div class="dock-group">
-          <button id="voiceBtn" class="dock-icon" type="button" aria-expanded="false" aria-controls="voicePop" aria-label="Configurações de voz"><svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg></button>
-          <div id="voicePop" class="pop pop-voice" hidden>
-            <p class="pop-title">Voz</p>
-            <label class="select">
-              <span>Microfone</span>
-              <select id="micSelect"><option value="">Padrão do sistema</option></select>
-            </label>
-            <label class="select" id="outWrap">
-              <span>Saída</span>
-              <select id="outSelect"><option value="">Padrão do sistema</option></select>
-            </label>
-            <div class="vu-row">
-              <div id="vu" class="vu" role="meter" aria-label="Nível do microfone" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="vuFill"></i><b id="vuMark"></b></div>
-              <button id="micTestBtn" class="btn btn-quiet" type="button" aria-pressed="false">Testar</button>
+        <footer class="dock-wrap" id="dockWrap" hidden>
+          <div class="dock" role="toolbar" aria-label="Controles de voz e da transmissão">
+            <button id="micBtn" class="dock-icon dock-voice" type="button" aria-pressed="false" aria-label="Silenciar microfone"><svg class="ic" aria-hidden="true"><use id="micIcon" href="#i-mic"/></svg></button>
+            <button id="deafBtn" class="dock-icon dock-voice" type="button" aria-pressed="false" aria-label="Desligar o som da sala"><svg class="ic" aria-hidden="true"><use id="deafIcon" href="#i-headset"/></svg></button>
+            <div class="dock-group">
+              <button id="voiceBtn" class="dock-icon" type="button" aria-expanded="false" aria-controls="voicePop" aria-label="Configurações de voz"><svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg></button>
+              <div id="voicePop" class="pop pop-voice" hidden>
+                <p class="pop-title">Voz</p>
+                <label class="select">
+                  <span>Microfone</span>
+                  <select id="micSelect"><option value="">Padrão do sistema</option></select>
+                </label>
+                <label class="select" id="outWrap">
+                  <span>Saída</span>
+                  <select id="outSelect"><option value="">Padrão do sistema</option></select>
+                </label>
+                <div class="vu-row">
+                  <div id="vu" class="vu" role="meter" aria-label="Nível do microfone" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="vuFill"></i><b id="vuMark"></b></div>
+                  <button id="micTestBtn" class="btn btn-quiet" type="button" aria-pressed="false">Testar</button>
+                </div>
+                <label class="select">
+                  <span>Modo</span>
+                  <select id="voiceMode">
+                    <option value="vad" selected>Detecção de voz</option>
+                    <option value="ptt">Push-to-talk</option>
+                  </select>
+                </label>
+                <label class="select" id="sensWrap">
+                  <span>Sensibilidade <output id="sensOut" for="sens"></output></span>
+                  <input id="sens" type="range" min="0" max="100" step="1" value="0">
+                </label>
+                <div class="select" id="pttWrap" hidden>
+                  <span id="pttLabel">Tecla (com esta guia em foco)</span>
+                  <button id="pttKeyBtn" class="btn btn-quiet" type="button" aria-labelledby="pttLabel pttKeyBtn">V</button>
+                </div>
+                <div class="select js-app" hidden>
+                  <span id="muteKeyLabel">Tecla de mutar (qualquer janela)</span>
+                  <button id="muteKeyBtn" class="btn btn-quiet" type="button" aria-labelledby="muteKeyLabel muteKeyBtn">nenhuma</button>
+                </div>
+                <label class="check"><input id="ecToggle" type="checkbox" checked><span class="switch" aria-hidden="true"></span>Cancelamento de eco</label>
+                <label class="check"><input id="nsToggle" type="checkbox" checked><span class="switch" aria-hidden="true"></span>Supressão de ruído</label>
+                <label class="check js-app" hidden><input id="autoStart" type="checkbox"><span class="switch" aria-hidden="true"></span>Abrir com o Windows</label>
+                <p class="pop-note">De fone, desligue os dois: menos atraso e som estéreo sem filtro.</p>
+              </div>
             </div>
-            <label class="select">
-              <span>Modo</span>
-              <select id="voiceMode">
-                <option value="vad" selected>Detecção de voz</option>
-                <option value="ptt">Push-to-talk</option>
-              </select>
-            </label>
-            <label class="select" id="sensWrap">
-              <span>Sensibilidade <output id="sensOut" for="sens"></output></span>
-              <input id="sens" type="range" min="0" max="100" step="1" value="0">
-            </label>
-            <div class="select" id="pttWrap" hidden>
-              <span id="pttLabel">Tecla (com esta guia em foco)</span>
-              <button id="pttKeyBtn" class="btn btn-quiet" type="button" aria-labelledby="pttLabel pttKeyBtn">V</button>
+            <span class="dock-sep" aria-hidden="true"></span>
+            <button id="shareBtn" class="dock-btn dock-primary js-share" type="button">
+              <svg class="ic" aria-hidden="true"><use id="shareIcon" href="#i-cast"/></svg>
+              <span id="shareLabel" class="lbl">Compartilhar tela</span>
+            </button>
+            <button id="swapBtn" class="dock-btn" type="button" hidden>
+              <svg class="ic" aria-hidden="true"><use href="#i-swap"/></svg>
+              <span class="lbl">Trocar tela</span>
+            </button>
+            <button id="audioBtn" class="dock-btn" type="button" hidden aria-pressed="false">
+              <svg class="ic" aria-hidden="true"><use id="audioIcon" href="#i-vol"/></svg>
+              <span id="audioLabel" class="lbl">Som</span>
+              <span id="meter" class="meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+            </button>
+            <span class="dock-sep js-sender" aria-hidden="true"></span>
+            <div class="dock-group js-sender">
+              <button id="discordBtn" class="dock-btn dock-toggle" type="button" aria-pressed="false" aria-describedby="discordTip">
+                <svg class="ic" aria-hidden="true"><use id="discordIcon" href="#i-chat"/></svg>
+                <span class="lbl">Sem Discord</span>
+                <span class="switch" aria-hidden="true"></span>
+              </button>
+              <button id="guideBtn" class="dock-icon" type="button" aria-label="Como funciona o Sem Discord"><svg class="ic" aria-hidden="true"><use href="#i-help"/></svg></button>
+              <span id="discordTip" class="sr-only">Escolher só janela ou guia ao compartilhar, para o som do Discord não ir junto.</span>
             </div>
-            <div class="select js-app" hidden>
-              <span id="muteKeyLabel">Tecla de mutar (qualquer janela)</span>
-              <button id="muteKeyBtn" class="btn btn-quiet" type="button" aria-labelledby="muteKeyLabel muteKeyBtn">nenhuma</button>
+            <div class="dock-group js-sender">
+              <button id="settingsBtn" class="dock-icon" type="button" aria-expanded="false" aria-controls="settings" aria-label="Qualidade da transmissão"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg></button>
+              <div id="settings" class="pop" hidden>
+                <p class="pop-title">Qualidade da transmissão</p>
+                <label class="select">
+                  <span>Resolução</span>
+                  <select id="quality">
+                    <option value="720p30">720p · 30 fps · leve</option>
+                    <option value="1080p30">1080p · 30 fps</option>
+                    <option value="1080p60" selected>1080p · 60 fps · jogos</option>
+                    <option value="1440p60">1440p · 60 fps · pesado</option>
+                  </select>
+                </label>
+                <label class="select">
+                  <span>Prioridade</span>
+                  <select id="hint">
+                    <option value="motion" selected>Fluidez · jogos e vídeo</option>
+                    <option value="detail">Nitidez · texto e código</option>
+                  </select>
+                </label>
+                <p class="pop-note">Vale já na transmissão em andamento.</p>
+              </div>
             </div>
-            <label class="check"><input id="ecToggle" type="checkbox" checked><span class="switch" aria-hidden="true"></span>Cancelamento de eco</label>
-            <label class="check"><input id="nsToggle" type="checkbox" checked><span class="switch" aria-hidden="true"></span>Supressão de ruído</label>
-            <label class="check js-app" hidden><input id="autoStart" type="checkbox"><span class="switch" aria-hidden="true"></span>Abrir com o Windows</label>
-            <p class="pop-note">De fone, desligue os dois: menos atraso e som estéreo sem filtro.</p>
+            <span class="dock-sep" aria-hidden="true"></span>
+            <button id="leaveBtn" class="dock-icon dock-leave" type="button" aria-label="Sair do canal de voz"><svg class="ic" aria-hidden="true"><use href="#i-leave"/></svg></button>
           </div>
+        </footer>
+      </section>
+
+      <section id="chat" class="chat" aria-label="Chat de texto">
+        <header class="chat-head">
+          <svg class="ic" aria-hidden="true"><use href="#i-hash"/></svg>
+          <h2>chat</h2>
+          <span id="chatState" class="chat-state"></span>
+        </header>
+        <div id="chatScroll" class="chat-scroll">
+          <button id="moreBtn" class="linkish chat-more" type="button" hidden>Carregar mensagens antigas</button>
+          <ol id="chatLog" class="chat-log" aria-live="polite" aria-label="Mensagens"></ol>
         </div>
-        <span class="dock-sep" aria-hidden="true"></span>
-        <button id="shareBtn" class="dock-btn dock-primary js-share" type="button">
-          <svg class="ic" aria-hidden="true"><use id="shareIcon" href="#i-cast"/></svg>
-          <span id="shareLabel" class="lbl">Compartilhar tela</span>
-        </button>
-        <button id="swapBtn" class="dock-btn" type="button" hidden>
-          <svg class="ic" aria-hidden="true"><use href="#i-swap"/></svg>
-          <span class="lbl">Trocar tela</span>
-        </button>
-        <button id="audioBtn" class="dock-btn" type="button" hidden aria-pressed="false">
-          <svg class="ic" aria-hidden="true"><use id="audioIcon" href="#i-vol"/></svg>
-          <span id="audioLabel" class="lbl">Som</span>
-          <span id="meter" class="meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-        </button>
-        <span class="dock-sep js-sender" aria-hidden="true"></span>
-        <div class="dock-group js-sender">
-          <button id="discordBtn" class="dock-btn dock-toggle" type="button" aria-pressed="false" aria-describedby="discordTip">
-            <svg class="ic" aria-hidden="true"><use id="discordIcon" href="#i-chat"/></svg>
-            <span class="lbl">Sem Discord</span>
-            <span class="switch" aria-hidden="true"></span>
-          </button>
-          <button id="guideBtn" class="dock-icon" type="button" aria-label="Como funciona o Sem Discord"><svg class="ic" aria-hidden="true"><use href="#i-help"/></svg></button>
-          <span id="discordTip" class="sr-only">Escolher só janela ou guia ao compartilhar, para o som do Discord não ir junto.</span>
-        </div>
-        <div class="dock-group js-sender">
-          <button id="settingsBtn" class="dock-icon" type="button" aria-expanded="false" aria-controls="settings" aria-label="Qualidade da transmissão"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg></button>
-          <div id="settings" class="pop" hidden>
-            <p class="pop-title">Qualidade da transmissão</p>
-            <label class="select">
-              <span>Resolução</span>
-              <select id="quality">
-                <option value="720p30">720p · 30 fps · leve</option>
-                <option value="1080p30">1080p · 30 fps</option>
-                <option value="1080p60" selected>1080p · 60 fps · jogos</option>
-                <option value="1440p60">1440p · 60 fps · pesado</option>
-              </select>
-            </label>
-            <label class="select">
-              <span>Prioridade</span>
-              <select id="hint">
-                <option value="motion" selected>Fluidez · jogos e vídeo</option>
-                <option value="detail">Nitidez · texto e código</option>
-              </select>
-            </label>
-            <p class="pop-note">Vale já na transmissão em andamento.</p>
+        <form id="chatForm" class="composer">
+          <div id="attach" class="attach" hidden></div>
+          <div class="composer-row">
+            <button id="fileBtn" class="icon-btn composer-file" type="button" aria-label="Enviar imagem, GIF ou vídeo" title="Enviar imagem, GIF ou vídeo (até 25 MB). Também dá para colar ou arrastar."><svg class="ic" aria-hidden="true"><use href="#i-image"/></svg></button>
+            <input id="fileInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/quicktime" multiple hidden>
+            <label class="sr-only" for="chatInput">Mensagem</label>
+            <input id="chatInput" class="field field-sm composer-input" type="text" maxlength="2000" autocomplete="off" placeholder="Conversar em #chat">
+            <button class="icon-btn icon-btn-accent" type="submit" aria-label="Enviar mensagem"><svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></button>
           </div>
-        </div>
-        <span class="dock-sep" aria-hidden="true"></span>
-        <button id="leaveBtn" class="dock-icon dock-leave" type="button" aria-label="Sair da sala"><svg class="ic" aria-hidden="true"><use href="#i-leave"/></svg></button>
-      </div>
-    </footer>
+        </form>
+        <div class="drop" aria-hidden="true"><p>Solte para enviar no #chat</p></div>
+      </section>
+    </div>
   </section>
 </div>
 
-<!-- Entrar em outra sala -->
-<dialog id="joinDlg" class="dlg" aria-labelledby="joinDlgTitle">
-  <form id="joinOtherForm" class="dlg-body" novalidate>
+<!-- Primeira vez: nome e avatar -->
+<dialog id="nameDlg" class="dlg" aria-labelledby="nameTitle">
+  <form id="nameForm" class="dlg-body" novalidate>
     <div class="dlg-head">
-      <h2 id="joinDlgTitle">Entrar com ID</h2>
-      <button class="icon-btn js-close" type="button" aria-label="Fechar"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
+      <h2 id="nameTitle">Bem-vindo ao BAGRENATION</h2>
     </div>
-        <label class="field-label" for="joinOtherInput">ID da sala</label>
-    <div class="otp">
-      <input id="joinOtherInput" class="otp-input" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="200" aria-describedby="joinOtherError">
-      <div class="otp-cells" aria-hidden="true"><span></span><span></span><span></span><span class="gap"></span><span></span><span></span><span></span></div>
+    <div class="who-row">
+      <div>
+        <span class="field-label" aria-hidden="true">Avatar</span>
+        <button id="homeAvatar" class="avatar avatar-lg avatar-btn js-avatar" type="button" aria-label="Escolher avatar"></button>
+      </div>
+      <div class="who-name">
+        <label class="field-label" for="homeName">Nome</label>
+        <input id="homeName" class="field" type="text" maxlength="24" autocomplete="nickname" spellcheck="false" placeholder="Como te chamam?">
+      </div>
     </div>
-    <p id="joinOtherError" class="form-error" role="alert"></p>
     <button class="btn btn-primary btn-lg btn-block" type="submit"><span class="lbl">Entrar</span><svg class="ic" aria-hidden="true"><use href="#i-arrow"/></svg></button>
   </form>
+</dialog>
+
+<!-- Imagem/GIF em tamanho grande -->
+<dialog id="viewDlg" class="dlg dlg-view" aria-label="Imagem">
+  <button class="icon-btn js-close view-close" type="button" aria-label="Fechar"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
+  <img id="viewImg" alt="">
+  <a id="viewOpen" class="linkish view-open" href="#" target="_blank" rel="noopener">abrir original</a>
 </dialog>
 
 <!-- Galeria de avatares -->
@@ -464,6 +433,6 @@
 </template>
 
 <noscript><p class="noscript">O BAGRENATION precisa de JavaScript para conectar as pessoas da sala.</p></noscript>
-<script src="app.js?v=1215" defer></script>
+<script src="app.js?v=1318" defer></script>
 </body>
 </html>

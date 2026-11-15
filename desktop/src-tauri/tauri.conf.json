@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "BAGRENATION",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "identifier": "io.github.alissonlittig.bagrenation",
   "build": {
     "frontendDist": "../dist",
@@ -35,7 +35,7 @@
     "createUpdaterArtifacts": true,
     "publisher": "Alisson Littig",
     "copyright": "MIT",
-    "shortDescription": "Voz e tela com os amigos por um ID de sala",
+    "shortDescription": "Servidor de voz, chat e tela com os amigos",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
     "windows": {
       "nsis": {

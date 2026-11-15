@@ -1,10 +1,10 @@
-"""Teste do app para PC (desktop/, Tauri) junto com o site no navegador, na mesma sala.
+"""Teste do app para PC (desktop/, Tauri) junto com o site no navegador, no mesmo servidor (de teste).
 
 Abre o app escondido na bandeja (--minimized, a tela não muda), controla a página dele pelo DevTools do WebView2
 e coloca um Chromium com microfone e tela falsos na mesma sala. Confere: app <-> site se veem e se ouvem, tela
 do site chega no app, tecla global de push-to-talk e de mutar com OUTRA janela em foco (tecla F13/F14 injetada
 no Windows, como um teclado), aviso de quem entra, bandeja (eventos), animações pausadas escondido, abrir com
-o Windows (registro) e o link da sala apontando para o site público.
+o Windows (registro) e o chat permanente com imagem enviada de dentro do app.
 Uso:  python tests/test_app.py <caminho do bagrenation.exe> [pasta de prints]
 Requer: pip install playwright psutil && playwright install chromium; internet (sinalização PeerJS pública).
 """
@@ -15,6 +15,7 @@ import http.server
 import os
 import pathlib
 import re
+import secrets
 import subprocess
 import sys
 import threading
@@ -33,6 +34,7 @@ ARGS = ("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disabl
         "--disable-renderer-backgrounding --disable-backgrounding-occluded-windows --autoplay-policy=no-user-gesture-required "
         f"--remote-debugging-port={PORT} --use-fake-device-for-media-stream --auto-select-desktop-capture-source=Tela")  # "Tela inteira" do seletor (Windows em português), sem clicar
 errors = []
+SRV = f"teste-app-{secrets.token_hex(3)}"  # servidor de teste: não aparece no BAGRENATION de verdade
 
 # ---------- tecla "de verdade": SendInput por scan code (o gancho global vê igual a um teclado) ----------
 user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -118,7 +120,7 @@ def main():
             wait(a, "document.readyState === 'complete'")
             wait(a, "!!window.__TAURI__ && document.readyState === 'complete'", 20000)  # ponte do Tauri
             expect(a.locator("html")).to_have_class("is-app app-hidden")  # aberto na bandeja = animações pausadas
-            assert a.evaluate("getComputedStyle(document.querySelector('.coin')).animationPlayState") == "paused"
+            assert a.evaluate("getComputedStyle(document.querySelector('.status-dot')).animationPlayState") == "paused"
             assert "BAGRENATION" not in fg_title(), "o app roubou o foco"
             step(f"app abriu escondido na bandeja (foco segue em '{fg_title()[:40]}'), animações pausadas")
 
@@ -128,28 +130,35 @@ def main():
               const wrap = (T) => ({ ...T, __spy: 1, core: { ...T.core, invoke: (c, x, o) => { window.__calls.push([c, x]); return T.core.invoke(c, x, o); } } });
               Object.defineProperty(window, '__TAURI__', { configurable: true, enumerable: true,
                 get: () => (v && v.core && !v.__spy ? (v = wrap(v)) : v), set: (T) => { v = T; } }); })()""")
-            a.reload()
-            wait(a, "document.readyState === 'complete' && window.__calls.some(([c]) => c === 'is_visible')", 20000)
+            a.evaluate(f"location.search = '?servidor={SRV}'")
+            wait(a, "document.readyState === 'complete' && location.search.includes('servidor') && window.__calls.some(([c]) => c === 'is_visible')", 20000)
             expect(a.locator("html")).to_have_class("is-app app-hidden")
-            a.keyboard.press("Enter")
-            a.fill("#homeName", "App")
-            a.click("#createBtn")
+            if a.locator("#nameDlg").is_visible():
+                a.fill("#homeName", "App")
+                a.click("#nameForm [type=submit]")
+            a.evaluate("localStorage.setItem('bagrenation:name', 'App')")
+            a.fill("#nameInput", "App")
+            a.locator("#nameInput").dispatch_event("change")
             connected(a)
-            code = a.url.split("#")[1]
+            a.click("#chanVoice")
+            expect(a.locator("#vconn")).to_be_visible()
             assert a.evaluate("document.getElementById('autoStart').closest('label').hidden") is False
-            step(f"app criou a sala {code}")
+            step(f"app abriu direto no servidor {SRV} e entrou no canal de voz")
 
             browser = launch(p)
             ctx = browser.new_context(viewport={"width": 1366, "height": 768}, bypass_csp=True)
             b = ctx.new_page()
             b.add_init_script(FAKE_SCREEN)
             b.on("pageerror", lambda e: errors.append(f"[site] excecao: {e}"))
-            b.goto(base + "#" + code)
+            b.goto(f"{base}?servidor={SRV}")
+            b.fill("#homeName", "Site")
+            b.click("#nameForm [type=submit]")
             connected(b)
             for pg in (a, b):
                 expect(pg.locator("#peopleCount")).to_have_text("2", timeout=45000)
-            wait(a, "window.__calls.some(([c, x]) => c === 'notify' && x.body.includes('entrou'))")
-            step("site entrou pelo ID; app avisou 'Visitante entrou' com a janela escondida")
+            b.click("#chanVoice")
+            wait(a, "window.__calls.some(([c, x]) => c === 'notify' && x.body.includes('Site entrou no canal de voz'))")
+            step("site abriu no mesmo servidor e entrou no canal; app avisou 'Site entrou no canal de voz' com a janela escondida")
 
             # voz nos dois sentidos (pacotes chegando)
             for pg, who in ((a, "app"), (b, "site")):
@@ -168,36 +177,39 @@ def main():
                 a.screenshot(path=str(SHOTS / "app_sala_com_tela.png"))
             step("tela + áudio do site chegam no app")
 
-            # app transmite a tela de verdade (getDisplayMedia do WebView2) e o site recebe
-            b.click("#shareBtn")  # site para a dele; a única tela no site passa a ser a do app
-            expect(b.locator('.tile video')).to_have_count(0)
-            a.click("#shareBtn")  # clique de verdade: getDisplayMedia sem gesto do usuário derruba o renderer do WebView2
-            expect(a.locator('#shareBtn')).to_have_class(re.compile('is-live'), timeout=15000)
-            playing(b, 0)
-            vw = b.evaluate("Math.max(...[...document.querySelectorAll('.tile video')].map(v => v.videoWidth))")
-            step(f"app transmite a tela do PC pelo WebView2 e o site recebe ({vw} px de largura)")
+            if os.environ.get("SEM_TELA") == "1":  # segundo plano: sem capturar a tela real nem injetar teclas no Windows
+                print("   (SEM_TELA=1: pulei tela real do app e teclas globais F13/F14)")
+            else:
+                # app transmite a tela de verdade (getDisplayMedia do WebView2) e o site recebe
+                b.click("#shareBtn")  # site para a dele; a única tela no site passa a ser a do app
+                expect(b.locator('.tile video')).to_have_count(0)
+                a.click("#shareBtn")  # clique de verdade: getDisplayMedia sem gesto do usuário derruba o renderer do WebView2
+                expect(a.locator('#shareBtn')).to_have_class(re.compile('is-live'), timeout=15000)
+                playing(b, 0)
+                vw = b.evaluate("Math.max(...[...document.querySelectorAll('.tile video')].map(v => v.videoWidth))")
+                step(f"app transmite a tela do PC pelo WebView2 e o site recebe ({vw} px de largura)")
 
-            # tecla global: push-to-talk F13 e mutar F14, com outra janela em foco
-            a.evaluate("document.getElementById('voiceMode').value = 'ptt'; document.getElementById('voiceMode').dispatchEvent(new Event('change'))")
-            for btn, k in (("#pttKeyBtn", "F13"), ("#muteKeyBtn", "F14")):
-                a.evaluate(f"document.querySelector('{btn}').click()")
-                a.evaluate(f"document.dispatchEvent(new KeyboardEvent('keydown', {{ code: '{k}', key: '{k}', bubbles: true }}))")  # Playwright não tem F13
-                expect(a.locator(btn)).to_have_text(k)
-            a.wait_for_timeout(400)
-            assert "BAGRENATION" not in fg_title()
-            assert a.evaluate("BAGRENATION.mic().enabled") is False, "PTT solto mas microfone aberto"
-            key(F13)
-            wait(a, "BAGRENATION.mic().enabled === true", timeout=3000)
-            b.wait_for_function(TALKING, timeout=8000)
-            key(F13, up=True)
-            wait(a, "BAGRENATION.mic().enabled === false", timeout=3000)
-            step(f"push-to-talk F13 global com '{fg_title()[:40]}' em foco: abre segurando, fecha soltando; site vê falando")
-            key(F14); key(F14, up=True)
-            expect(a.locator("#micBtn")).to_have_attribute("aria-pressed", "true")
-            b.wait_for_function("[...document.querySelectorAll('.is-muted')].some((el) => el.textContent.includes('App'))")
-            key(F14); key(F14, up=True)
-            expect(a.locator("#micBtn")).to_have_attribute("aria-pressed", "false")
-            step("tecla global de mutar F14: muta e desmuta (site vê o estado)")
+                # tecla global: push-to-talk F13 e mutar F14, com outra janela em foco
+                a.evaluate("document.getElementById('voiceMode').value = 'ptt'; document.getElementById('voiceMode').dispatchEvent(new Event('change'))")
+                for btn, k in (("#pttKeyBtn", "F13"), ("#muteKeyBtn", "F14")):
+                    a.evaluate(f"document.querySelector('{btn}').click()")
+                    a.evaluate(f"document.dispatchEvent(new KeyboardEvent('keydown', {{ code: '{k}', key: '{k}', bubbles: true }}))")  # Playwright não tem F13
+                    expect(a.locator(btn)).to_have_text(k)
+                a.wait_for_timeout(400)
+                assert "BAGRENATION" not in fg_title()
+                assert a.evaluate("BAGRENATION.mic().enabled") is False, "PTT solto mas microfone aberto"
+                key(F13)
+                wait(a, "BAGRENATION.mic().enabled === true", timeout=3000)
+                b.wait_for_function(TALKING, timeout=8000)
+                key(F13, up=True)
+                wait(a, "BAGRENATION.mic().enabled === false", timeout=3000)
+                step(f"push-to-talk F13 global com '{fg_title()[:40]}' em foco: abre segurando, fecha soltando; site vê falando")
+                key(F14); key(F14, up=True)
+                expect(a.locator("#micBtn")).to_have_attribute("aria-pressed", "true")
+                b.wait_for_function("[...document.querySelectorAll('.is-muted')].some((el) => el.textContent.includes('App'))")
+                key(F14); key(F14, up=True)
+                expect(a.locator("#micBtn")).to_have_attribute("aria-pressed", "false")
+                step("tecla global de mutar F14: muta e desmuta (site vê o estado)")
 
             # bandeja: os itens mandam 'tray' para a página
             a.evaluate("window.__TAURI__.event.emit('tray', 'deaf')")
@@ -215,12 +227,18 @@ def main():
             a.evaluate(f"window.__TAURI__.core.invoke('autostart', {{ on: {str(bool(before)).lower()} }})")
             step(f"abrir com o Windows grava HKCU Run: {reg}")
 
-            # link da sala = site público
-            assert a.evaluate("document.querySelector('#copyLinkBtn') !== null")
-            a.evaluate("navigator.clipboard.writeText = (t) => { window.__clip = t; return Promise.resolve(); }")
-            a.evaluate("document.getElementById('copyLinkBtn').click()")
-            assert a.evaluate("window.__clip") == f"https://alissonlittig.github.io/bagrenation/#{code}", a.evaluate("window.__clip")
-            step("copiar link no app dá o endereço do site público")
+            # chat permanente: o app (origem tauri.localhost) manda texto + imagem, o site recebe
+            a.click("#chanChat")
+            a.set_input_files("#fileInput", files=[{"name": "do-app.png", "mimeType": "image/png", "buffer": (ROOT / "og.png").read_bytes()}])
+            a.fill("#chatInput", "mensagem do app")
+            a.press("#chatInput", "Enter")
+            item = b.locator("#chatLog .msg", has=b.locator(".msg-text", has_text="mensagem do app"))
+            expect(item.locator(".msg-media img")).to_have_count(1, timeout=30000)
+            b.wait_for_function("() => [...document.querySelectorAll('#chatLog .msg-media img')].every((i) => i.complete && i.naturalWidth > 0)")
+            wait(a, "[...document.querySelectorAll('#chatLog .msg-media img')].some((i) => i.complete && i.naturalWidth > 0)")
+            if SHOTS:
+                a.screenshot(path=str(SHOTS / "app_chat.png"))
+            step("chat: texto + imagem enviados pelo app chegam no site e aparecem no próprio app")
 
             a.evaluate("document.getElementById('leaveBtn').click()")
             b.close(); browser.close()

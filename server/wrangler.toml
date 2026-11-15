@@ -1,0 +1,14 @@
+# Chat de texto permanente do BAGRENATION (mensagens + imagens/vídeos/GIFs).
+# Cloudflare Workers plano grátis: um Durable Object com SQLite por servidor (sem cartão, sem banco externo).
+name = "bagrenation-chat"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[[durable_objects.bindings]]
+name = "SERVER"
+class_name = "Server"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Server"]

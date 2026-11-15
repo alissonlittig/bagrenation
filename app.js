@@ -7,16 +7,20 @@
  *    Se quem o mantinha sai, outro membro assume: o link da sala nunca morre.
  *  - Os membros se conectam todos entre si (malha) por canal de dados; quem transmite
  *    abre uma chamada de mídia para cada um. Vídeo e áudio nunca passam por servidor.
- *  - Voz: entrar na sala = entrar no canal de voz. Cada par de membros tem uma conexão só de
- *    áudio (RTCPeerConnection própria, negociada pelo canal de dados), separada da tela.
+ *  - Servidor fixo (como um servidor do Discord): abrir = já estar na sala, vendo quem está online e o chat.
+ *    O canal de voz é à parte: entra e sai pelo botão. Cada par de membros que está no canal tem uma conexão
+ *    só de áudio (RTCPeerConnection própria, negociada pelo canal de dados), separada da tela.
+ *  - Chat de texto permanente (com imagem, GIF e vídeo) fica num Worker da Cloudflare (server/worker.js).
  */
 (() => {
   'use strict';
 
   const $ = (id) => document.getElementById(id);
   const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'; // sem 0/o, 1/l/i
-  // ID novo: 6 caracteres (31^6 ≈ 887 milhões), fácil de ditar. Links antigos de 10 seguem valendo.
-  const CODE_RE = new RegExp(`^(?:[${ALPHABET}]{6}|[${ALPHABET}]{10})$`);
+  // Servidor único e permanente. ?servidor=nome abre outro (os testes usam isso para não entrar no de verdade).
+  const asked = new URLSearchParams(location.search).get('servidor') || '';
+  const SERVER = /^[a-z0-9-]{1,40}$/.test(asked) ? asked : 'bagrenation';
+  const CHAT = `https://bagrenation-chat.alissondelittig.workers.dev/s/${SERVER}`;
   const QUALITY = {
     '720p30': { w: 1280, h: 720, fps: 30, bitrate: 3_000_000 },
     '1080p30': { w: 1920, h: 1080, fps: 30, bitrate: 6_000_000 },
@@ -34,10 +38,10 @@
   const CAN_SHARE = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
   // App para PC (desktop/, Tauri): esta mesma página com tecla global, bandeja e avisos. No navegador é undefined.
   const DESK = window.__TAURI__ || null;
-  const SITE = 'https://alissonlittig.github.io/bagrenation/';
 
   // ---------- estado ----------
-  let room = null;          // código da sala (10 caracteres)
+  let room = null;          // nome do servidor (fixo) quando conectado
+  let inVoice = false;      // estou no canal de voz?
   let myId = null;
   let peer = null;          // meu Peer de membro
   let dirPeer = null;       // Peer do diretório, se eu for o responsável
@@ -109,13 +113,6 @@
     }
     return out;
   }
-  function parseCode(text) {
-    const raw = String(text || '').toLowerCase();
-    const code = raw.slice(raw.lastIndexOf('#') + 1).replace(/[^a-z0-9]/g, '');
-    return CODE_RE.test(code) ? code : null;
-  }
-  const half = (code) => Math.ceil(code.length / 2);
-  const pretty = (code) => `${code.slice(0, half(code))}-${code.slice(half(code))}`.toUpperCase();
   const dirId = () => `bagrenation-${room}-dir`;
   const isMember = (id) => typeof id === 'string' && id.startsWith(`bagrenation-${room}-m-`) && id.length < 64;
   const setIcon = (use, name) => use.setAttribute('href', `#i-${name}`);
@@ -264,9 +261,9 @@
     if (!isMember(id) || id === myId) { c.on('open', () => c.close()); return; }
     let e = peers.get(id);
     if (!e) {
-      e = { id, name: 'Convidado', av: '', named: false, ready: false, born: Date.now(), seen: Date.now(),
+      e = { id, name: 'Convidado', av: '', named: false, invoice: false, ready: false, born: Date.now(), seen: Date.now(),
         conn: null, sharing: false, call: null, out: null, tile: null,
-        volume: 1, muted: false, blocked: false, wanted: 0, fails: 0, chatAt: 0, bytes: 0, bytesAt: 0,
+        volume: 1, muted: false, blocked: false, wanted: 0, fails: 0, bytes: 0, bytesAt: 0,
         // voz
         audio: document.body.appendChild(Object.assign(document.createElement('audio'), { autoplay: true })),
         vpc: null, vsend: null, vq: [], vAt: 0, vfails: 0, vvol: 1,
@@ -279,9 +276,7 @@
     c.on('open', () => {
       if (e.conn !== c) return;
       e.ready = true; e.seen = Date.now();
-      c.send(hello());
-      if (local) callPeer(e);
-      if (myId > id) voiceStart(e);
+      c.send(hello()); // voz e tela começam quando a resposta disser que a pessoa está no canal (linkVoice)
       renderPeople();
     });
     c.on('data', (d) => { if (e.conn === c) onData(e, d); });
@@ -289,7 +284,7 @@
     c.on('error', () => {});
   }
 
-  const hello = () => ({ t: 'hello', name: myName, av: myAv, sharing: !!local, muted: voice.muted || !voice.track, deaf: voice.deaf, talking: voice.talking });
+  const hello = () => ({ t: 'hello', name: myName, av: myAv, voice: inVoice, sharing: !!local, muted: voice.muted || !voice.track, deaf: voice.deaf, talking: voice.talking });
   function send(e, msg) { if (e.conn && e.conn.open) e.conn.send(msg); }
   function broadcast(msg) { for (const e of peers.values()) send(e, msg); }
 
@@ -305,19 +300,20 @@
       e.vmuted = d.muted === true;
       e.vdeaf = d.deaf === true;
       e.talking = d.talking === true && !e.vmuted; // quem chega no meio de uma fala já vê o anel aceso
-      if (first) {
-        note(`${e.name} entrou`); sfx('in'); e.wanted = Date.now();
-        if (DESK && (!document.hasFocus() || document.documentElement.classList.contains('app-hidden'))) DESK.core.invoke('notify', { body: `${e.name} entrou na sala ${pretty(room)}` }).catch(() => {});
+      const was = e.invoice;
+      e.invoice = d.voice === true;
+      if (e.invoice && !was) {
+        e.wanted = Date.now();
+        if (!first || inVoice) { note(`${e.name} entrou no canal de voz`); sfx('in'); }
+        if (!first && DESK && (!document.hasFocus() || document.documentElement.classList.contains('app-hidden'))) DESK.core.invoke('notify', { body: `${e.name} entrou no canal de voz` }).catch(() => {});
+      } else if (!e.invoice && was) {
+        offVoice(e);
+        if (inVoice) { note(`${e.name} saiu do canal de voz`); sfx('out'); }
       }
       if (!e.sharing) { e.stopped = false; removeStream(e); }
       if (e.tile) e.tile.setName(e.name);
+      linkVoice(e);
       renderPeople();
-    } else if (d.t === 'chat') {
-      const now = Date.now();
-      if (now - e.chatAt < 250) return; // no máximo 4 mensagens por segundo por pessoa
-      e.chatAt = now;
-      const text = clean(d.text, 500);
-      if (text) addChat(e.name, text);
     } else if (d.t === 'want') {
       if (local) callPeer(e);
     } else if (d.t === 'unwatch') { // parou de assistir: some só para ele, a voz (outra conexão) segue
@@ -333,7 +329,7 @@
       ring(e.id, e.talking);
     } else if (d.t === 'vo' || d.t === 'va') {
       if (typeof d.sdp !== 'string' || d.sdp.length > 20000) return;
-      if (d.t === 'vo') { if (myId < e.id) voiceAnswer(e, d.sdp); } // só aceito oferta de quem deve oferecer (maior ID)
+      if (d.t === 'vo') { if (myId < e.id && inVoice && e.invoice) voiceAnswer(e, d.sdp); } // só aceito oferta de quem deve oferecer (maior ID), os dois no canal
       else if (e.vpc && e.vpc.signalingState === 'have-local-offer') {
         const pc = e.vpc;
         pc.setRemoteDescription({ type: 'answer', sdp: voiceSdp(d.sdp) })
@@ -359,8 +355,45 @@
     removeStream(e);
     voiceClose(e);
     e.audio.remove();
-    if (e.named && !silent && !leaving) { note(`${e.name} saiu`); sfx('out'); }
+    if (e.named && e.invoice && inVoice && !silent && !leaving) { note(`${e.name} saiu do canal de voz`); sfx('out'); }
     renderPeople();
+  }
+
+  // ---------- canal de voz: entrar e sair ----------
+  // Voz e tela só existem entre quem está no canal. Fora dele a pessoa segue online (lista e chat).
+  function linkVoice(e) {
+    if (!inVoice || !e.invoice || !e.conn || !e.conn.open) return;
+    if (myId > e.id && !e.vpc) voiceStart(e); // quem tem o maior ID oferece
+    if (local && !e.out) callPeer(e);
+  }
+  function offVoice(e) { // a pessoa (ou eu) saiu do canal: fecha voz e tela com ela
+    voiceClose(e);
+    removeStream(e);
+    e.stopped = false; e.nowatch = false; e.talking = false;
+    if (e.out) { const c = e.out; e.out = null; c.close(); }
+  }
+  function joinVoice() {
+    setView('voice');
+    if (inVoice || !room) return;
+    inVoice = true;
+    openMic(); // negado = aviso curto + botão "Ativar microfone" na faixa da voz
+    sfx('in');
+    broadcast(hello());
+    for (const e of peers.values()) linkVoice(e);
+    renderVoice(); layout();
+  }
+  function leaveVoice() {
+    if (!inVoice) return;
+    stopShare();
+    inVoice = false;
+    for (const e of peers.values()) offVoice(e);
+    closeMic();
+    voice.keyDown = false;
+    $('hearBtn').hidden = true;
+    togglePop('voicePop', false);
+    broadcast(hello());
+    sfx('out');
+    renderVoice(); layout();
   }
 
   function resetMesh() {
@@ -388,7 +421,7 @@
   }
 
   function callPeer(e) {
-    if (e.nowatch || !local || !peer || !peer.open || !e.conn || !e.conn.open) return;
+    if (e.nowatch || !local || !inVoice || !e.invoice || !peer || !peer.open || !e.conn || !e.conn.open) return;
     if (e.out) e.out.close();
     const call = peer.call(e.id, local.stream, { sdpTransform: hifi });
     if (!call) return;
@@ -457,6 +490,7 @@
 
   async function share() {
     if (!CAN_SHARE) return;
+    if (!inVoice) joinVoice(); // tela é dentro do canal de voz, como no Discord
     let stream;
     try {
       stream = await capture();
@@ -535,7 +569,7 @@
   // ---------- mídia: receber ----------
   function onCall(call) {
     const e = peers.get(call.peer);
-    if (!e || e.stopped) { call.close(); return; } // só aceito mídia de quem já está na malha da sala (e que eu não parei de assistir)
+    if (!e || e.stopped || !inVoice || !e.invoice) { call.close(); return; } // só aceito tela de quem está comigo no canal de voz (e que eu não parei de assistir)
     const prev = e.call;
     e.call = call;
     if (prev) prev.close();
@@ -771,33 +805,39 @@
     renderPeople();
   }
 
-  // ---------- pessoas e chat ----------
-  // Lista lateral + cartões do canal de voz no palco. Atualiza no lugar (não recria),
-  // para não derrubar o controle de volume que a pessoa está arrastando.
+  // ---------- pessoas ----------
+  // Lateral: quem está no canal de voz (embaixo do canal) e quem está só online; cartões do canal no palco.
+  // Atualiza no lugar (não recria), para não derrubar o controle de volume que a pessoa está arrastando.
   function renderPeople() {
-    const list = $('people');
+    const vlist = $('people');
+    const olist = $('online');
     const grid = $('voiceGrid');
     const all = [{
-      id: 'me', name: myName, av: myAv, you: true, sharing: !!local, talking: voice.talking,
-      muted: voice.muted || !voice.track, deaf: voice.deaf, off: !voice.track,
-      sub: !voice.track ? (voice.err ? 'sem microfone' : 'ligando o microfone…')
+      id: 'me', name: myName, av: myAv, you: true, invoice: inVoice, sharing: !!local, talking: voice.talking,
+      muted: inVoice && (voice.muted || !voice.track), deaf: inVoice && voice.deaf, off: inVoice && !voice.track,
+      sub: !inVoice ? 'online' : !voice.track ? (voice.err ? 'sem microfone' : 'ligando o microfone…')
         : voice.deaf ? 'som desligado' : voice.muted ? 'microfone mudo'
           : voice.mode === 'ptt' ? `push-to-talk · ${keyName(voice.key)}` : 'na voz',
     }];
     for (const e of peers.values()) {
       if (!e.ready) continue;
       const on = !!e.vpc && e.vpc.connectionState === 'connected';
+      const linked = inVoice && e.invoice;
       all.push({
-        id: e.id, name: e.name, av: e.av, e, sharing: e.sharing, stopped: e.stopped, talking: e.talking, muted: e.vmuted, deaf: e.vdeaf, off: !on,
-        sub: !on ? 'conectando a voz…' : e.ping === null ? 'na voz' : `ping ${e.ping} ms · atraso ${e.lat} ms`,
-        tip: on ? e.vinfo : '',
+        id: e.id, name: e.name, av: e.av, e, invoice: e.invoice, sharing: e.sharing, stopped: e.stopped, talking: e.invoice && e.talking,
+        muted: e.invoice && e.vmuted, deaf: e.invoice && e.vdeaf, off: linked && !on,
+        sub: !e.invoice ? 'online' : !inVoice ? (e.vdeaf ? 'som desligado' : e.vmuted ? 'microfone mudo' : 'na voz')
+          : !on ? 'conectando a voz…' : e.ping === null ? 'na voz' : `ping ${e.ping} ms · atraso ${e.lat} ms`,
+        tip: linked && on ? e.vinfo : '',
       });
     }
-    const ids = new Set(all.map((p) => p.id));
-    for (const el of [...list.children, ...grid.children]) if (!ids.has(el.dataset.id)) el.remove();
+    const voiceIds = new Set(all.filter((p) => p.invoice).map((p) => p.id));
+    for (const el of [...vlist.children]) if (!voiceIds.has(el.dataset.id)) el.remove();
+    for (const el of [...grid.children]) if (!voiceIds.has(el.dataset.id)) el.remove();
     const find = (box, id) => [...box.children].find((el) => el.dataset.id === id);
     for (const p of all) {
-      let li = find(list, p.id);
+      if (!p.invoice) continue;
+      let li = find(vlist, p.id);
       if (!li) {
         li = $('personTpl').content.firstElementChild.cloneNode(true);
         li.dataset.id = p.id;
@@ -810,8 +850,8 @@
           });
           li.querySelector('.wbtn').addEventListener('click', () => (p.e.stopped ? watch(p.e) : unwatch(p.e)));
         } else { range.remove(); li.querySelector('.wbtn').remove(); }
-        list.append(li);
       }
+      if (li.parentElement !== vlist) vlist.append(li);
       let card = find(grid, p.id);
       if (!card) {
         card = $('vcardTpl').content.firstElementChild.cloneNode(true);
@@ -820,21 +860,26 @@
         else card.querySelector('.vwatch').remove();
         grid.append(card);
       }
-      const vw = card.querySelector('.vwatch');
-      if (vw) { vw.hidden = !(p.sharing && p.stopped); vw.setAttribute('aria-label', `Assistir a tela de ${p.name}`); }
       const label = p.you ? `${p.name} (você)` : p.name;
       li.querySelector('.nm').textContent = label;
       li.querySelector('.sub').textContent = p.sub;
       li.title = p.tip || '';
-      card.querySelector('.vname').textContent = label;
       const wb = li.querySelector('.wbtn');
       if (wb) {
-        wb.hidden = !p.sharing;
+        wb.hidden = !(p.sharing && inVoice);
         wb.textContent = p.stopped ? 'Assistir' : 'Parar de assistir';
         wb.setAttribute('aria-label', `${p.stopped ? 'Assistir' : 'Parar de assistir'} a tela de ${p.name}`);
       }
-      if (p.e) li.querySelector('.pvol').setAttribute('aria-label', `Volume da voz de ${p.name}`);
-      for (const el of [li, card]) {
+      const pv = li.querySelector('.pvol');
+      if (pv) { pv.hidden = !(inVoice && p.invoice); pv.setAttribute('aria-label', `Volume da voz de ${p.name}`); }
+      const els = [li];
+      if (card) {
+        const vw = card.querySelector('.vwatch');
+        if (vw) { vw.hidden = !(p.sharing && p.stopped && inVoice); vw.setAttribute('aria-label', `Assistir a tela de ${p.name}`); }
+        card.querySelector('.vname').textContent = label;
+        els.push(card);
+      }
+      for (const el of els) {
         paintAvatar(el.querySelector('.avatar'), p.name, p.av);
         el.querySelector('.avatar').classList.toggle('speaking', p.talking);
         el.classList.toggle('is-live', p.sharing);
@@ -844,24 +889,46 @@
         el.classList.toggle('is-off', p.off);
       }
     }
+    // eu primeiro, depois por ordem de chegada (ordem do Map)
     $('peopleCount').textContent = String(all.length);
+    // Online: todo mundo com o BAGRENATION aberto (quem está na voz ganha o ícone do canal)
+    olist.replaceChildren(...all.map((p) => {
+      const li = document.createElement('li');
+      li.dataset.id = p.id;
+      li.classList.toggle('is-voice', !!p.invoice);
+      const av = document.createElement('span');
+      av.className = 'avatar';
+      av.setAttribute('aria-hidden', 'true');
+      paintAvatar(av, p.name, p.av);
+      av.classList.toggle('speaking', !!p.talking);
+      li.append(av, Object.assign(document.createElement('span'), { className: 'nm', textContent: p.you ? `${p.name} (você)` : p.name }));
+      if (p.invoice) li.insertAdjacentHTML('beforeend', '<svg class="ic on-voice" role="img" aria-label="no canal de voz"><use href="#i-vol"/></svg>');
+      return li;
+    }));
     $('peopleCountSide').textContent = String(all.length);
+    $('voiceCount').textContent = voiceIds.size ? String(voiceIds.size) : '';
+    const others = all.filter((p) => !p.you && p.invoice);
+    $('emptySay').textContent = inVoice ? (others.length ? `Você e mais ${others.length} no canal` : 'Só você no canal. Chame a galera.')
+      : others.length ? `${others.length} ${others.length === 1 ? 'pessoa' : 'pessoas'} no canal` : 'Ninguém no canal ainda';
     myFace();
     $('meAvatar').classList.toggle('speaking', voice.talking);
-    // faixa de estado da voz: conexão + microfone, sempre à vista (com tela aberta o canal de voz some do palco)
-    const others = all.length - 1;
-    const linked = all.filter((p) => p.e && !p.off).length;
-    const link = !others ? 'Na voz · só você na sala' : linked < others ? `Voz conectando (${linked}/${others})` : `Na voz com ${others} ${others === 1 ? 'pessoa' : 'pessoas'}`;
+    // faixa de estado da voz: conexão + microfone, sempre à vista no canal (com tela aberta os cartões saem do palco)
+    const linked = others.filter((p) => !p.off).length;
+    const link = !others.length ? 'Na voz · só você no canal' : linked < others.length ? `Voz conectando (${linked}/${others.length})` : `Na voz com ${others.length} ${others.length === 1 ? 'pessoa' : 'pessoas'}`;
     const mic = !voice.track ? (voice.err ? 'sem microfone: ninguém te ouve' : 'ligando o microfone…')
       : voice.deaf ? 'som da sala desligado' : voice.muted ? 'microfone mudo'
         : voice.mode === 'ptt' ? `push-to-talk: segure ${keyName(voice.key)} para falar` : 'microfone ligado';
     $('vbText').textContent = `${link} · ${mic}`;
-    $('voiceBar').dataset.state = !voice.track ? (voice.err ? 'off' : 'wait') : voice.muted ? 'muted' : linked < others ? 'wait' : 'on';
+    $('voiceBar').dataset.state = !voice.track ? (voice.err ? 'off' : 'wait') : voice.muted ? 'muted' : linked < others.length ? 'wait' : 'on';
     $('micFixBtn').hidden = !!voice.track || !voice.err;
+    for (const id of ['voiceBar', 'dockWrap', 'vconn']) $(id).hidden = !inVoice;
+    $('joinVoiceBtn').hidden = inVoice;
+    for (const b of $('empty').querySelectorAll('.js-share')) b.hidden = !inVoice || !CAN_SHARE;
+    $('chanVoice').classList.toggle('is-in', inVoice);
     renderTalk();
   }
   function renderTalk() { // quem está falando agora, por nome
-    const names = [...(voice.talking ? ['você'] : []), ...[...peers.values()].filter((e) => e.ready && e.talking).map((e) => e.name)];
+    const names = [...(voice.talking ? ['você'] : []), ...[...peers.values()].filter((e) => e.ready && e.invoice && e.talking).map((e) => e.name)];
     $('vbTalk').textContent = names.length ? `falando: ${names.join(', ')}` : '';
   }
   // anel de "falando" no avatar da pessoa (lista e canal de voz)
@@ -870,159 +937,307 @@
     if (id === 'me') $('meAvatar').classList.toggle('speaking', on);
     renderTalk();
   }
+  const note = (text) => toast(text);
 
-  function addChat(from, text, kind) {
-    const log = $('chatLog');
-    const li = document.createElement('li');
-    if (kind === 'sys') { li.className = 'sys'; li.textContent = text; }
-    else {
-      if (kind === 'mine') li.className = 'mine';
-      const f = document.createElement('span'); f.className = 'from'; f.textContent = from;
-      li.append(f, text);
-    }
-    log.append(li);
-    while (log.children.length > 200) log.firstElementChild.remove();
-    log.scrollTop = log.scrollHeight;
-    if (kind !== 'sys' && kind !== 'mine' && $('panel').hidden) {
-      const b = $('unread');
-      b.hidden = false;
-      b.textContent = String(Math.min(99, (Number(b.textContent) || 0) + 1));
-    }
+  // ---------- canais: #chat e Canal de voz ----------
+  // Tela larga: no canal de voz o chat fica à direita. Estreita: um canal por vez.
+  const wideChat = () => window.matchMedia('(min-width: 1200px)').matches;
+  function setView(v) {
+    $('room').dataset.view = v;
+    $('chanChat').setAttribute('aria-current', v === 'chat' ? 'page' : 'false');
+    $('chanVoice').setAttribute('aria-current', v === 'voice' ? 'page' : 'false');
+    $('roomTitle').textContent = v === 'chat' ? 'chat' : 'Canal de voz';
+    setIcon($('topIcon'), v === 'chat' ? 'hash' : 'vol');
+    if (narrow()) togglePanel(false);
+    if (chatSeen()) readAll();
+    layout();
   }
-  function note(text) { toast(text); addChat('', text, 'sys'); }
+  const chatSeen = () => document.visibilityState === 'visible' && !document.documentElement.classList.contains('app-hidden')
+    && ($('room').dataset.view === 'chat' || wideChat());
 
   function togglePanel(open) {
     const panel = $('panel');
     panel.hidden = !open;
     $('panelBtn').setAttribute('aria-expanded', String(open));
-    if (open) { $('unread').hidden = true; $('unread').textContent = ''; $('chatLog').scrollTop = $('chatLog').scrollHeight; }
   }
 
-  async function copy(text, btn, done) {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast(done); sfx('ok');
-      if (btn === $('copyBtn')) {
-        btn.classList.add('done'); setIcon($('copyIcon'), 'check'); $('copyLabel').textContent = 'Copiado';
-        setTimeout(() => { btn.classList.remove('done'); setIcon($('copyIcon'), 'copy'); $('copyLabel').textContent = 'Copiar ID'; }, 1600);
-      }
-    } catch {
-      toast(`Não deu para copiar sozinho. O ID é ${pretty(room)}.`, 6000);
+  // ---------- chat de texto permanente ----------
+  // Histórico e arquivos ficam no Worker (server/worker.js): Durable Object com SQLite, plano grátis da Cloudflare.
+  const FILE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'];
+  const MAX_FILE = 25 * 1024 * 1024;
+  const chat = { ws: null, backoff: 0, timer: 0, list: [], more: false, unread: 0, pending: [], notifyAt: 0 };
+
+  function chatConnect() {
+    clearTimeout(chat.timer);
+    if (!navigator.onLine) { chat.timer = setTimeout(chatConnect, 3000); return; }
+    const ws = chat.ws = new WebSocket(`${CHAT.replace(/^http/, 'ws')}/ws`);
+    ws.addEventListener('open', () => { chat.backoff = 0; chatState(); });
+    ws.addEventListener('message', (ev) => {
+      let d;
+      try { d = JSON.parse(ev.data); } catch { return; }
+      if (chat.ws === ws && d && typeof d === 'object') onChat(d);
+    });
+    ws.addEventListener('close', () => {
+      if (chat.ws !== ws) return;
+      chat.ws = null;
+      chatState();
+      chat.timer = setTimeout(chatConnect, Math.min(1000 * 2 ** chat.backoff++, 15000));
+    });
+    chatState();
+  }
+  const chatOpen = () => !!chat.ws && chat.ws.readyState === WebSocket.OPEN;
+  function chatState() {
+    $('chatState').textContent = chatOpen() ? '' : chat.list.length ? 'reconectando…' : 'conectando…';
+  }
+  function onChat(d) {
+    if (d.t === 'hist' && Array.isArray(d.list)) {
+      chat.list = d.list.filter(okMsg);
+      chat.more = d.list.length >= 150;
+      renderChat(true);
+    } else if (d.t === 'old' && Array.isArray(d.list)) {
+      const box = $('chatScroll');
+      const fromBottom = box.scrollHeight - box.scrollTop;
+      chat.list = [...d.list.filter(okMsg), ...chat.list];
+      chat.more = d.list.length >= 150;
+      renderChat(false);
+      box.scrollTop = box.scrollHeight - fromBottom; // continua vendo a mesma mensagem
+    } else if (d.t === 'msg' && okMsg(d.m)) {
+      if (chat.list.some((m) => m.id === d.m.id)) return;
+      const stick = atBottom();
+      chat.list.push(d.m);
+      $('chatLog').append(msgEl(d.m, chat.list[chat.list.length - 2]));
+      if (stick || d.m.name === myName) scrollDown();
+      if (d.m.name !== myName) incoming(d.m);
+    } else if (d.t === 'del') {
+      chat.list = chat.list.filter((m) => m.id !== d.id);
+      renderChat(false);
     }
   }
-
-  // ---------- campo de ID em casas ----------
-  function otp(input) {
-    const box = input.parentElement;
-    const cells = [...box.querySelectorAll('.otp-cells span:not(.gap)')];
-    const paint = () => {
-      let v = input.value;
-      if (/[#/]/.test(v)) { const c = parseCode(v); if (c) v = c; } // colou o link inteiro
-      v = v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
-      if (input.value !== v) input.value = v;
-      const focused = document.activeElement === input;
-      cells.forEach((c, i) => {
-        c.textContent = v[i] || '';
-        c.classList.toggle('filled', !!v[i]);
-        c.classList.toggle('cur', focused && i === v.length);
-      });
-      box.classList.remove('bad');
-    };
-    for (const ev of ['input', 'focus', 'blur']) input.addEventListener(ev, paint);
-    return { reset() { input.value = ''; paint(); }, bad() { box.classList.add('bad'); sfx('err'); } };
+  const okMsg = (m) => !!m && Number.isInteger(m.id) && typeof m.name === 'string' && typeof m.text === 'string';
+  const atBottom = () => { const b = $('chatScroll'); return b.scrollHeight - b.scrollTop - b.clientHeight < 80; };
+  const scrollDown = () => { const b = $('chatScroll'); b.scrollTop = b.scrollHeight; };
+  function renderChat(down) {
+    const log = $('chatLog');
+    log.textContent = '';
+    chat.list.forEach((m, i) => log.append(msgEl(m, chat.list[i - 1])));
+    $('moreBtn').hidden = !chat.more;
+    chatState();
+    if (down) scrollDown();
+  }
+  function incoming(m) {
+    if (chatSeen()) return;
+    chat.unread++;
+    for (const b of [$('unread'), $('unreadTop')]) { b.hidden = false; b.textContent = String(Math.min(99, chat.unread)); }
+    sfx('tap');
+    const now = Date.now();
+    if (DESK && document.documentElement.classList.contains('app-hidden') && now - chat.notifyAt > 10000) {
+      chat.notifyAt = now;
+      DESK.core.invoke('notify', { body: `${m.name}: ${m.text || (m.media && m.media.mime.startsWith('video/') ? 'mandou um vídeo' : 'mandou uma imagem')}`.slice(0, 160) }).catch(() => {});
+    }
+  }
+  function readAll() {
+    chat.unread = 0;
+    for (const b of [$('unread'), $('unreadTop')]) { b.hidden = true; b.textContent = ''; }
   }
 
-  // A sala existe? Pergunta ao servidor se o "diretório" dela está no ar, sem entrar nela.
-  // true = existe · false = ninguém nessa sala · null = sem resposta (rede)
-  async function probe(code) {
-    if (!(await loadPeer())) return null;
+  const two = (n) => String(n).padStart(2, '0');
+  function when(ts) {
+    const d = new Date(ts);
+    const today = new Date().toDateString() === d.toDateString();
+    const hm = `${two(d.getHours())}:${two(d.getMinutes())}`;
+    return today ? `hoje ${hm}` : `${two(d.getDate())}/${two(d.getMonth() + 1)} ${hm}`;
+  }
+  function linkify(el, text) { // links viram <a> (o app abre no navegador padrão)
+    for (const part of text.split(/(https?:\/\/[^\s<>"]+)/)) {
+      if (/^https?:\/\//.test(part)) {
+        const a = Object.assign(document.createElement('a'), { href: part, textContent: part, target: '_blank', rel: 'noopener noreferrer' });
+        el.append(a);
+      } else if (part) el.append(part);
+    }
+  }
+  function msgEl(m, prev) {
+    const li = document.createElement('li');
+    li.className = 'msg';
+    li.dataset.id = String(m.id);
+    // mensagens seguidas da mesma pessoa em até 5 min ficam juntas (sem repetir nome e avatar)
+    if (prev && prev.name === m.name && m.ts - prev.ts < 300000) li.classList.add('cont');
+    if (m.name === myName) li.classList.add('mine');
+    const av = document.createElement('span');
+    av.className = 'avatar';
+    av.setAttribute('aria-hidden', 'true');
+    paintAvatar(av, m.name, AVATARS.includes(m.av) ? m.av : '');
+    const body = document.createElement('div');
+    body.className = 'msg-body';
+    const head = document.createElement('p');
+    head.className = 'msg-head';
+    const nm = Object.assign(document.createElement('b'), { className: 'msg-name', textContent: m.name });
+    const t = Object.assign(document.createElement('time'), { textContent: when(m.ts), dateTime: new Date(m.ts).toISOString() });
+    t.title = new Date(m.ts).toLocaleString('pt-BR');
+    head.append(nm, t);
+    body.append(head);
+    if (m.text) { const p = document.createElement('p'); p.className = 'msg-text'; linkify(p, m.text); body.append(p); }
+    if (m.media && /^[a-z0-9]{20}$/.test(m.media.id)) body.append(mediaEl(m.media));
+    li.append(av, body);
+    return li;
+  }
+  function mediaEl(md) {
+    const src = `${CHAT}/m/${md.id}`;
+    const video = String(md.mime).startsWith('video/');
+    const box = document.createElement('div');
+    box.className = 'msg-media';
+    if (md.w && md.h) { box.style.aspectRatio = `${md.w} / ${md.h}`; box.style.setProperty('--w', `${md.w}px`); }
+    const gone = () => { box.className = 'msg-gone'; box.style.cssText = ''; box.textContent = 'arquivo expirou'; };
+    if (video) {
+      const v = Object.assign(document.createElement('video'), { controls: true, preload: 'metadata', playsInline: true, src });
+      v.setAttribute('aria-label', md.name ? `Vídeo ${md.name}` : 'Vídeo');
+      v.addEventListener('error', gone);
+      sink(v);
+      box.append(v);
+    } else {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'msg-img';
+      b.setAttribute('aria-label', `Ampliar ${md.mime === 'image/gif' ? 'GIF' : 'imagem'}${md.name ? ` ${md.name}` : ''}`);
+      const img = Object.assign(new Image(), { src, alt: md.name || (md.mime === 'image/gif' ? 'GIF' : 'imagem'), loading: 'lazy', decoding: 'async' });
+      img.addEventListener('error', gone);
+      img.addEventListener('load', () => { if (atBottom()) scrollDown(); });
+      b.append(img);
+      if (md.mime === 'image/gif') b.append(Object.assign(document.createElement('span'), { className: 'gif-tag', textContent: 'GIF' }));
+      b.addEventListener('click', () => { $('viewImg').src = src; $('viewImg').alt = img.alt; $('viewOpen').href = src; $('viewDlg').showModal(); });
+      box.append(b);
+    }
+    return box;
+  }
+
+  // Anexos: botão, colar (Ctrl+V) ou arrastar. Prévia antes de enviar, até 5 por vez, 25 MB cada.
+  function mediaSize(file, url) {
     return new Promise((resolve) => {
-      const p = new Peer(`bagrenation-${code}-q-${randomCode(8)}`, PEER_OPTS);
-      let over = false;
-      const end = (v) => { if (over) return; over = true; clearTimeout(t); p.destroy(); resolve(v); };
-      const t = setTimeout(() => end(null), 12000);
-      p.on('open', () => { p.connect(`bagrenation-${code}-dir`, CONN_OPTS).on('open', () => end(true)); });
-      p.on('error', (err) => end(err.type === 'peer-unavailable' ? false : null));
+      const done = (w, h) => { clearTimeout(t); resolve({ w: Math.round(w) || 0, h: Math.round(h) || 0 }); };
+      const t = setTimeout(() => done(0, 0), 6000);
+      if (file.type.startsWith('video/')) {
+        const v = Object.assign(document.createElement('video'), { preload: 'metadata', muted: true, src: url });
+        v.addEventListener('loadedmetadata', () => done(v.videoWidth, v.videoHeight));
+        v.addEventListener('error', () => done(0, 0));
+      } else {
+        const img = new Image();
+        img.addEventListener('load', () => done(img.naturalWidth, img.naturalHeight));
+        img.addEventListener('error', () => done(0, 0));
+        img.src = url;
+      }
     });
   }
-
-  async function tryJoin(input, errEl, field, btn) {
-    const code = parseCode(input.value);
-    errEl.textContent = '';
-    if (!code) {
-      errEl.textContent = 'O ID tem 6 letras e números, como K7Q-M4P. Não usamos 0, O, 1, I nem L.';
-      field.bad(); input.focus();
-      return;
+  async function addFiles(files) {
+    for (const file of files) {
+      if (!FILE_TYPES.includes(file.type)) { toast(`${file.name || 'Arquivo'}: só imagem (PNG, JPG, WebP), GIF ou vídeo (MP4, WebM, MOV).`, 5000); continue; }
+      if (file.size > MAX_FILE) { toast(`${file.name || 'Arquivo'} passa de 25 MB.`, 5000); continue; }
+      if (chat.pending.length >= 5) { toast('No máximo 5 arquivos por vez.'); break; }
+      const url = URL.createObjectURL(file);
+      chat.pending.push({ file, url, ...(await mediaSize(file, url)) });
+      renderAttach();
     }
-    if (code === room) { errEl.textContent = 'Você já está nesta sala.'; return; }
-    btn.disabled = true;
-    const lbl = btn.querySelector('.lbl'); const was = lbl.textContent;
-    lbl.textContent = 'Procurando a sala…';
-    const found = await probe(code);
-    btn.disabled = false; lbl.textContent = was;
-    if (found) {
-      if (room) location.hash = pretty(code); // troca de sala: a página recomeça limpa na nova
-      else enterRoom(code);
-      return;
+    $('chatInput').focus();
+  }
+  function renderAttach() {
+    const box = $('attach');
+    box.textContent = '';
+    box.hidden = !chat.pending.length;
+    chat.pending.forEach((p, i) => {
+      const item = document.createElement('div');
+      item.className = 'att';
+      const prev = p.file.type.startsWith('video/')
+        ? Object.assign(document.createElement('video'), { src: p.url, muted: true, preload: 'metadata' })
+        : Object.assign(new Image(), { src: p.url, alt: '' });
+      const nm = Object.assign(document.createElement('span'), { className: 'att-name', textContent: `${p.file.name || 'arquivo'} · ${p.file.size < 1048576 ? `${Math.max(1, Math.round(p.file.size / 1024))} KB` : `${(p.file.size / 1048576).toFixed(1).replace('.', ',')} MB`}` });
+      const x = Object.assign(document.createElement('button'), { type: 'button', className: 'icon-btn att-x' });
+      x.setAttribute('aria-label', `Tirar ${p.file.name || 'arquivo'}`);
+      x.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-close"/></svg>';
+      x.addEventListener('click', () => { URL.revokeObjectURL(p.url); chat.pending.splice(i, 1); renderAttach(); });
+      item.append(prev, nm, x);
+      box.append(item);
+    });
+  }
+  function upload(p, bar) { // XHR para ter o progresso do envio
+    return new Promise((resolve) => {
+      const x = new XMLHttpRequest();
+      x.open('POST', `${CHAT}/up`);
+      x.setRequestHeader('Content-Type', p.file.type);
+      x.upload.addEventListener('progress', (ev) => { if (ev.lengthComputable) bar.style.setProperty('--p', `${(ev.loaded / ev.total) * 100}%`); });
+      x.addEventListener('load', () => {
+        let r = null;
+        try { r = JSON.parse(x.responseText); } catch { /* resposta inválida */ }
+        if (x.status === 200 && r && r.id) resolve(r);
+        else { toast(`Não foi possível enviar ${p.file.name || 'o arquivo'}${r && r.error ? `: ${r.error}` : '.'}`, 6000); resolve(null); }
+      });
+      x.addEventListener('error', () => { toast(`Falhou o envio de ${p.file.name || 'o arquivo'}. Confira a internet.`, 6000); resolve(null); });
+      x.send(p.file);
+    });
+  }
+  function chatPost(text, media) {
+    if (!chatOpen()) return false;
+    chat.ws.send(JSON.stringify({ t: 'msg', name: myName, av: myAv, text, media }));
+    return true;
+  }
+  let sending = false;
+  async function chatSend() {
+    const text = clean($('chatInput').value, 2000);
+    if (sending || (!text && !chat.pending.length)) return;
+    if (!chatOpen()) { toast('O chat está reconectando. Tente de novo em instantes.'); return; }
+    const files = chat.pending.splice(0);
+    $('chatInput').value = '';
+    renderAttach();
+    if (!files.length) { chatPost(text); return; }
+    sending = true;
+    let first = text;
+    for (const p of files) {
+      const row = document.createElement('li');
+      row.className = 'msg uploading';
+      row.innerHTML = '<span class="up-bar"><i></i></span>';
+      row.prepend(Object.assign(document.createElement('span'), { className: 'up-name', textContent: `enviando ${p.file.name || 'arquivo'}…` }));
+      $('chatLog').append(row);
+      scrollDown();
+      const r = await upload(p, row.querySelector('.up-bar'));
+      row.remove();
+      URL.revokeObjectURL(p.url);
+      if (!r) continue;
+      if (!chatPost(first, { id: r.id, w: p.w, h: p.h, name: p.file.name || '' })) { toast('O chat caiu no meio do envio. Mande de novo.'); break; }
+      first = '';
     }
-    errEl.textContent = found === false
-      ? `Nenhuma sala ${pretty(code)} aberta agora. Confira o ID com quem te passou.`
-      : 'O servidor de conexão não respondeu. Confira a internet e tente de novo.';
-    field.bad();
+    if (first) chatPost(first); // nenhum arquivo subiu: o texto vai sozinho
+    sending = false;
   }
 
-  // ---------- entrar e sair ----------
-  let visits = 0;
-  function enterRoom(code) {
-    const visit = ++visits;
-    room = code;
+  // ---------- entrar no servidor ----------
+  function enterServer() {
+    room = SERVER;
     leaving = false; everOk = false; backoff = 0;
-    if (parseCode(location.hash) !== code) location.hash = pretty(code);
-    document.title = `Sala ${pretty(code)} · BAGRENATION`;
-    $('title').hidden = true;
-    $('home').hidden = true;
-    $('room').hidden = false;
-    const id = $('roomId');
-    id.textContent = '';
-    id.classList.toggle('long', code.length > 6);
-    for (const ch of pretty(code)) {
-      const el = document.createElement(ch === '-' ? 'i' : 'b');
-      if (ch !== '-') el.textContent = ch;
-      id.append(el);
-    }
-    id.setAttribute('aria-label', `ID da sala: ${[...code.toUpperCase()].join(' ')}`);
-    $('roomTitle').textContent = pretty(code);
-    $('emptyId').textContent = pretty(code);
     $('nameInput').value = myName;
-    $('chatLog').textContent = '';
     togglePanel(!narrow());
+    setView('chat');
     renderShareUi(); renderPeople(); layout(); refreshStatus();
-    openMic(); // entrar na sala = entrar no canal de voz
+    chatConnect();
+    if (store('name')) joinMesh(); // primeira vez: só depois do nome (ninguém vê um "Visitante" passando)
+  }
+  let meshStarted = false;
+  function joinMesh() {
+    if (meshStarted) return;
+    meshStarted = true;
     loadPeer().then((ok) => {
-      if (visit !== visits || room !== code) return; // saiu ou trocou de sala enquanto a biblioteca carregava
       if (ok) connect();
       else toast('A biblioteca de conexão não carregou. Confira a internet e recarregue a página.', 8000);
     });
   }
 
-  function leaveRoom() {
+  function leaveAll() { // fechar o app (bandeja > Sair)
     if (!room) return;
+    leaveVoice();
     leaving = true;
     clearTimeout(retryTimer);
     broadcast({ t: 'bye' });
-    stopShare();
     resetMesh();
-    closeMic();
-    $('hearBtn').hidden = true;
-    togglePop('voicePop', false);
     if (peer) { const p = peer; peer = null; p.destroy(); }
+    if (chat.ws) { const w = chat.ws; chat.ws = null; w.close(); }
     if (wakeLock) wakeLock.release().catch(() => {});
     room = null;
-    history.replaceState(null, '', location.pathname);
-    document.title = 'BAGRENATION';
-    $('room').hidden = true;
-    $('home').hidden = false;
-    myFace();
   }
 
   // ---------- voz: microfone ----------
@@ -1035,7 +1250,7 @@
   let micJob = Promise.resolve();
   function openMic(byUser) {
     const seq = ++micSeq;
-    micJob = micJob.then(() => (seq === micSeq && room ? doOpenMic(byUser) : undefined));
+    micJob = micJob.then(() => (seq === micSeq && inVoice ? doOpenMic(byUser) : undefined));
     return micJob;
   }
   async function doOpenMic(byUser) {
@@ -1063,7 +1278,7 @@
       } else toast('Sem microfone: você ouve a sala, mas ninguém te ouve.', 6000);
       return;
     }
-    if (!room) { stream.getTracks().forEach((t) => t.stop()); return; } // saiu da sala durante o pedido
+    if (!inVoice) { stream.getTracks().forEach((t) => t.stop()); return; } // saiu do canal durante o pedido
     const track = voice.track = stream.getAudioTracks()[0];
     voice.tap = track.clone();
     voice.err = '';
@@ -1108,7 +1323,7 @@
     if (voice.track && voice.track.enabled !== open) voice.track.enabled = open;
     const talking = open && loud;
     if (talking !== voice.talking) {
-      voice.talking = talking;
+      voice.talking = talking; // fora do canal não há faixa: fica sempre false
       broadcast({ t: 'talk', on: talking });
       ring('me', talking);
     }
@@ -1145,18 +1360,20 @@
 
   const keyName = (code) => (code ? code.replace(/^(Key|Digit)/, '').replace(/^Numpad/, 'Num ').replace(/^Mouse(\d)$/, 'Mouse $1') : 'nenhuma');
   function renderVoice() {
-    const has = !!voice.track;
-    const mic = $('micBtn');
-    mic.dataset.state = has ? 'on' : 'none';
-    mic.setAttribute('aria-pressed', String(has && voice.muted));
-    setIcon($('micIcon'), has && !voice.muted ? 'mic' : 'mic-off');
-    mic.setAttribute('aria-label', !has ? 'Ligar o microfone' : voice.muted ? 'Microfone mudo. Reativar' : 'Silenciar microfone');
-    mic.title = mic.getAttribute('aria-label');
-    const deaf = $('deafBtn');
-    deaf.setAttribute('aria-pressed', String(voice.deaf));
-    setIcon($('deafIcon'), voice.deaf ? 'headset-off' : 'headset');
-    deaf.setAttribute('aria-label', voice.deaf ? 'Som da sala desligado. Reativar' : 'Desligar o som da sala');
-    deaf.title = deaf.getAttribute('aria-label');
+    const has = !!voice.track || !inVoice; // fora do canal o botão só guarda o mudo para quando entrar
+    for (const [mic, icon] of [[$('micBtn'), $('micIcon')], [$('sideMic'), $('sideMic').querySelector('use')]]) {
+      mic.dataset.state = has ? 'on' : 'none';
+      mic.setAttribute('aria-pressed', String(has && voice.muted));
+      setIcon(icon, has && !voice.muted ? 'mic' : 'mic-off');
+      mic.setAttribute('aria-label', !has ? 'Ligar o microfone' : voice.muted ? 'Microfone mudo. Reativar' : 'Silenciar microfone');
+      mic.title = mic.getAttribute('aria-label');
+    }
+    for (const [deaf, icon] of [[$('deafBtn'), $('deafIcon')], [$('sideDeaf'), $('sideDeaf').querySelector('use')]]) {
+      deaf.setAttribute('aria-pressed', String(voice.deaf));
+      setIcon(icon, voice.deaf ? 'headset-off' : 'headset');
+      deaf.setAttribute('aria-label', voice.deaf ? 'Som da sala desligado. Reativar' : 'Desligar o som da sala');
+      deaf.title = deaf.getAttribute('aria-label');
+    }
     $('voiceMode').value = voice.mode;
     $('sensWrap').hidden = voice.mode !== 'vad';
     $('pttWrap').hidden = voice.mode !== 'ptt';
@@ -1170,13 +1387,13 @@
     if (DESK) {
       $('muteKeyBtn').textContent = pickingKey === 'mute' ? 'Aperte… (Backspace: nenhuma)' : keyName(voice.muteKey);
       $('muteKeyBtn').setAttribute('aria-pressed', String(pickingKey === 'mute'));
-      DESK.core.invoke('tray_state', { inRoom: !!room, muted: !!voice.track && voice.muted, deaf: voice.deaf }).catch(() => {});
+      DESK.core.invoke('tray_state', { inRoom: inVoice, muted: !!voice.track && voice.muted, deaf: voice.deaf }).catch(() => {});
       DESK.core.invoke('set_keys', { ptt: voice.mode === 'ptt' && !pickingKey ? voice.key : '', mute: pickingKey ? '' : voice.muteKey })
         .catch((err) => toast(`Essa tecla não funciona fora da janela (${err}). Escolha outra.`, 6000));
     }
     $('ecToggle').checked = voice.ec;
     $('nsToggle').checked = voice.ns;
-    $('micTestBtn').disabled = !has;
+    $('micTestBtn').disabled = !voice.track;
     $('micTestBtn').setAttribute('aria-pressed', String(voice.testing));
     $('micTestBtn').textContent = voice.testing ? 'Parar' : 'Testar';
     renderPeople();
@@ -1401,9 +1618,9 @@
       if (now - e.seen > 20000) { dropPeer(e.id); continue; } // aba fechada sem avisar
       send(e, { t: 'ping' });
       // diz que transmite mas a imagem não chegou (ou caiu): pede de novo
-      if (e.sharing && !e.stopped && !e.call && now - e.wanted > 8000) { e.wanted = now; send(e, { t: 'want' }); }
+      if (inVoice && e.invoice && e.sharing && !e.stopped && !e.call && now - e.wanted > 8000) { e.wanted = now; send(e, { t: 'want' }); }
       // voz que não fechou (ou caiu): quem oferece tenta de novo
-      if (myId > e.id && (!e.vpc || e.vpc.connectionState !== 'connected') && now - e.vAt > 15000) voiceStart(e);
+      if (inVoice && e.invoice && myId > e.id && (!e.vpc || e.vpc.connectionState !== 'connected') && now - e.vAt > 15000) voiceStart(e);
     }
     if (dirConn && dirConn.open) {
       if (now - dirSeen > 20000) dirConn.close(); else dirConn.send({ t: 'ping' });
@@ -1415,7 +1632,7 @@
     heal();
     refreshStatus();
     // mantém a tela acesa enquanto há conversa ou transmissão
-    const busy = local || peers.size;
+    const busy = local || (inVoice && peers.size);
     if (busy && !wakeLock && navigator.wakeLock && document.visibilityState === 'visible') {
       navigator.wakeLock.request('screen').then((l) => { wakeLock = l; l.addEventListener('release', () => { wakeLock = null; }); }).catch(() => {});
     }
@@ -1543,8 +1760,8 @@
     store('name', myName);
     myFace();
   }
-  function myFace() { // meu avatar no início e na sala; fora da sala vale o nome que está no campo
-    const name = room ? myName : clean($('homeName').value) || '?';
+  function myFace() { // meu avatar; com a janela de boas-vindas aberta vale o nome que está sendo digitado
+    const name = $('nameDlg').open ? clean($('homeName').value) || '?' : myName;
     for (const el of document.querySelectorAll('.js-avatar')) paintAvatar(el, name, myAv);
   }
   // Galeria de avatares: a primeira opção é a inicial do nome (padrão)
@@ -1559,7 +1776,7 @@
       b.setAttribute('aria-pressed', String(av === myAv));
       b.setAttribute('aria-label', av ? `Avatar ${label}` : 'Inicial do nome');
       b.title = label;
-      paintAvatar(b, room ? myName : clean($('homeName').value) || '?', av);
+      paintAvatar(b, $('nameDlg').open ? clean($('homeName').value) || '?' : myName, av);
       b.addEventListener('click', () => {
         myAv = av;
         store('avatar', av);
@@ -1576,24 +1793,19 @@
     b.addEventListener('click', () => { renderGallery(); $('avatarDlg').showModal(); });
   }
   $('homeName').addEventListener('input', myFace);
-  $('homeName').value = store('name') ? myName : '';
-  $('homeName').addEventListener('change', () => setName($('homeName').value));
-  $('createBtn').addEventListener('click', () => { setName($('homeName').value); enterRoom(randomCode(6)); });
-  const homeOtp = otp($('joinInput'));
-  $('joinForm').addEventListener('submit', (ev) => {
+  $('nameForm').addEventListener('submit', (ev) => { // primeira vez: nome e avatar
     ev.preventDefault();
-    setName($('homeName').value);
-    tryJoin($('joinInput'), $('joinError'), homeOtp, ev.target.querySelector('[type=submit]'));
+    const v = clean($('homeName').value);
+    if (!v) { $('homeName').focus(); return; }
+    setName(v);
+    $('nameDlg').close();
+    joinMesh();
+    broadcast(hello());
+    renderPeople();
+    renderChat(false); // minhas mensagens antigas (pelo nome) ganham o destaque
+    sfx('start');
   });
-  const otherOtp = otp($('joinOtherInput'));
-  $('joinOtherBtn').addEventListener('click', () => {
-    otherOtp.reset(); $('joinOtherError').textContent = '';
-    $('joinDlg').showModal();
-  });
-  $('joinOtherForm').addEventListener('submit', (ev) => {
-    ev.preventDefault();
-    tryJoin($('joinOtherInput'), $('joinOtherError'), otherOtp, ev.target.querySelector('[type=submit]'));
-  });
+  $('nameDlg').addEventListener('cancel', (ev) => ev.preventDefault()); // Esc não pula o nome
   for (const b of document.querySelectorAll('.dlg .js-close')) b.addEventListener('click', () => b.closest('dialog').close());
   for (const d of document.querySelectorAll('.dlg')) d.addEventListener('click', (ev) => { if (ev.target === d) d.close(); }); // clique fora fecha
 
@@ -1613,6 +1825,11 @@
   });
   $('guideBtn').addEventListener('click', () => $('guideDlg').showModal());
   const POPS = { settings: 'settingsBtn', voicePop: 'voiceBtn' }; // painel -> botão que abre
+  $('chanChat').addEventListener('click', () => { setView('chat'); $('chatInput').focus(); });
+  $('chanVoice').addEventListener('click', joinVoice);
+  $('joinVoiceBtn').addEventListener('click', joinVoice);
+  $('vconnGo').addEventListener('click', () => setView('voice'));
+  for (const id of ['leaveBtn', 'vconnLeave']) $(id).addEventListener('click', leaveVoice);
   function togglePop(id, open) {
     $(id).hidden = !open;
     $(POPS[id]).setAttribute('aria-expanded', String(open));
@@ -1633,7 +1850,10 @@
   });
 
   // ---------- eventos da voz ----------
-  $('micBtn').addEventListener('click', () => { if (voice.track) setMuted(!voice.muted); else openMic(true); });
+  const micClick = () => { if (voice.track || !inVoice) setMuted(!voice.muted); else openMic(true); };
+  $('micBtn').addEventListener('click', micClick);
+  $('sideMic').addEventListener('click', micClick);
+  $('sideDeaf').addEventListener('click', () => setDeaf(!voice.deaf));
   $('micFixBtn').addEventListener('click', () => openMic(true));
   $('deafBtn').addEventListener('click', () => setDeaf(!voice.deaf));
   $('micSelect').addEventListener('change', () => { voice.mic = $('micSelect').value; store('vmic', voice.mic); openMic(true); });
@@ -1673,7 +1893,7 @@
       ev.preventDefault(); ev.stopPropagation();
       pickKey(ev.code);
     } else if (DESK) { // no app quem cuida da tecla é o gancho global (evento 'ptt'), com ou sem foco
-    } else if (room && voice.mode === 'ptt' && ev.code === voice.key && !typing(ev.target)) {
+    } else if (inVoice && voice.mode === 'ptt' && ev.code === voice.key && !typing(ev.target)) {
       ev.preventDefault(); // Espaço como tecla não aciona o botão em foco
       voice.keyDown = true;
     }
@@ -1698,10 +1918,6 @@
   });
   $('quality').addEventListener('change', applyQuality);
   $('hint').addEventListener('change', applyQuality);
-  $('copyBtn').addEventListener('click', () => copy(pretty(room), $('copyBtn'), `ID ${pretty(room)} copiado. Quem digitar entra na sala.`));
-  $('copyLinkBtn').addEventListener('click', () => copy(DESK ? SITE + location.hash : location.href, null, 'Link copiado. Quem abrir entra direto na sala.'));
-  $('leaveBtn').addEventListener('click', leaveRoom);
-  $('brandLeave').addEventListener('click', (ev) => { ev.preventDefault(); leaveRoom(); });
   $('panelBtn').addEventListener('click', () => {
     togglePanel($('panel').hidden);
     if (!$('panel').hidden) $('panelClose').focus();
@@ -1713,29 +1929,38 @@
     else if (!$('voicePop').hidden) { togglePop('voicePop', false); $('voiceBtn').focus(); }
     else if (!$('panel').hidden && narrow()) { togglePanel(false); $('panelBtn').focus(); }
   });
+  window.matchMedia('(min-width: 1200px)').addEventListener('change', () => { if (chatSeen()) readAll(); });
+  window.matchMedia('(max-width: 960px)').addEventListener('change', () => togglePanel(!narrow())); // janela cresceu: a lateral volta fixa
+  document.addEventListener('visibilitychange', () => { if (chatSeen()) readAll(); });
   $('nameInput').addEventListener('change', () => {
     setName($('nameInput').value);
     if (local) local.tile.setName();
     broadcast(hello());
     renderPeople();
   });
-  $('chatForm').addEventListener('submit', (ev) => {
+  $('chatForm').addEventListener('submit', (ev) => { ev.preventDefault(); chatSend(); });
+  $('fileBtn').addEventListener('click', () => $('fileInput').click());
+  $('fileInput').addEventListener('change', () => { addFiles([...$('fileInput').files]); $('fileInput').value = ''; });
+  $('chatInput').addEventListener('paste', (ev) => {
+    const files = [...(ev.clipboardData ? ev.clipboardData.files : [])];
+    if (files.length) { ev.preventDefault(); addFiles(files); }
+  });
+  let drags = 0; // arrastar arquivo para cima do chat
+  const hasFiles = (ev) => !!ev.dataTransfer && [...ev.dataTransfer.types].includes('Files');
+  $('chat').addEventListener('dragenter', (ev) => { if (!hasFiles(ev)) return; ev.preventDefault(); drags++; $('chat').classList.add('dragging'); });
+  $('chat').addEventListener('dragover', (ev) => { if (hasFiles(ev)) ev.preventDefault(); });
+  $('chat').addEventListener('dragleave', () => { if (--drags <= 0) { drags = 0; $('chat').classList.remove('dragging'); } });
+  $('chat').addEventListener('drop', (ev) => {
+    if (!hasFiles(ev)) return;
     ev.preventDefault();
-    const text = clean($('chatInput').value, 500);
-    if (!text) return;
-    $('chatInput').value = '';
-    broadcast({ t: 'chat', text });
-    addChat(myName, text, 'mine');
+    drags = 0; $('chat').classList.remove('dragging');
+    addFiles([...ev.dataTransfer.files]);
   });
+  $('moreBtn').addEventListener('click', () => { if (chatOpen() && chat.list.length) chat.ws.send(JSON.stringify({ t: 'more', before: chat.list[0].id })); });
+  $('chatScroll').addEventListener('scroll', () => { if (chatSeen() && atBottom()) readAll(); });
 
-  window.addEventListener('online', () => { refreshStatus(); if (peer && peer.disconnected && !peer.destroyed) peer.reconnect(); });
+  window.addEventListener('online', () => { refreshStatus(); if (peer && peer.disconnected && !peer.destroyed) peer.reconnect(); if (!chat.ws) chatConnect(); });
   window.addEventListener('offline', refreshStatus);
-  window.addEventListener('hashchange', () => {
-    const code = parseCode(location.hash);
-    if (code && !room) enterRoom(code);
-    else if (code && code !== room) location.reload(); // trocar de sala: recomeça limpo
-    else if (!code && room) leaveRoom();
-  });
   // ao fechar a aba: avisa a sala e libera os IDs na hora (senão o diretório fica preso por ~1 min)
   window.addEventListener('pagehide', () => {
     if (!room) return;
@@ -1760,25 +1985,25 @@
       if (pickingKey && [1, 3, 4].includes(ev.button)) { ev.preventDefault(); pickKey(`Mouse${ev.button + 2}`); }
     }, true);
     listen('ptt', ({ payload }) => {
-      if (!room || voice.mode !== 'ptt' || pickingKey) return;
+      if (!inVoice || voice.mode !== 'ptt' || pickingKey) return;
       if (payload && document.hasFocus() && typing(document.activeElement)) return; // digitando no chat
       voice.keyDown = payload === true;
       gate();
     });
     listen('hotkey-mute', () => {
-      if (!room || pickingKey) return;
+      if (!inVoice || pickingKey) return;
       if (voice.track) setMuted(!voice.muted); else openMic(true);
       sfx(voice.muted ? 'out' : 'in');
     });
     listen('tray', ({ payload }) => {
-      if (!room) return;
+      if (!inVoice) return;
       if (payload === 'deaf') setDeaf(!voice.deaf);
       else if (voice.track) setMuted(!voice.muted); else openMic(true);
     });
-    const shown = (on) => document.documentElement.classList.toggle('app-hidden', on !== true);
+    const shown = (on) => { document.documentElement.classList.toggle('app-hidden', on !== true); if (chatSeen()) readAll(); };
     listen('visible', ({ payload }) => shown(payload));
     invoke('is_visible').then(shown).catch(() => {}); // aberto com o Windows já nasce escondido na bandeja
-    listen('quit', () => { leaveRoom(); invoke('quit_now'); });
+    listen('quit', () => { leaveAll(); invoke('quit_now'); });
     invoke('autostart').then((on) => { $('autoStart').checked = on; }).catch(() => {});
     $('autoStart').addEventListener('change', () => {
       invoke('autostart', { on: $('autoStart').checked })
@@ -1792,28 +2017,17 @@
   }
 
   // ---------- início ----------
+  // Abrir = já estar no servidor (sem tela de criar/entrar em sala). Primeira vez: pergunta o nome.
   if (QUALITY[store('quality')]) $('quality').value = store('quality');
   if (store('hint') === 'detail') $('hint').value = 'detail';
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search); // links antigos de sala (#ID) caem aqui
   renderDiscord();
+  enterServer();
   renderVoice();
-  // Abertura (PRESS START): clique em qualquer lugar ou qualquer tecla leva ao início
-  function start() {
-    if ($('title').hidden) return;
-    $('title').hidden = true;
-    $('home').hidden = false;
-    sfx('start');
-    loadPeer(); // adianta o carregamento enquanto a pessoa digita o nick
+  if (!store('name')) {
+    $('homeName').value = '';
+    $('nameDlg').showModal();
+    myFace();
     if (window.matchMedia('(hover: hover)').matches) $('homeName').focus(); // no celular não abre o teclado sozinho
-  }
-  $('title').addEventListener('click', start);
-  document.addEventListener('keydown', (ev) => {
-    if (!ev.ctrlKey && !ev.metaKey && !ev.altKey && !['Tab', 'Shift', 'Escape'].includes(ev.key) && !/^F\d+$/.test(ev.key)) start();
-  });
-
-  const initial = parseCode(location.hash);
-  if (initial) enterRoom(initial);
-  else if (location.hash.length > 1) {
-    start();
-    $('joinError').textContent = 'O link aberto não é de uma sala válida. Confira se ele veio inteiro ou digite o ID.';
   }
 })();
