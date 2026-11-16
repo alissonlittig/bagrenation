@@ -13,7 +13,7 @@ Um servidor fixo, como um servidor do Discord: abriu o BAGRENATION (site ou app)
 3. **Canal de voz**: clique no canal (ou em **Entrar no canal de voz**). O navegador pede o microfone: aceitou, já está falando. Sem microfone (ou negando), você só ouve. Para sair, o botão vermelho no dock ou em **Voz conectada**.
 4. Dentro do canal, **Compartilhar tela** e escolha a guia, a janela ou o monitor. Para enviar som, marque "Compartilhar áudio" no seletor do navegador.
 
-5. **Modo foco** (botão de moldura no dock ou tecla **F**): esconde canais, pessoas online, #chat e barras, e deixa só o canal de voz. **Tela**: a tela compartilhada ocupa tudo (com mais de uma, escolha qual pelo nome ou clicando na miniatura; quem está no canal vira uma faixa de rostos em cima). **Pessoas**: grade grande com quem está no canal, contorno verde em quem fala. **Esc** ou **Sair** volta; mensagem nova no #chat aparece no botão Sair. A escolha fica lembrada.
+5. **Modo foco** (botão **Retrair laterais** no topo, botão de moldura no dock ou tecla **F**): esconde canais, pessoas online, #chat e barras, e deixa só o canal de voz. **Tela**: a tela compartilhada ocupa tudo (com mais de uma, escolha qual pelo nome ou clicando na miniatura; quem está no canal vira uma faixa de rostos em cima). **Pessoas**: grade grande com quem está no canal, contorno verde em quem fala. **Esc** ou **Sair** volta; mensagem nova no #chat aparece no botão Sair. A escolha fica lembrada.
 
 Mais de uma pessoa pode transmitir ao mesmo tempo no canal. Quem está fora do canal continua online e no chat, sem receber voz nem tela.
 
@@ -39,6 +39,7 @@ Código: `desktop/` (o `copy-site.mjs` copia os arquivos do site para dentro do 
 - **Ping e atraso por pessoa**, medidos na conexão real (`getStats`): na lista aparece o ping e o atraso estimado de boca a ouvido; passando o mouse, a conta aberta (rede, buffer, saída de som, perda).
 - **Avatares**: 4 bagres em pixel art (clássico, DJ, rei e tóxico) para escolher na entrada e trocar depois; sem escolha, fica a inicial do nome. A escolha fica salva no navegador.
 - Tela inteira, janela, guia ou jogo, com áudio estéreo.
+- **A voz não vaza na tela inteira**: o som do PC que vai junto com a tela leva anime, jogo e vídeo, mas não a voz de quem está no canal (senão quem assiste se escuta de volta). No app para PC o Windows (10 versão 2004 ou mais novo) captura o som de tudo menos o próprio BAGRENATION. No site, o Chrome/Edge recente faz o mesmo (`restrictOwnAudio`); se o navegador não garantir, aparece o aviso para compartilhar pelo app ou escolher a janela/guia do vídeo.
 - **Sem Discord**: com a opção ligada, o seletor só oferece janela e guia, que levam só o próprio som (o som da tela inteira inclui o Discord). Se o navegador não deixar esconder a tela inteira e ela for escolhida, o BAGRENATION corta o áudio e avisa. O botão de ajuda explica cada caso e como rotear o Discord para outra saída no Windows.
 - Medidor do áudio que está saindo e destaque verde na tela que está com som tocando. O som da tela e a voz vão em conexões separadas: dá para baixar um sem mexer no outro.
 - Qualidade de 720p/30 até 1440p/60 e prioridade entre fluidez (jogos) e nitidez (texto), trocáveis durante a transmissão.
@@ -118,6 +119,8 @@ pip install playwright && playwright install chromium
 python tests/test_servidor.py                              # servidor fixo + chat permanente
 python tests/test_e2e.py                                   # servidor local
 python tests/test_e2e.py https://alissonlittig.github.io/bagrenation/   # site publicado
+python tests/test_foco.py                                  # modo foco (retrair laterais)
+python tests/test_eco.py <bagrenation.exe de teste>        # tela inteira no app sem a voz do BAGRENATION (análise de frequência)
 ONLY=voz python tests/test_e2e.py                           # só o cenário de voz
 ```
 

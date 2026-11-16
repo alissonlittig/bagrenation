@@ -646,9 +646,10 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
 .people-online .on-voice { color: var(--ok); }
 .people-online .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* coluna do canal estreita (chat aberto ao lado): o dock fica só com ícones */
-.voice-col { container-type: inline-size; }
-@container (max-width: 820px) {
+/* coluna do canal estreita (chat aberto ao lado): o dock fica só com ícones.
+   1100px = largura do dock com rótulos + folga (S-1354: com 820 o dock passava por baixo do #chat e escondia Foco e Sair) */
+.voice-col { container-type: inline-size; min-width: 0; }
+@container (max-width: 1100px) {
   .dock .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .dock { gap: 5px; flex-wrap: wrap; justify-content: center; row-gap: 8px; max-width: 100%; }
   .dock-btn { padding: 0 8px; gap: 8px; height: 46px; }
@@ -740,6 +741,7 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
 
 /* ---------- Modo foco (S-1351): só o canal de voz, focado na tela ou nas pessoas ---------- */
 .room[data-focus] .side, .room[data-focus] .chat, .room[data-focus] .topbar, .room[data-focus] .voicebar { display: none; }
+#focusTop .ic { color: var(--yel); }
 #focusBtn[aria-pressed="true"] { --fr: var(--fr-dark-on); color: var(--yel); }
 .focusbar { flex: none; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 12px; padding: 12px 14px 0; padding-top: max(12px, env(safe-area-inset-top)); animation: rise .25s steps(4); }
 .seg, .focus-exit { --fr: var(--fr-black); --u: 2px; border: calc(var(--u) * 3) solid transparent; border-image: var(--fr) 3 fill; }

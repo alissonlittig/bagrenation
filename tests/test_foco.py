@@ -49,6 +49,23 @@ def run(base, shots):
             b.click(".unblock")
         step("Ana transmite, Bruno assiste (base do v1.1.0)")
 
+        # 0. S-1354: o botão do dock não pode ficar por baixo do #chat (era o "não retrai": Foco e Sair escondidos)
+        for w, h in ((1366, 768), (1536, 816), (1280, 720), (1920, 1009)):
+            b.set_viewport_size({"width": w, "height": h})
+            b.wait_for_timeout(200)
+            fb, ch = box(b, "#focusBtn"), box(b, "#chat")
+            assert fb["x"] + fb["width"] <= ch["x"], f"{w}x{h}: botão Foco passa por baixo do #chat ({fb} x {ch})"
+            expect(b.locator("#focusTop")).to_be_visible()
+        b.set_viewport_size({"width": 1366, "height": 768})
+        b.click("#focusTop")
+        expect(b.locator("#room")).to_have_attribute("data-focus", "screen")
+        b.keyboard.press("Escape")
+        normal(b)
+        b.locator("#chanChat").click()
+        expect(b.locator("#focusTop")).to_be_hidden()  # fora do canal de voz (no #chat) o botão some
+        b.locator("#chanVoice").click()
+        step("dock inteiro à esquerda do #chat em 1280/1366/1536/1920; botão 'Retrair laterais' no topo entra no foco")
+
         # 1. botão Foco: sem escolha anterior e com tela aberta = foco na tela
         expect(b.locator("#focusBtn")).to_be_visible()
         b.click("#focusBtn")

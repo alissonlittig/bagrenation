@@ -5,7 +5,7 @@ const root = new URL('../', import.meta.url);
 const dist = new URL('./dist/', import.meta.url);
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist);
-for (const f of ['index.html', 'app.js', 'style.css', 'favicon.svg', 'og.png', 'fonts', 'vendor']) {
+for (const f of ['index.html', 'app.js', 'style.css', 'favicon.svg', 'og.png', 'fonts', 'vendor', 'pcm-worklet.js']) {
   cpSync(new URL(f, root), new URL(f, dist), { recursive: true });
 }
 // No app a página fala com o Tauri por fetch em ipc.localhost: libera só isso na CSP da cópia (o site fica igual).

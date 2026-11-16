@@ -378,6 +378,7 @@
     setView('voice');
     if (inVoice || !room) return;
     inVoice = true;
+    layout(); // mostra o botão Retrair do topo
     openMic(); // negado = aviso curto + botão "Ativar microfone" na faixa da voz
     sfx('in');
     broadcast(hello());
@@ -490,6 +491,33 @@
     }
   }
 
+  // Som do PC sem a voz do BAGRENATION (S-1354). O som do sistema que o navegador captura leva junto a voz
+  // dos amigos tocando aqui, e quem assiste se escuta. No app, o Windows captura tudo menos o próprio app
+  // (sysaudio.rs) e esta faixa entra no lugar. No site, o Chromium recente faz o mesmo com restrictOwnAudio.
+  let pcAudio = null;
+  async function startPcAudio() {
+    stopPcAudio(); // trocar de tela: a captura anterior sai
+    const ac = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
+    await ac.audioWorklet.addModule('pcm-worklet.js?v=1354');
+    const node = new AudioWorkletNode(ac, 'pcm-in', { numberOfInputs: 0, outputChannelCount: [2] });
+    const dest = ac.createMediaStreamDestination();
+    dest.channelCount = 2;
+    node.connect(dest);
+    const ch = new DESK.core.Channel();
+    ch.onmessage = (m) => { const b = m instanceof ArrayBuffer ? m : new Uint8Array(m).buffer; node.port.postMessage(b, [b]); };
+    try {
+      await DESK.core.invoke('sys_audio_start', { onChunk: ch });
+    } catch (err) {
+      ac.close();
+      throw err;
+    }
+    await ac.resume();
+    const track = dest.stream.getAudioTracks()[0];
+    pcAudio = { track, stop() { DESK.core.invoke('sys_audio_stop').catch(() => {}); track.stop(); ac.close().catch(() => {}); } };
+    return track;
+  }
+  function stopPcAudio() { if (pcAudio) { pcAudio.stop(); pcAudio = null; } }
+
   async function share() {
     if (!CAN_SHARE) return;
     if (!inVoice) joinVoice(); // tela é dentro do canal de voz, como no Discord
@@ -513,12 +541,24 @@
       // navegador sem monitorTypeSurfaces deixou escolher a tela inteira: o som dela leva o Discord
       stream.removeTrack(audio); audio.stop(); audio = null; cut = true;
     }
+    let leak = false; // som do sistema com risco de levar a voz do BAGRENATION junto
+    if (audio && surface === 'monitor') {
+      if (DESK) {
+        try {
+          const pc = await startPcAudio();
+          stream.removeTrack(audio); audio.stop(); stream.addTrack(pc); audio = pc;
+        } catch (err) {
+          console.warn('BAGRENATION: som do PC sem a voz não abriu (Windows 10 2004+)', err);
+          leak = true;
+        }
+      } else if (!audio.getSettings().restrictOwnAudio) leak = true;
+    }
     video.contentHint = $('hint').value;
     video.addEventListener('ended', () => { if (local && local.stream === stream) stopShare(); });
     if (audio) { audio.contentHint = 'music'; audio.enabled = !audioMuted; }
 
     const swapping = !!local;
-    if (swapping) local.stream.getTracks().forEach((t) => t.stop());
+    if (swapping) { local.stream.getTracks().forEach((t) => t.stop()); if (pcAudio && pcAudio.track !== audio) stopPcAudio(); }
     else local = { stream, tile: makeTile(null) };
     local.stream = stream;
     local.tile.attach(stream);
@@ -527,7 +567,9 @@
     renderShareUi();
     renderPeople();
     layout();
-    if (cut) toast('Tela inteira com "Sem Discord" ligado: o áudio foi cortado, porque o som do sistema leva o Discord junto. Para ter som, troque para a janela do jogo ou uma guia.', 9000);
+    if (leak) toast(DESK ? 'Este Windows não separa o som do BAGRENATION: quem assiste pode ouvir a própria voz. Atualize o Windows ou compartilhe a janela do jogo/vídeo.'
+      : 'Para não vazar a voz do BAGRENATION na tela inteira, compartilhe pelo app para PC (ou escolha a janela/guia do vídeo).', 9000);
+    else if (cut) toast('Tela inteira com "Sem Discord" ligado: o áudio foi cortado, porque o som do sistema leva o Discord junto. Para ter som, troque para a janela do jogo ou uma guia.', 9000);
     else if (!audio) {
       toast(surface === 'window'
         ? 'Sem áudio: este navegador não envia o som de janelas. Para ter som, use "Trocar tela" e escolha uma guia' + (noDiscord() ? '.' : ' ou a tela inteira.')
@@ -535,13 +577,14 @@
     } else if (noDiscord()) {
       toast(surface === 'browser' ? 'Enviando só o som desta guia. O Discord fica de fora.' : 'Enviando só o som desta janela. O Discord fica de fora.', 5000);
     } else if (surface === 'monitor') {
-      toast('Enviando o som do computador todo, Discord incluído. Para tirar, ligue "Sem Discord".', 6000);
+      toast('Enviando o som do computador todo (sem a voz do BAGRENATION), Discord incluído. Para tirar o Discord, ligue "Sem Discord".', 6000);
     }
   }
 
   function stopShare() {
     if (!local) return;
     local.stream.getTracks().forEach((t) => t.stop());
+    stopPcAudio();
     local.tile.el.remove();
     local = null;
     for (const e of peers.values()) { e.nowatch = false; if (e.out) e.out.close(); }
@@ -760,6 +803,7 @@
     const box = $('room');
     if (fm) box.dataset.focus = fm; else delete box.dataset.focus;
     $('focusBar').hidden = !fm;
+    $('focusTop').hidden = !inVoice || box.dataset.view !== 'voice'; // botão óbvio no topo enquanto se está no canal
     $('focusBtn').setAttribute('aria-pressed', String(!!fm));
     $('focusScreen').setAttribute('aria-pressed', String(fm === 'screen'));
     $('focusPeople').setAttribute('aria-pressed', String(fm === 'people'));
@@ -1997,6 +2041,7 @@
     else if (!$('panel').hidden && narrow()) { togglePanel(false); $('panelBtn').focus(); }
   });
   $('focusBtn').addEventListener('click', toggleFocus);
+  $('focusTop').addEventListener('click', toggleFocus);
   $('focusScreen').addEventListener('click', () => setFocus('screen'));
   $('focusPeople').addEventListener('click', () => setFocus('people'));
   $('focusExit').addEventListener('click', () => { setFocus(''); $('focusBtn').focus(); });
