@@ -1,5 +1,7 @@
 # Análise do site original (Streamcord / "BAGRESTREAM")
 
+> Análise do site ORIGINAL (de terceiros). As menções a PeerJS e 0.peerjs.com descrevem aquele site; o BAGRENATION desde a v1.4.0 usa sinalização própria no Worker (`signal.js`).
+
 - Site: https://felipedays.github.io/streamcord/
 - Repositório: https://github.com/felipedays/streamcord (commit analisado: `6b7e5a8`, "fix 3.1", 13/11/2026)
 - Conteúdo: um único `index.html` de 1.655 linhas (HTML + CSS + JS juntos) e um README de uma linha.

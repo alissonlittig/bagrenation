@@ -6,7 +6,7 @@ do site chega no app, tecla global de push-to-talk e de mutar com OUTRA janela e
 no Windows, como um teclado), aviso de quem entra, bandeja (eventos), animações pausadas escondido, abrir com
 o Windows (registro) e o chat permanente com imagem enviada de dentro do app.
 Uso:  python tests/test_app.py <caminho do bagrenation.exe> [pasta de prints]
-Requer: pip install playwright psutil && playwright install chromium; internet (sinalização PeerJS pública).
+Requer: pip install playwright psutil && playwright install chromium; internet (sinalização pelo Worker do BAGRENATION).
 """
 import ctypes
 import ctypes.wintypes as wt

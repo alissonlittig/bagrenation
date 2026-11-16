@@ -9,7 +9,7 @@ Uso:  python tests/test_e2e.py                 (sobe um servidor local com os ar
       python tests/test_e2e.py https://...     (testa um endereço já publicado)
       PW_CHANNEL=msedge python tests/test_e2e.py ...   (mesmo teste no Edge instalado)
 Requer: pip install playwright && playwright install chromium
-Usa o servidor público de sinalização do PeerJS, então precisa de internet.
+Usa a sinalização do Worker do BAGRENATION (rota /rtc), então precisa de internet.
 """
 import functools
 import math
