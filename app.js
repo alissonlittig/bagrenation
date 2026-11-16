@@ -1,7 +1,7 @@
 /* BAGRENATION — chat de voz e compartilhamento de tela ponto a ponto (WebRTC).
  *
  * Como funciona:
- *  - Cada pessoa é um "membro" com um ID próprio no servidor público de sinalização do PeerJS.
+ *  - Cada pessoa é um "membro" com um ID próprio na sinalização do Worker do BAGRENATION (signal.js; sem servidor de terceiros).
  *  - A sala tem um ID fixo de "diretório" (bagrenation-<código>-dir). Quem chega tenta falar com ele;
  *    se ninguém responde, assume o papel. O diretório só distribui a lista de membros.
  *    Se quem o mantinha sai, outro membro assume: o link da sala nunca morre.
@@ -27,13 +27,8 @@
   const oldQ = { '720p30': ['720', 30], '1080p30': ['1080', 30], '1080p60': ['1080', 60], '1440p60': ['src', 60] }[store('quality')] || [];
   let qRes = ['720', '1080', 'src'].includes(store('qres')) ? store('qres') : oldQ[0] || '720';
   let qFps = [30, 60].includes(Number(store('qfps'))) ? Number(store('qfps')) : oldQ[1] || 30;
-  // shortcut: só STUN (não existe TURN grátis sem conta); redes com NAT simétrico/CGNAT dos dois
-  // lados não conectam. Para resolver, adicionar aqui um servidor TURN próprio.
-  const ICE = [
-    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-  ];
-  const PEER_OPTS = { debug: 0, config: { iceServers: ICE } };
+  // ICE (STUN + TURN do Cloudflare, quando ligado) vem do Worker junto com a sinalização: ver signal.js.
+  const PEER_OPTS = {};
   const CONN_OPTS = { reliable: true, serialization: 'json' };
   const CAN_SHARE = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
   // App para PC (desktop/, Tauri): esta mesma página com tecla global, bandeja e avisos. No navegador é undefined.
@@ -105,15 +100,14 @@
   };
 
   // ---------- utilidades ----------
-  // A biblioteca PeerJS testa o WebRTC do navegador ao iniciar (centenas de ms em aparelho fraco):
-  // só é carregada quando vai ser usada (Press Start ou link de sala), não junto com a página.
+  // A sinalização (signal.js) só é carregada quando vai ser usada (Press Start ou link de sala), não junto com a página.
   let peerLib = null;
   function loadPeer() { // Promise<boolean>: a biblioteca está pronta?
     if (!peerLib) {
       peerLib = new Promise((resolve) => {
         const s = document.createElement('script');
-        s.src = 'vendor/peerjs.min.js';
-        s.onload = () => resolve(true);
+        s.src = 'signal.js?v=1382';
+        s.onload = () => { Peer.setup(`${CHAT.replace('https:', 'wss:')}/rtc`); resolve(true); };
         s.onerror = () => { peerLib = null; s.remove(); resolve(false); }; // falhou: a próxima tentativa baixa de novo
         document.head.append(s);
       });
@@ -2184,7 +2178,7 @@
   function voicePc(e) {
     voiceClose(e);
     e.vAt = Date.now();
-    const pc = e.vpc = new RTCPeerConnection({ iceServers: ICE });
+    const pc = e.vpc = new RTCPeerConnection(Peer.pcConfig());
     pc.addEventListener('icecandidate', (ev) => { if (ev.candidate && e.vpc === pc) send(e, { t: 'vi', c: ev.candidate.toJSON() }); });
     pc.addEventListener('track', (ev) => {
       if (e.vpc !== pc) return;

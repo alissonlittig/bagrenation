@@ -5,7 +5,7 @@ botão, voz e tela só entre quem está no canal, chat de texto permanente com i
 (arrastar), tudo chegando no outro e continuando lá depois de recarregar.
 Usa um servidor de teste (?servidor=teste-...), então não aparece no BAGRENATION de verdade.
 Uso:  python tests/test_servidor.py [url_base] [pasta_prints]
-Requer: pip install playwright pillow && playwright install chromium; internet (PeerJS público + Worker do chat).
+Requer: pip install playwright pillow && playwright install chromium; internet (Worker do chat).
 """
 import functools
 import http.server

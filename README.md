@@ -95,7 +95,7 @@ Com `prefers-reduced-motion`, as linhas de CRT, o glitch e as animações são d
 
 ## Como funciona
 
-O vídeo e o áudio vão de navegador para navegador por WebRTC, criptografados, sem passar por servidor. A sinalização é o servidor público do [PeerJS](https://peerjs.com/), usado só para os navegadores se encontrarem.
+O vídeo e o áudio vão de navegador para navegador por WebRTC, criptografados, sem passar por servidor. A sinalização (oferta, resposta e candidatos ICE) passa pelo Worker do próprio BAGRENATION (`/rtc`, `signal.js`), só para os navegadores se encontrarem; não há servidor de terceiros. ICE: STUN `stun.cloudflare.com` e, se ativado, TURN do Cloudflare Realtime com credencial de curta duração gerada no Worker (secrets `TURN_KEY_ID` e `TURN_KEY_API_TOKEN`; sem eles só STUN).
 
 Todo mundo que abre entra no mesmo servidor (`bagrenation`). Um dos participantes mantém o "diretório" (a lista de quem está conectado na malha de voz e tela; a lista de membros e o status vêm do Worker do chat); se ele sai, outro assume automaticamente. Os participantes se ligam em malha por canal de dados (presença); voz e tela só abrem entre quem está no canal de voz, e quem transmite envia uma cópia para cada espectador. Links antigos de sala (`#K7Q-M4P`) abrem o servidor.
 
@@ -105,7 +105,7 @@ O **#chat** fica num Worker da Cloudflare (`server/worker.js`, plano grátis, se
 
 **Canais** (S-1363): o Worker guarda a lista (`chans`) e cada mensagem diz o canal dela (`ch`; as de antes são do #chat). O app/site novo avisa que entende canais (`{ t: 'v' }`) e só então recebe as mensagens dos outros canais: o app antigo, até atualizar, continua vendo só o #chat e entrando só no "Canal de voz". Na malha, cada pessoa diz em que canal de voz está (`vch`) e a voz/tela só abre entre quem está no mesmo. Apagar um canal de texto apaga as mensagens e os arquivos dele.
 
-O site é estático: `index.html`, `style.css`, `app.js`, a biblioteca PeerJS e as fontes, todos servidos do próprio repositório. Não há build. `?servidor=nome` abre outro servidor (os testes usam isso para não aparecer no de verdade).
+O site é estático: `index.html`, `style.css`, `app.js`, `signal.js` (sinalização) e as fontes, todos servidos do próprio repositório. Não há build. `?servidor=nome` abre outro servidor (os testes usam isso para não aparecer no de verdade).
 
 ## Limites
 
@@ -120,7 +120,7 @@ O site é estático: `index.html`, `style.css`, `app.js`, a biblioteca PeerJS e 
 - **Quem tem o link entra.** Não há senha nem conta: qualquer um que abrir o site entra no servidor, lê o #chat e aparece online. Nome é só um apelido (dá para usar o de outra pessoa). Para algo sigiloso, não use o BAGRENATION.
 - **Apagar.** Cada um apaga e edita só as próprias mensagens (as anteriores à versão 1.2.0 não têm autor guardado e ficam como estão). Apagar a de outra pessoa só pela chave de moderação (`POST /s/bagrenation/del?id=N` com `Authorization: Bearer <ADMIN_KEY>`). GIF é arquivo `.gif` (não há busca de GIFs, que exigiria chave de um serviço de terceiros).
 - **Sem Discord** não separa aplicativos dentro do som do sistema (nenhum navegador permite isso). Ele funciona escolhendo uma fonte sem o Discord: guia (Chrome/Edge) ou janela (Chrome/Edge recentes, que oferecem o áudio só da janela).
-- **Sinalização de terceiros.** O servidor público do PeerJS é gratuito, sem garantia de disponibilidade, e enxerga os identificadores das salas (não o vídeo nem o áudio). Se ele cair, ninguém novo entra; as transmissões abertas continuam.
+- **Sinalização no Worker.** Se o Worker da Cloudflare cair, ninguém novo entra na voz; as transmissões abertas continuam. Sem TURN, redes com NAT simétrico dos dois lados (CGNAT, rede corporativa) podem não conectar.
 
 ## Rodar e testar
 
@@ -137,6 +137,7 @@ python tests/test_e2e.py                                   # servidor local
 python tests/test_e2e.py https://alissonlittig.github.io/bagrenation/   # site publicado
 python tests/test_foco.py                                  # modo foco (retrair laterais) e retrair só o chat
 python tests/test_sync.py [url] [prints] [exe]             # tudo sincroniza para todos em < 2 s (tempo medido)
+python tests/test_sinal.py [url] [prints] [--relay]       # 3 clientes, voz e tela só pelo Worker, PeerJS bloqueado (--relay força o TURN)
 python tests/test_membros.py                               # membros, status, digitando, reagir/responder/editar/apagar (3 navegadores)
 python tests/test_canais.py                                # canais, volume por pessoa, qualidade da tela (3 navegadores + celular)
 python tests/test_eco.py <bagrenation.exe de teste>        # tela inteira no app sem a voz do BAGRENATION (análise de frequência)
@@ -149,4 +150,4 @@ O BAGRENATION (antes chamado Telão) nasceu de uma análise do projeto [Streamco
 
 ## Licenças
 
-Código sob licença MIT (arquivo `LICENSE`). Inclui [PeerJS 1.5.5](https://github.com/peers/peerjs) (MIT, `vendor/PEERJS-LICENSE.txt`) e as fontes [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P) e [VT323](https://fonts.google.com/specimen/VT323) (SIL OFL 1.1, `fonts/*-LICENSE.txt`).
+Código sob licença MIT (arquivo `LICENSE`). Inclui as fontes [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P) e [VT323](https://fonts.google.com/specimen/VT323) (SIL OFL 1.1, `fonts/*-LICENSE.txt`).

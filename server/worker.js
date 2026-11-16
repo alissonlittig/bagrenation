@@ -12,6 +12,10 @@
 // Canais (S-1363): vários canais de texto e de voz. #chat (id 'chat') guarda o histórico de antes e "Canal de voz"
 // (id 'voz') é o canal das versões antigas. Qualquer membro cria, renomeia e apaga canais (S-1378); os fixos só renomeiam.
 // Mensagens de outros canais só vão para clientes novos (que mandam { t:'v' }): o app antigo as mostraria no #chat.
+// Sinalização WebRTC (S-1382): GET /s/<srv>/rtc é um segundo WebSocket só para os navegadores se encontrarem
+// (oferta, resposta e candidatos ICE passam por aqui; voz e tela continuam de navegador para navegador).
+// Substitui o servidor público 0.peerjs.com. TURN do Cloudflare Realtime só entra se os secrets TURN_KEY_ID e
+// TURN_KEY_API_TOKEN existirem; sem eles só vai STUN.
 
 const ORIGINS = [/^https:\/\/alissonlittig\.github\.io$/, /^https?:\/\/tauri\.localhost$/, /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/];
 const MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime']);
@@ -24,6 +28,9 @@ const EMOJIS = new Set(['👍', '❤️', '😂', '😮', '😢', '😡', '🔥'
 const ST = ['on', 'idle', 'off'];       // off = invisível (para os outros, igual a offline)
 const FIXED = { chat: 'text', voz: 'voice' }; // canais de sempre: renomeia, não apaga
 const MAX_CHANS = 30;
+const RTC_ID = /^[a-z0-9-]{3,80}$/;
+const MAX_SIG = 32000;                  // oferta/resposta (SDP) cabem folgados; acima disso não é sinalização
+const STUN = { urls: 'stun:stun.cloudflare.com:3478' };
 const chanName = (v, kind) => { const n = clean(v, 32); return kind === 'text' ? n.toLowerCase().replace(/\s+/g, '-') : n; };
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, max);
 const avOf = (v) => (/^[a-z0-9-]{0,24}$/.test(v || '') ? v || '' : '');
@@ -40,9 +47,9 @@ export default {
     const origin = req.headers.get('Origin') || '';
     const okOrigin = ORIGINS.some((re) => re.test(origin)) ? origin : '';
     if (req.method === 'OPTIONS') return new Response(null, { status: okOrigin ? 204 : 403, headers: cors(okOrigin) });
-    const m = url.pathname.match(/^\/s\/([a-z0-9-]{1,40})\/(ws|up|del|m\/[a-z0-9]{20})$/);
+    const m = url.pathname.match(/^\/s\/([a-z0-9-]{1,40})\/(ws|rtc|up|del|m\/[a-z0-9]{20})$/);
     if (!m) return new Response('BAGRENATION chat', { status: url.pathname === '/' ? 200 : 404 });
-    const write = m[2] === 'ws' || m[2] === 'up';
+    const write = m[2] === 'ws' || m[2] === 'rtc' || m[2] === 'up';
     if (write && !okOrigin) return json({ error: 'origem não autorizada' }, 403);
     const stub = env.SERVER.get(env.SERVER.idFromName(m[1]));
     const h = new Headers(req.headers); // set (não append): o cliente não consegue injetar a rota nem a origem
@@ -81,6 +88,13 @@ export class Server {
   async fetch(req) {
     const route = req.headers.get('X-Route');
     const origin = req.headers.get('X-Ok-Origin');
+    if (route === 'rtc') {
+      if (req.headers.get('Upgrade') !== 'websocket') return new Response('esperava WebSocket', { status: 426 });
+      const [client, server] = Object.values(new WebSocketPair());
+      this.ctx.acceptWebSocket(server, ['rtc']);
+      server.serializeAttachment({ rtc: '', since: Date.now() });
+      return new Response(null, { status: 101, webSocket: client });
+    }
     if (route === 'ws') {
       if (req.headers.get('Upgrade') !== 'websocket') return new Response('esperava WebSocket', { status: 426 });
       const [client, server] = Object.values(new WebSocketPair());
@@ -106,7 +120,8 @@ export class Server {
   broadcast(obj, skip, onlyNew) { // onlyNew: só para quem entende canais (mensagem fora do #chat)
     const s = JSON.stringify(obj);
     for (const ws of this.ctx.getWebSockets()) {
-      if (ws === skip || (onlyNew && !(ws.deserializeAttachment() || {}).c2)) continue;
+      const a = ws.deserializeAttachment() || {};
+      if (ws === skip || typeof a.rtc === 'string' || (onlyNew && !a.c2)) continue;
       try { ws.send(s); } catch { /* fechando */ }
     }
   }
@@ -211,7 +226,58 @@ export class Server {
     if (left) await this.ctx.storage.setAlarm(now + 60000);
   }
 
+  // ---------- sinalização WebRTC ----------
+  async ice() { // STUN sempre; TURN (credencial curta gerada na hora) só se o Cloudflare Realtime estiver ligado
+    const id = this.env.TURN_KEY_ID, tok = this.env.TURN_KEY_API_TOKEN;
+    if (!id || !tok) return [STUN];
+    if (this.turn && Date.now() < this.turn.until) return this.turn.list;
+    try {
+      const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${id}/credentials/generate-ice-servers`, {
+        method: 'POST', headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ ttl: 86400 }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const list = [STUN, ...(await r.json()).iceServers.filter((s) => JSON.stringify(s.urls).includes('turn:'))];
+      this.turn = { list, until: Date.now() + 3600000 }; // credencial vale 24 h; renova a cada hora
+      return list;
+    } catch (err) {
+      console.warn('TURN indisponível, só STUN:', String(err));
+      return [STUN];
+    }
+  }
+  rtcHolder(id) { return this.ctx.getWebSockets('rtc').find((w) => (w.deserializeAttachment() || {}).rtc === id); }
+  async rtc(ws, a, raw) { // { t:'reg', id, tok } · { t:'sig', to, d } (repassa para o dono do id)
+    if (raw.length > MAX_SIG) return;
+    let d;
+    try { d = JSON.parse(raw); } catch { return; }
+    if (!d || typeof d !== 'object') return;
+    const now = Date.now();
+    if (d.t === 'reg') {
+      if (a.rtc || typeof d.id !== 'string' || !RTC_ID.test(d.id) || typeof d.tok !== 'string' || d.tok.length > 40) return;
+      const old = this.rtcHolder(d.id);
+      if (old) {
+        const o = old.deserializeAttachment() || {};
+        const pong = this.ctx.getWebSocketAutoResponseTimestamp(old);
+        const alive = now - Math.max(o.since || 0, o.lt || 0, pong ? pong.getTime() : 0) < 70000;
+        if (o.tok !== d.tok && alive) { ws.send(JSON.stringify({ t: 'taken' })); return; }
+        try { old.serializeAttachment({ ...o, rtc: '' }); old.close(4000, 'substituído'); } catch { /* já fechou */ }
+      }
+      ws.serializeAttachment({ ...a, rtc: d.id, tok: d.tok, lt: now });
+      ws.send(JSON.stringify({ t: 'ok', ice: await this.ice() }));
+      return;
+    }
+    if (!a.rtc) return;
+    a.lt = now;
+    ws.serializeAttachment(a);
+    if (d.t === 'sig' && typeof d.to === 'string' && d.d && typeof d.d === 'object') {
+      const to = this.rtcHolder(d.to);
+      if (!to || to === ws) { if (typeof d.d.o === 'string') ws.send(JSON.stringify({ t: 'gone', to: d.to })); return; } // só oferta de quem nunca existiu vira erro
+      try { to.send(JSON.stringify({ t: 'sig', from: a.rtc, d: d.d })); } catch { ws.send(JSON.stringify({ t: 'gone', to: d.to })); }
+    }
+  }
+
   async webSocketMessage(ws, raw) {
+    const a0 = ws.deserializeAttachment() || {};
+    if (typeof a0.rtc === 'string') return this.rtc(ws, a0, String(raw));
     let d;
     try { d = JSON.parse(raw); } catch { return; }
     if (!d || typeof d !== 'object') return;
