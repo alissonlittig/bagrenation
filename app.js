@@ -21,12 +21,12 @@
   const asked = new URLSearchParams(location.search).get('servidor') || '';
   const SERVER = /^[a-z0-9-]{1,40}$/.test(asked) ? asked : 'bagrenation';
   const CHAT = `https://bagrenation-chat.alissondelittig.workers.dev/s/${SERVER}`;
-  const QUALITY = {
-    '720p30': { w: 1280, h: 720, fps: 30, bitrate: 3_000_000 },
-    '1080p30': { w: 1920, h: 1080, fps: 30, bitrate: 6_000_000 },
-    '1080p60': { w: 1920, h: 1080, fps: 60, bitrate: 10_000_000 },
-    '1440p60': { w: 2560, h: 1440, fps: 60, bitrate: 16_000_000 },
-  };
+  // Qualidade da transmissão (S-1363): resolução 720p / 1080p / fonte (sem reduzir) e 30 / 60 fps. Padrão 720p30.
+  // Escolha antiga (até a 1.2.0) é convertida: 1440p60 vira fonte a 60 fps.
+  const RES = { 720: { w: 1280, h: 720 }, 1080: { w: 1920, h: 1080 }, src: null };
+  const oldQ = { '720p30': ['720', 30], '1080p30': ['1080', 30], '1080p60': ['1080', 60], '1440p60': ['src', 60] }[store('quality')] || [];
+  let qRes = ['720', '1080', 'src'].includes(store('qres')) ? store('qres') : oldQ[0] || '720';
+  let qFps = [30, 60].includes(Number(store('qfps'))) ? Number(store('qfps')) : oldQ[1] || 30;
   // shortcut: só STUN (não existe TURN grátis sem conta); redes com NAT simétrico/CGNAT dos dois
   // lados não conectam. Para resolver, adicionar aqui um servidor TURN próprio.
   const ICE = [
@@ -41,7 +41,18 @@
 
   // ---------- estado ----------
   let room = null;          // nome do servidor (fixo) quando conectado
-  let inVoice = false;      // estou no canal de voz?
+  let inVoice = false;      // estou num canal de voz?
+  // Canais (S-1363): vários de texto e de voz, guardados no servidor do chat. 'chat' (com o histórico de antes)
+  // e 'voz' (o canal das versões antigas) são fixos. Na malha, cada pessoa diz em que canal de voz está (vch).
+  const FIXED_CH = ['chat', 'voz'];
+  let chans = [{ id: 'chat', kind: 'text', name: 'chat', uid: '', last: 0 }, { id: 'voz', kind: 'voice', name: 'Canal de voz', uid: '', last: 0 }];
+  let textCh = 'chat';      // canal de texto aberto
+  let myVch = '';           // canal de voz em que estou ('' = fora)
+  let viewVch = 'voz';      // canal de voz mostrado no palco
+  const unreadBy = new Map(); // canal de texto -> mensagens que chegaram sem eu ver
+  const chanOf = (id) => chans.find((c) => c.id === id);
+  const chanLabel = (id) => (chanOf(id) || { name: id === 'voz' ? 'Canal de voz' : 'chat' }).name;
+  const withMe = (e) => inVoice && !!e.vch && e.vch === myVch; // está comigo no mesmo canal de voz
   // Modo foco (S-1351): '' normal · 'screen' tela grande · 'people' grade de quem está no canal. Lembrado no navegador.
   let focusMode = ['screen', 'people'].includes(store('focus')) ? store('focus') : '';
   let myId = null;
@@ -277,10 +288,10 @@
     if (!e) {
       e = { id, name: 'Convidado', av: '', named: false, invoice: false, ready: false, born: Date.now(), seen: Date.now(),
         conn: null, sharing: false, call: null, out: null, tile: null,
-        volume: 1, muted: false, blocked: false, wanted: 0, fails: 0, bytes: 0, bytesAt: 0,
+        muted: false, blocked: false, wanted: 0, fails: 0, bytes: 0, bytesAt: 0, vch: '',
         // voz
         audio: document.body.appendChild(Object.assign(document.createElement('audio'), { autoplay: true })),
-        vpc: null, vsend: null, vq: [], vAt: 0, vfails: 0, vvol: 1,
+        vpc: null, vsend: null, vq: [], vAt: 0, vfails: 0,
         vmuted: false, vdeaf: false, talking: false, ping: null, lat: null, vinfo: '', vprev: null };
       peers.set(id, e);
     }
@@ -298,7 +309,8 @@
     c.on('error', () => {});
   }
 
-  const hello = () => ({ t: 'hello', uid: myUid, name: myName, av: myAv, voice: inVoice, sharing: !!local, muted: voice.muted || !voice.track, deaf: voice.deaf, talking: voice.talking });
+  // voice: só o canal de sempre, para a versão antiga (que não conhece vch) não tentar falar com outro canal
+  const hello = () => ({ t: 'hello', uid: myUid, name: myName, av: myAv, voice: inVoice && myVch === 'voz', vch: inVoice ? myVch : '', sharing: !!local, muted: voice.muted || !voice.track, deaf: voice.deaf, talking: voice.talking });
   function send(e, msg) { if (e.conn && e.conn.open) e.conn.send(msg); }
   function broadcast(msg) { for (const e of peers.values()) send(e, msg); }
 
@@ -315,15 +327,18 @@
       e.vmuted = d.muted === true;
       e.vdeaf = d.deaf === true;
       e.talking = d.talking === true && !e.vmuted; // quem chega no meio de uma fala já vê o anel aceso
-      const was = e.invoice;
-      e.invoice = d.voice === true;
-      if (e.invoice && !was) {
+      const before = withMe(e);
+      const prev = e.vch;
+      e.vch = typeof d.vch === 'string' && /^[a-z0-9]{1,12}$/.test(d.vch) ? d.vch : d.voice === true ? 'voz' : ''; // versão antiga: canal de sempre
+      e.invoice = !!e.vch;
+      const after = withMe(e);
+      if (prev && prev !== e.vch) offVoice(e);
+      if (before && !after) { note(`${e.name} saiu do canal de voz`); sfx('out'); }
+      if (e.vch && e.vch !== prev) {
         e.wanted = Date.now();
-        if (!first || inVoice) { note(`${e.name} entrou no canal de voz`); sfx('in'); }
-        if (!first && DESK && (!document.hasFocus() || document.documentElement.classList.contains('app-hidden'))) DESK.core.invoke('notify', { body: `${e.name} entrou no canal de voz` }).catch(() => {});
-      } else if (!e.invoice && was) {
-        offVoice(e);
-        if (inVoice) { note(`${e.name} saiu do canal de voz`); sfx('out'); }
+        const where = e.vch === 'voz' ? 'no canal de voz' : `em ${chanLabel(e.vch)}`;
+        if (after || (!first && !inVoice)) { note(`${e.name} entrou ${where}`); sfx('in'); }
+        if (!first && (after || !inVoice) && DESK && (!document.hasFocus() || document.documentElement.classList.contains('app-hidden'))) DESK.core.invoke('notify', { body: `${e.name} entrou ${where}` }).catch(() => {});
       }
       if (!e.sharing) { e.stopped = false; removeStream(e); }
       if (e.tile) e.tile.setName(e.name);
@@ -344,7 +359,7 @@
       ring(e.id, e.talking);
     } else if (d.t === 'vo' || d.t === 'va') {
       if (typeof d.sdp !== 'string' || d.sdp.length > 20000) return;
-      if (d.t === 'vo') { if (myId < e.id && inVoice && e.invoice) voiceAnswer(e, d.sdp); } // só aceito oferta de quem deve oferecer (maior ID), os dois no canal
+      if (d.t === 'vo') { if (myId < e.id && withMe(e)) voiceAnswer(e, d.sdp); } // só aceito oferta de quem deve oferecer (maior ID), os dois no canal
       else if (e.vpc && e.vpc.signalingState === 'have-local-offer') {
         const pc = e.vpc;
         pc.setRemoteDescription({ type: 'answer', sdp: voiceSdp(d.sdp) })
@@ -370,14 +385,14 @@
     removeStream(e);
     voiceClose(e);
     e.audio.remove();
-    if (e.named && e.invoice && inVoice && !silent && !leaving) { note(`${e.name} saiu do canal de voz`); sfx('out'); }
+    if (e.named && withMe(e) && !silent && !leaving) { note(`${e.name} saiu do canal de voz`); sfx('out'); }
     renderPeople();
   }
 
   // ---------- canal de voz: entrar e sair ----------
   // Voz e tela só existem entre quem está no canal. Fora dele a pessoa segue online (lista e chat).
   function linkVoice(e) {
-    if (!inVoice || !e.invoice || !e.conn || !e.conn.open) return;
+    if (!withMe(e) || !e.conn || !e.conn.open) return;
     if (myId > e.id && !e.vpc) voiceStart(e); // quem tem o maior ID oferece
     if (local && !e.out) callPeer(e);
   }
@@ -387,10 +402,15 @@
     e.stopped = false; e.nowatch = false; e.talking = false;
     if (e.out) { const c = e.out; e.out = null; c.close(); }
   }
-  function joinVoice() {
+  function joinVoice(ch) { // entrar num canal de voz (o mostrado, se não disser qual); trocar de canal = sair e entrar
+    const c = typeof ch === 'string' ? chanOf(ch) : null;
+    ch = c && c.kind === 'voice' ? c.id : viewVch;
+    if (inVoice && myVch !== ch) leaveVoice(true);
+    viewVch = ch;
     setView('voice');
     if (inVoice || !room) return;
     inVoice = true;
+    myVch = ch;
     layout(); // mostra o botão Retrair do topo
     openMic(); // negado = aviso curto + botão "Ativar microfone" na faixa da voz
     sfx('in');
@@ -398,17 +418,18 @@
     for (const e of peers.values()) linkVoice(e);
     renderVoice(); layout();
   }
-  function leaveVoice() {
+  function leaveVoice(swapping) {
     if (!inVoice) return;
     stopShare();
     inVoice = false;
+    myVch = '';
     for (const e of peers.values()) offVoice(e);
     closeMic();
     voice.keyDown = false;
     $('hearBtn').hidden = true;
     togglePop('voicePop', false);
     broadcast(hello());
-    sfx('out');
+    if (swapping !== true) sfx('out');
     renderVoice(); layout();
   }
 
@@ -437,7 +458,7 @@
   }
 
   function callPeer(e) {
-    if (e.nowatch || !local || !inVoice || !e.invoice || !peer || !peer.open || !e.conn || !e.conn.open) return;
+    if (e.nowatch || !local || !withMe(e) || !peer || !peer.open || !e.conn || !e.conn.open) return;
     if (e.out) e.out.close();
     const call = peer.call(e.id, local.stream, { sdpTransform: hifi });
     if (!call) return;
@@ -450,7 +471,7 @@
 
   // Limites de envio aplicados depois da negociação (antes disso o navegador recusa).
   function tune(pc) {
-    const q = QUALITY[$('quality').value];
+    const q = target(local && local.stream.getVideoTracks()[0]);
     const motion = $('hint').value === 'motion';
     for (const sender of pc.getSenders()) {
       if (!sender.track) continue;
@@ -459,6 +480,7 @@
       if (sender.track.kind === 'video') {
         params.encodings[0].maxBitrate = q.bitrate;
         params.encodings[0].maxFramerate = q.fps;
+        params.encodings[0].scaleResolutionDownBy = q.scale; // captura maior que o escolhido (navegador ignorou o limite): o codificador reduz
         params.degradationPreference = motion ? 'maintain-framerate' : 'maintain-resolution';
       } else {
         params.encodings[0].maxBitrate = 256_000;
@@ -467,15 +489,51 @@
     }
   }
 
+  // O que vai de fato para o codificador: o tamanho que sai da captura (cabendo na resolução escolhida), os fps e a
+  // taxa de bits proporcional (~0,09 bit por pixel por quadro: 720p30 ~2,5 Mb/s, 1080p60 ~11 Mb/s; teto 20 Mb/s).
+  function target(track) {
+    const s = track ? track.getSettings() : {};
+    const r = RES[qRes];
+    let w = s.width || (r ? r.w : 1920);
+    let h = s.height || (r ? r.h : 1080);
+    const scale = r && h > r.h ? h / r.h : 1;
+    w = Math.round(w / scale); h = Math.round(h / scale);
+    return { w, h, fps: qFps, scale, bitrate: Math.round(Math.min(20e6, Math.max(1.5e6, w * h * qFps * 0.09))) };
+  }
+  const qName = () => `${qRes === 'src' ? 'Fonte' : `${qRes}p`} · ${qFps} fps`;
+  const mbps = (bps) => `${(bps / 1e6).toFixed(1).replace('.', ',')} Mb/s`;
+  const videoWant = () => { const r = RES[qRes]; return { ...(r ? { width: { max: r.w }, height: { max: r.h } } : {}), frameRate: { ideal: qFps, max: qFps } }; };
+  function renderQuality() {
+    for (const b of $('qRes').children) b.setAttribute('aria-pressed', String(b.dataset.v === qRes));
+    for (const b of $('qFps').children) b.setAttribute('aria-pressed', String(Number(b.dataset.v) === qFps));
+    const t = target(local && local.stream.getVideoTracks()[0]);
+    $('qNote').textContent = `${qName()}: até ${mbps(t.bitrate)} de envio para cada pessoa assistindo.`;
+    $('settingsBtn').title = `Qualidade da transmissão: ${qName()}`;
+  }
   function applyQuality() {
-    store('quality', $('quality').value);
+    store('qres', qRes); store('qfps', String(qFps));
     store('hint', $('hint').value);
+    band.n = 0; band.warned = ''; $('qWarn').hidden = true;
+    renderQuality();
     if (!local) return;
-    const q = QUALITY[$('quality').value];
     const track = local.stream.getVideoTracks()[0];
     track.contentHint = $('hint').value;
-    track.applyConstraints({ width: { max: q.w }, height: { max: q.h }, frameRate: { max: q.fps } }).catch(() => {});
-    for (const e of peers.values()) if (e.out && e.out.peerConnection) tune(e.out.peerConnection);
+    // applyConstraints troca o conjunto inteiro: na "fonte" o limite de tamanho sai
+    track.applyConstraints(videoWant()).catch(() => {}).then(() => {
+      renderQuality();
+      for (const e of peers.values()) if (e.out && e.out.peerConnection) tune(e.out.peerConnection);
+    });
+  }
+  // Internet não aguenta: 3 leituras seguidas (~6 s) limitadas pela rede ou com banda estimada abaixo de 60% do pedido.
+  const band = { n: 0, warned: '' };
+  function checkBand(limited, avail, t) {
+    band.n = limited || (avail > 0 && avail < t.bitrate * 0.6) ? band.n + 1 : 0;
+    if (band.n < 3 || band.warned === qName()) return;
+    band.warned = qName();
+    const msg = `Sua internet não está aguentando ${qName()}${avail > 0 ? ` (envio estimado ${mbps(avail)}, pedido ${mbps(t.bitrate)})` : ''}. Baixe a resolução ou os fps.`;
+    $('qWarn').textContent = msg;
+    $('qWarn').hidden = false;
+    toast(msg, 9000);
   }
 
   // "Sem Discord": nenhum navegador separa um app de dentro do som do sistema. O que dá certo é
@@ -484,11 +542,10 @@
   const noDiscord = () => store('nodiscord') === '1';
 
   async function capture() {
-    const q = QUALITY[$('quality').value];
     const nd = noDiscord();
     try {
       return await navigator.mediaDevices.getDisplayMedia({
-        video: { width: { max: q.w }, height: { max: q.h }, frameRate: { ideal: q.fps, max: q.fps } },
+        video: videoWant(),
         // áudio de jogo/vídeo: sem os filtros de voz, que abafam música e efeitos
         // restrictOwnAudio: ao capturar o som do sistema, deixa de fora o que o próprio BAGRENATION está tocando (evita eco entre duas transmissões)
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2, restrictOwnAudio: true },
@@ -580,6 +637,8 @@
     renderShareUi();
     renderPeople();
     layout();
+    band.n = 0; band.warned = ''; $('qWarn').hidden = true;
+    renderQuality();
     if (leak) toast(DESK ? 'Este Windows não separa o som do BAGRENATION: quem assiste pode ouvir a própria voz. Atualize o Windows ou compartilhe a janela do jogo/vídeo.'
       : 'Para não vazar a voz do BAGRENATION na tela inteira, compartilhe pelo app para PC (ou escolha a janela/guia do vídeo).', 9000);
     else if (cut) toast('Tela inteira com "Sem Discord" ligado: o áudio foi cortado, porque o som do sistema leva o Discord junto. Para ter som, troque para a janela do jogo ou uma guia.', 9000);
@@ -627,7 +686,7 @@
   // ---------- mídia: receber ----------
   function onCall(call) {
     const e = peers.get(call.peer);
-    if (!e || e.stopped || !inVoice || !e.invoice) { call.close(); return; } // só aceito tela de quem está comigo no canal de voz (e que eu não parei de assistir)
+    if (!e || e.stopped || !withMe(e)) { call.close(); return; } // só aceito tela de quem está comigo no canal de voz (e que eu não parei de assistir)
     const prev = e.call;
     e.call = call;
     if (prev) prev.close();
@@ -701,12 +760,12 @@
       if (!isLocal) range.setAttribute('aria-label', `Volume da ${who()}`);
       for (const b of el.querySelectorAll('button[aria-label]')) b.title = b.getAttribute('aria-label');
     }
-    function volume() {
-      const silent = e.muted || e.volume === 0;
-      video.volume = e.volume;
-      video.muted = e.muted || e.blocked || voice.deaf; // ensurdecido: nem a voz nem o som das telas
-      range.value = e.muted ? 0 : e.volume;
-      range.style.setProperty('--fill', `${range.value * 100}%`);
+    function volume() { // volume da tela desta pessoa (lembrado por pessoa, até 200%)
+      const pf = pref(e);
+      const silent = e.muted || pf.m || pf.s === 0;
+      outLevel(video, pf.s, e.muted || pf.m || e.blocked || voice.deaf); // ensurdecido: nem a voz nem o som das telas
+      range.value = e.muted || pf.m ? 0 : pf.s;
+      range.style.setProperty('--fill', `${range.value * 50}%`);
       setIcon(muteBtn.querySelector('use'), silent ? 'mute' : 'vol');
       muteBtn.setAttribute('aria-pressed', String(silent));
       muteBtn.setAttribute('aria-label', `${silent ? 'Ativar' : 'Silenciar'} som da ${who()}`);
@@ -728,11 +787,12 @@
       });
     } else {
       muteBtn.addEventListener('click', () => {
-        e.muted = !(e.muted || e.volume === 0);
-        if (!e.muted && e.volume === 0) e.volume = 0.5;
-        volume();
+        const pf = pref(e);
+        if (pf.m) { e.muted = false; setPref(e, { m: false, s: pf.s || 0.5 }); return; }
+        e.muted = !(e.muted || pf.s === 0);
+        if (!e.muted && pf.s === 0) setPref(e, { s: 0.5 }); else volume();
       });
-      range.addEventListener('input', () => { e.volume = Number(range.value); e.muted = false; volume(); });
+      range.addEventListener('input', () => { e.muted = false; setPref(e, { s: Number(range.value), m: false }); });
       q('.unblock').addEventListener('click', () => { // um clique já autoriza o som na página inteira
         for (const p of peers.values()) if (p.blocked && p.tile) p.tile.unblock();
       });
@@ -787,6 +847,7 @@
       },
       destroy() {
         if (document.pictureInPictureElement === video) document.exitPictureInPicture().catch(() => {});
+        unboost(video);
         video.srcObject = null;
         el.remove();
       },
@@ -879,6 +940,7 @@
           parts[0] = `${o.frameWidth}×${o.frameHeight}`;
           parts[1] = `${Math.round(o.framesPerSecond || 0)} fps`;
           if (mbps > 0) parts.push(`${mbps.toFixed(1).replace('.', ',')} Mb/s`);
+          checkBand(o.qualityLimitationReason === 'bandwidth', avail || 0, target(local.stream.getVideoTracks()[0]));
           if (o.qualityLimitationReason === 'cpu') parts.push('limitado pelo processador');
           if (o.qualityLimitationReason === 'bandwidth') parts.push('limitado pela rede');
           tip = `Capturando ${s.width}×${s.height} a ${Math.round(s.frameRate || 0)} fps · codec ${codec || '?'} (${o.encoderImplementation || '?'})`
@@ -926,7 +988,7 @@
     const olist = $('online');
     const grid = $('voiceGrid');
     const all = [{
-      id: 'me', name: myName, av: myAv, you: true, invoice: inVoice, sharing: !!local, talking: voice.talking,
+      id: 'me', name: myName, av: myAv, you: true, invoice: inVoice, vch: myVch, sharing: !!local, talking: voice.talking,
       muted: inVoice && (voice.muted || !voice.track), deaf: inVoice && voice.deaf, off: inVoice && !voice.track,
       sub: !inVoice ? 'online' : !voice.track ? (voice.err ? 'sem microfone' : 'ligando o microfone…')
         : voice.deaf ? 'som desligado' : voice.muted ? 'microfone mudo'
@@ -935,38 +997,43 @@
     for (const e of peers.values()) {
       if (!e.ready) continue;
       const on = !!e.vpc && e.vpc.connectionState === 'connected';
-      const linked = inVoice && e.invoice;
+      const linked = withMe(e);
       all.push({
-        id: e.id, name: e.name, av: e.av, e, invoice: e.invoice, sharing: e.sharing, stopped: e.stopped, talking: e.invoice && e.talking,
+        id: e.id, name: e.name, av: e.av, e, invoice: e.invoice, vch: e.vch, sharing: e.sharing, stopped: e.stopped, talking: e.invoice && e.talking,
         muted: e.invoice && e.vmuted, deaf: e.invoice && e.vdeaf, off: linked && !on,
-        sub: !e.invoice ? 'online' : !inVoice ? (e.vdeaf ? 'som desligado' : e.vmuted ? 'microfone mudo' : 'na voz')
+        sub: !e.invoice ? 'online' : !linked ? (e.vdeaf ? 'som desligado' : e.vmuted ? 'microfone mudo' : 'na voz')
           : !on ? 'conectando a voz…' : e.ping === null ? 'na voz' : `ping ${e.ping} ms · atraso ${e.lat} ms`,
         tip: linked && on ? e.vinfo : '',
       });
     }
-    const voiceIds = new Set(all.filter((p) => p.invoice).map((p) => p.id));
-    for (const el of [...vlist.children]) if (!voiceIds.has(el.dataset.id)) el.remove();
-    for (const el of [...grid.children]) if (!voiceIds.has(el.dataset.id)) el.remove();
+    // cada canal de voz tem a sua lista embaixo dele; o palco mostra o canal de voz aberto (viewVch)
+    const lists = new Map([...document.querySelectorAll('ul.people-voice[data-ch]')].map((ul) => [ul.dataset.ch, ul]));
+    const where = new Map(all.filter((p) => p.invoice).map((p) => [p.id, p.vch]));
+    for (const [vch, ul] of lists) for (const el of [...ul.children]) if (where.get(el.dataset.id) !== vch) el.remove();
+    for (const el of [...grid.children]) if (where.get(el.dataset.id) !== viewVch) el.remove();
     const find = (box, id) => [...box.children].find((el) => el.dataset.id === id);
+    const counts = new Map();
     for (const p of all) {
       if (!p.invoice) continue;
-      let li = find(vlist, p.id);
-      if (!li) {
+      counts.set(p.vch, (counts.get(p.vch) || 0) + 1);
+      const vl = lists.get(p.vch);
+      let li = vl ? find(vl, p.id) : null;
+      if (vl && !li) {
         li = $('personTpl').content.firstElementChild.cloneNode(true);
         li.dataset.id = p.id;
         const range = li.querySelector('.pvol');
         if (p.e) {
+          li.tabIndex = 0; // Enter, botão direito ou toque longo: volume desta pessoa
           range.addEventListener('input', () => {
-            p.e.vvol = Number(range.value);
-            range.style.setProperty('--fill', `${range.value * 100}%`);
-            voiceOut(p.e);
+            range.style.setProperty('--fill', `${range.value * 50}%`);
+            setPref(p.e, { v: Number(range.value), m: false });
           });
           li.querySelector('.wbtn').addEventListener('click', () => (p.e.stopped ? watch(p.e) : unwatch(p.e)));
         } else { range.remove(); li.querySelector('.wbtn').remove(); }
+        vl.append(li);
       }
-      if (li.parentElement !== vlist) vlist.append(li);
-      let card = find(grid, p.id);
-      if (!card) {
+      let card = p.vch === viewVch ? find(grid, p.id) : null;
+      if (!card && p.vch === viewVch) {
         card = $('vcardTpl').content.firstElementChild.cloneNode(true);
         card.dataset.id = p.id;
         if (p.e) card.querySelector('.vwatch').addEventListener('click', () => watch(p.e));
@@ -974,21 +1041,31 @@
         grid.append(card);
       }
       const label = p.you ? `${p.name} (você)` : p.name;
-      li.querySelector('.nm').textContent = label;
-      li.querySelector('.sub').textContent = p.sub;
-      li.title = p.tip || '';
-      const wb = li.querySelector('.wbtn');
-      if (wb) {
-        wb.hidden = !(p.sharing && inVoice);
-        wb.textContent = p.stopped ? 'Assistir' : 'Parar de assistir';
-        wb.setAttribute('aria-label', `${p.stopped ? 'Assistir' : 'Parar de assistir'} a tela de ${p.name}`);
+      const mine = p.you || withMe(p.e);
+      const els = [];
+      if (li) {
+        li.querySelector('.nm').textContent = label;
+        const pf = p.e ? pref(p.e) : null;
+        li.querySelector('.sub').textContent = pf && pf.m ? 'silenciado para você' : pf && pf.v !== 1 ? `${p.sub} · ${Math.round(pf.v * 100)}%` : p.sub;
+        li.title = p.e ? `${p.tip ? `${p.tip}\n` : ''}Botão direito: volume de ${p.name}` : '';
+        li.classList.toggle('is-hushed', !!(pf && pf.m));
+        const wb = li.querySelector('.wbtn');
+        if (wb) {
+          wb.hidden = !(p.sharing && mine);
+          wb.textContent = p.stopped ? 'Assistir' : 'Parar de assistir';
+          wb.setAttribute('aria-label', `${p.stopped ? 'Assistir' : 'Parar de assistir'} a tela de ${p.name}`);
+        }
+        const pv = li.querySelector('.pvol');
+        if (pv) {
+          pv.hidden = !mine;
+          pv.setAttribute('aria-label', `Volume da voz de ${p.name}`);
+          if (document.activeElement !== pv) { pv.value = pf.m ? 0 : pf.v; pv.style.setProperty('--fill', `${pv.value * 50}%`); }
+        }
+        els.push(li);
       }
-      const pv = li.querySelector('.pvol');
-      if (pv) { pv.hidden = !(inVoice && p.invoice); pv.setAttribute('aria-label', `Volume da voz de ${p.name}`); }
-      const els = [li];
       if (card) {
         const vw = card.querySelector('.vwatch');
-        if (vw) { vw.hidden = !(p.sharing && p.stopped && inVoice); vw.setAttribute('aria-label', `Assistir a tela de ${p.name}`); }
+        if (vw) { vw.hidden = !(p.sharing && p.stopped && mine); vw.setAttribute('aria-label', `Assistir a tela de ${p.name}`); }
         card.querySelector('.vname').textContent = label;
         els.push(card);
       }
@@ -1004,8 +1081,9 @@
       }
     }
     renderMembers();
-    $('voiceCount').textContent = voiceIds.size ? String(voiceIds.size) : '';
-    const others = all.filter((p) => !p.you && p.invoice);
+    for (const el of document.querySelectorAll('.chan[data-ch] .chan-count')) { const n = counts.get(el.closest('.chan').dataset.ch); el.textContent = n ? String(n) : ''; }
+    $('emptyTitle').textContent = chanLabel(viewVch);
+    const others = all.filter((p) => !p.you && p.invoice && p.vch === viewVch);
     $('emptySay').textContent = inVoice ? (others.length ? `Você e mais ${others.length} no canal` : 'Só você no canal. Chame a galera.')
       : others.length ? `${others.length} ${others.length === 1 ? 'pessoa' : 'pessoas'} no canal` : 'Ninguém no canal ainda';
     myFace();
@@ -1020,7 +1098,8 @@
     $('voiceBar').dataset.state = !voice.track ? (voice.err ? 'off' : 'wait') : voice.muted ? 'muted' : linked < others.length ? 'wait' : 'on';
     $('micFixBtn').hidden = !!voice.track || !voice.err;
     for (const id of ['voiceBar', 'dockWrap', 'vconn']) $(id).hidden = !inVoice;
-    $('focusFaces').replaceChildren(...all.filter((p) => p.invoice).map((p) => { // faixa de rostos do modo foco na tela
+    if (inVoice) $('vconnGo').textContent = chanLabel(myVch);
+    $('focusFaces').replaceChildren(...all.filter((p) => p.invoice && inVoice && p.vch === myVch).map((p) => { // faixa de rostos do modo foco na tela
       const li = Object.assign(document.createElement('li'), { title: p.you ? `${p.name} (você)` : p.name });
       li.dataset.id = p.id;
       const av = Object.assign(document.createElement('span'), { className: 'avatar' });
@@ -1033,7 +1112,7 @@
     }));
     $('joinVoiceBtn').hidden = inVoice;
     for (const b of $('empty').querySelectorAll('.js-share')) b.hidden = !inVoice || !CAN_SHARE;
-    $('chanVoice').classList.toggle('is-in', inVoice);
+    for (const b of document.querySelectorAll('.chan[data-ch]')) b.classList.toggle('is-in', inVoice && b.dataset.ch === myVch);
     renderTalk();
   }
   // ---------- membros (S-1357): Online / Ausente / Offline, como no Discord ----------
@@ -1128,7 +1207,7 @@
   setInterval(checkIdle, 15000);
 
   function renderTalk() { // quem está falando agora, por nome
-    const names = [...(voice.talking ? ['você'] : []), ...[...peers.values()].filter((e) => e.ready && e.invoice && e.talking).map((e) => e.name)];
+    const names = [...(voice.talking ? ['você'] : []), ...[...peers.values()].filter((e) => e.ready && withMe(e) && e.talking).map((e) => e.name)];
     $('vbTalk').textContent = names.length ? `falando: ${names.join(', ')}` : '';
   }
   // anel de "falando" no avatar da pessoa (lista e canal de voz)
@@ -1144,13 +1223,19 @@
   const wideChat = () => window.matchMedia('(min-width: 1200px)').matches;
   function setView(v) {
     $('room').dataset.view = v;
-    $('chanChat').setAttribute('aria-current', v === 'chat' ? 'page' : 'false');
-    $('chanVoice').setAttribute('aria-current', v === 'voice' ? 'page' : 'false');
-    $('roomTitle').textContent = v === 'chat' ? 'chat' : 'Canal de voz';
-    setIcon($('topIcon'), v === 'chat' ? 'hash' : 'vol');
+    renderView();
     if (narrow()) togglePanel(false);
     if (chatSeen()) readAll();
     layout();
+  }
+  function renderView() { // canal aberto em destaque na lateral e nome dele no topo
+    const v = $('room').dataset.view;
+    for (const b of document.querySelectorAll('.chan[data-ch]')) {
+      const id = b.dataset.ch;
+      b.setAttribute('aria-current', (v === 'chat' && id === textCh) || (v === 'voice' && id === viewVch) ? 'page' : 'false');
+    }
+    $('roomTitle').textContent = v === 'chat' ? chanLabel(textCh) : chanLabel(viewVch);
+    setIcon($('topIcon'), v === 'chat' ? 'hash' : 'vol');
   }
   const chatSeen = () => document.visibilityState === 'visible' && !document.documentElement.classList.contains('app-hidden')
     && ($('room').dataset.view === 'chat' || (wideChat() && !focusOn()));
@@ -1171,7 +1256,12 @@
     clearTimeout(chat.timer);
     if (!navigator.onLine) { chat.timer = setTimeout(chatConnect, 3000); return; }
     const ws = chat.ws = new WebSocket(`${CHAT.replace(/^http/, 'ws')}/ws`);
-    ws.addEventListener('open', () => { chat.backoff = 0; chatState(); sendMe(); });
+    ws.addEventListener('open', () => {
+      chat.backoff = 0;
+      ws.send(JSON.stringify({ t: 'v' })); // entendo canais: o servidor manda também as mensagens dos outros canais
+      if (textCh !== 'chat') { chat.loading = true; ws.send(JSON.stringify({ t: 'hist', ch: textCh })); }
+      chatState(); sendMe();
+    });
     ws.addEventListener('message', (ev) => {
       let d;
       try { d = JSON.parse(ev.data); } catch { return; }
@@ -1188,14 +1278,17 @@
   }
   const chatOpen = () => !!chat.ws && chat.ws.readyState === WebSocket.OPEN;
   function chatState() {
-    $('chatState').textContent = chatOpen() ? '' : chat.list.length ? 'reconectando…' : 'conectando…';
+    $('chatState').textContent = chatOpen() ? (chat.loading ? 'carregando…' : '') : chat.list.length ? 'reconectando…' : 'conectando…';
   }
   function onChat(d) {
     if (d.t === 'hist' && Array.isArray(d.list)) {
+      if ((d.ch || 'chat') !== textCh) return; // histórico de outro canal (o do #chat chega sozinho ao conectar)
+      chat.loading = false;
       chat.list = d.list.filter(okMsg);
       chat.more = d.list.length >= 150;
       renderChat(true);
     } else if (d.t === 'old' && Array.isArray(d.list)) {
+      if ((d.ch || 'chat') !== textCh) return;
       const box = $('chatScroll');
       const fromBottom = box.scrollHeight - box.scrollTop;
       chat.list = [...d.list.filter(okMsg), ...chat.list];
@@ -1204,12 +1297,17 @@
       box.scrollTop = box.scrollHeight - fromBottom; // continua vendo a mesma mensagem
       if (chat.jump) { const j = chat.jump; chat.jump = null; jumpTo(j.id, j.tries); }
     } else if (d.t === 'msg' && okMsg(d.m)) {
-      if (chat.list.some((m) => m.id === d.m.id)) return;
+      const ch = d.m.ch || 'chat';
+      const c = chanOf(ch);
+      if (c) c.last = Math.max(c.last || 0, d.m.id);
+      if (ch !== textCh) { if (!mine(d.m)) incoming(d.m); renderUnread(); return; } // outro canal: só conta como não lida
+      if (chat.loading || chat.list.some((m) => m.id === d.m.id)) return;
       const stick = atBottom();
       chat.list.push(d.m);
       $('chatLog').append(msgEl(d.m, chat.list[chat.list.length - 2]));
       if (stick || mine(d.m)) scrollDown();
-      if (!mine(d.m)) incoming(d.m);
+      $('chatLog').querySelector('.chat-start')?.remove();
+      if (!mine(d.m)) incoming(d.m); else readAll();
       if (d.m.uid && typers.delete(d.m.uid)) renderTyping();
     } else if (d.t === 'del') {
       if (editing && editing.id === d.id) editing = null;
@@ -1241,7 +1339,15 @@
         renderChat(false);
         box.scrollTop = top;
       }
-    } else if (d.t === 'typing' && /^[a-f0-9]{16}$/.test(d.uid || '') && d.uid !== myUid) {
+    } else if (d.t === 'chans' && Array.isArray(d.list)) {
+      onChans(d.list);
+    } else if (d.t === 'chanok' && typeof d.id === 'string') {
+      if (chat.pendingAdm) { store('admkey', chat.pendingAdm); chat.pendingAdm = ''; }
+      if (!d.op && chanOf(d.id)) { if (d.kind === 'text') { openText(d.id); $('chatInput').focus(); } else joinVoice(d.id); }
+    } else if (d.t === 'err' && typeof d.text === 'string') {
+      if (/chave/i.test(d.text)) { store('admkey', ''); chat.pendingAdm = ''; }
+      toast(d.text.slice(0, 200), 6000);
+    } else if (d.t === 'typing' && /^[a-f0-9]{16}$/.test(d.uid || '') && d.uid !== myUid && (d.ch || 'chat') === textCh) {
       typers.set(d.uid, Date.now());
       renderTyping();
     }
@@ -1303,25 +1409,162 @@
     parkTools();
     log.textContent = '';
     chat.list.forEach((m, i) => log.append(msgEl(m, chat.list[i - 1])));
+    if (!chat.list.length && !chat.loading && !chat.more && chatOpen()) { // canal vazio: começo dele, como no Discord
+      const li = Object.assign(document.createElement('li'), { className: 'chat-start' });
+      li.innerHTML = '<span class="cs-ic"><svg class="ic" aria-hidden="true"><use href="#i-hash"/></svg></span>';
+      li.append(Object.assign(document.createElement('b'), { textContent: `Bem-vindo a #${chanLabel(textCh)}` }),
+        Object.assign(document.createElement('span'), { textContent: `Este é o começo do canal #${chanLabel(textCh)}.` }));
+      log.append(li);
+    }
     if (editing) paintEdit();
     $('moreBtn').hidden = !chat.more;
     chatState();
     if (down) scrollDown();
   }
   function incoming(m) {
-    if (chatSeen()) return;
-    chat.unread++;
-    for (const b of [$('unread'), $('unreadTop'), $('focusUnread')]) { b.hidden = false; b.textContent = String(Math.min(99, chat.unread)); }
+    const ch = m.ch || 'chat';
+    if (ch === textCh && chatSeen()) { readAll(); return; }
+    unreadBy.set(ch, (unreadBy.get(ch) || 0) + 1);
+    renderUnread();
     sfx('tap');
     const now = Date.now();
     if (DESK && document.documentElement.classList.contains('app-hidden') && now - chat.notifyAt > 10000) {
       chat.notifyAt = now;
-      DESK.core.invoke('notify', { body: `${m.name}: ${m.text || (m.media && m.media.mime.startsWith('video/') ? 'mandou um vídeo' : 'mandou uma imagem')}`.slice(0, 160) }).catch(() => {});
+      const where = ch === 'chat' ? '' : ` em #${chanLabel(ch)}`;
+      DESK.core.invoke('notify', { body: `${m.name}${where}: ${m.text || (m.media && m.media.mime.startsWith('video/') ? 'mandou um vídeo' : 'mandou uma imagem')}`.slice(0, 160) }).catch(() => {});
     }
   }
+  // Não lidas por canal: contador das que chegaram com o canal fechado; negrito também para o que chegou com o
+  // aparelho desligado (última mensagem do canal depois da última que eu vi, guardada neste aparelho).
+  const readMark = (id) => Number(store(`read:${id}`) || 0);
   function readAll() {
-    chat.unread = 0;
-    for (const b of [$('unread'), $('unreadTop'), $('focusUnread')]) { b.hidden = true; b.textContent = ''; }
+    unreadBy.delete(textCh);
+    const c = chanOf(textCh);
+    const last = Math.max(c ? c.last || 0 : 0, chat.list.length ? chat.list[chat.list.length - 1].id : 0);
+    if (last > readMark(textCh)) store(`read:${textCh}`, String(last));
+    renderUnread();
+  }
+  function renderUnread() {
+    let total = 0;
+    for (const c of chans) {
+      if (c.kind !== 'text') continue;
+      const n = unreadBy.get(c.id) || 0;
+      total += n;
+      const b = document.querySelector(`.chan[data-ch="${c.id}"]`);
+      if (!b) continue;
+      const badge = b.querySelector('.chan-badge');
+      badge.hidden = !n;
+      badge.textContent = n ? String(Math.min(99, n)) : '';
+      b.classList.toggle('unread', !!n || (c.last || 0) > readMark(c.id));
+    }
+    chat.unread = total;
+    for (const b of [$('unreadTop'), $('focusUnread')]) { b.hidden = !total; b.textContent = total ? String(Math.min(99, total)) : ''; }
+  }
+
+  // ---------- canais: lista, abrir, criar, renomear, apagar ----------
+  function onChans(list) {
+    const ok = list.filter((c) => c && /^[a-z0-9]{1,12}$/.test(c.id) && ['text', 'voice'].includes(c.kind) && typeof c.name === 'string');
+    if (!ok.some((c) => c.id === 'chat') || !ok.some((c) => c.id === 'voz')) return;
+    const gone = (id) => !ok.some((c) => c.id === id);
+    chans = ok.map((c) => ({ id: c.id, kind: c.kind, name: c.name.slice(0, 32), uid: typeof c.uid === 'string' ? c.uid : '', last: Number(c.last) || 0 }));
+    for (const c of chans) if (c.kind === 'text' && store(`read:${c.id}`) === null) store(`read:${c.id}`, String(c.last)); // canal novo para este aparelho: começa lido
+    for (const id of [...unreadBy.keys()]) if (gone(id)) unreadBy.delete(id);
+    if (gone(textCh)) { toast(`O canal #${$('chatTitle').textContent} foi apagado.`); openText('chat', true); }
+    if (inVoice && gone(myVch)) { toast('O canal de voz em que você estava foi apagado.'); leaveVoice(); }
+    if (gone(viewVch)) viewVch = 'voz';
+    if (chanEdit && gone(chanEdit.id) && $('chanDlg').open) $('chanDlg').close();
+    renderChans();
+    renderView();
+    renderPeople();
+  }
+  function chanRow(c) {
+    const row = Object.assign(document.createElement('div'), { className: 'chan-row' });
+    row.dataset.ch = c.id;
+    const b = Object.assign(document.createElement('button'), { type: 'button', className: 'chan' });
+    b.dataset.ch = c.id;
+    b.innerHTML = `<svg class="ic" aria-hidden="true"><use href="#i-${c.kind === 'text' ? 'hash' : 'vol'}"/></svg><span class="chan-name"></span>`
+      + (c.kind === 'text' ? '<span class="badge chan-badge" hidden></span>' : '<span class="chan-count"></span>');
+    const g = Object.assign(document.createElement('button'), { type: 'button', className: 'icon-btn chan-gear', title: 'Editar canal' });
+    g.dataset.ch = c.id;
+    g.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg>';
+    row.append(b, g);
+    if (c.kind === 'text') return [row];
+    const ul = Object.assign(document.createElement('ul'), { className: 'people people-voice' });
+    ul.dataset.ch = c.id;
+    ul.setAttribute('aria-label', `No canal ${c.name}`);
+    return [row, ul];
+  }
+  function renderChans() {
+    for (const kind of ['text', 'voice']) {
+      const box = $(kind === 'text' ? 'textChans' : 'voiceChans');
+      const want = chans.filter((c) => c.kind === kind && !FIXED_CH.includes(c.id));
+      const ids = want.map((c) => c.id).join();
+      if (box.dataset.ids !== ids) { box.dataset.ids = ids; box.replaceChildren(...want.flatMap(chanRow)); }
+    }
+    for (const c of chans) {
+      for (const el of document.querySelectorAll(`.chan[data-ch="${c.id}"] .chan-name`)) el.textContent = c.name;
+      for (const g of document.querySelectorAll(`.chan-gear[data-ch="${c.id}"]`)) g.setAttribute('aria-label', `Editar canal ${c.name}`);
+    }
+    renderUnread();
+    renderChanTitle();
+  }
+  function renderChanTitle() {
+    const n = chanLabel(textCh);
+    $('chatTitle').textContent = n;
+    $('chatInput').placeholder = `Conversar em #${n}`;
+    document.querySelector('#chat .drop p').textContent = `Solte para enviar em #${n}`;
+  }
+  function openText(ch, quiet) {
+    const c = chanOf(ch);
+    ch = c && c.kind === 'text' ? c.id : 'chat';
+    if (ch !== textCh) {
+      if (editing) stopEdit(true);
+      cancelReply(); closeMenus();
+      textCh = ch;
+      chat.list = []; chat.more = false; chat.jump = null;
+      chat.loading = chatOpen();
+      typers.clear(); renderTyping();
+      renderChat(true);
+      renderChanTitle();
+      if (chatOpen()) chat.ws.send(JSON.stringify({ t: 'hist', ch }));
+    }
+    if (quiet) { renderView(); return; }
+    setView('chat');
+  }
+  let chanEdit = null; // canal aberto no diálogo (null = criando)
+  let delArmed = false;
+  const chanKind = () => (chanEdit ? chanEdit.kind : $('chanForm').elements.kind.value);
+  function openChanDlg(id, kind) {
+    const c = id ? chanOf(id) : null;
+    if (id && !c) return;
+    chanEdit = c;
+    delArmed = false;
+    $('chanTitle').textContent = c ? `Editar ${c.kind === 'text' ? '#' : ''}${c.name}` : 'Criar canal';
+    $('chanKinds').hidden = !!c;
+    for (const r of $('chanForm').elements.kind) r.checked = r.value === (c ? c.kind : kind || 'text');
+    $('chanName').value = c ? c.name : '';
+    $('chanAdmWrap').hidden = !c || (!!c.uid && c.uid === myUid);
+    $('chanAdm').value = store('admkey') || '';
+    $('chanDel').hidden = !c || FIXED_CH.includes(c.id);
+    $('chanDel').textContent = 'Apagar canal';
+    $('chanOk').textContent = c ? 'Salvar' : 'Criar canal';
+    chanIcon();
+    $('chanDlg').showModal();
+    $('chanName').focus();
+  }
+  function chanIcon() {
+    const text = chanKind() === 'text';
+    setIcon($('chanNameIcon'), text ? 'hash' : 'vol');
+    $('chanName').placeholder = text ? 'novo-canal' : 'Sala nova';
+  }
+  function chanSend(op) {
+    if (!chatOpen()) { toast('O chat está reconectando. Tente de novo em instantes.'); return false; }
+    const needAdm = !$('chanAdmWrap').hidden;
+    const adm = needAdm ? $('chanAdm').value.trim() : '';
+    if (needAdm && !adm) { $('chanAdm').focus(); return false; }
+    chat.pendingAdm = adm;
+    chat.ws.send(JSON.stringify({ t: 'chan', op, id: chanEdit ? chanEdit.id : undefined, kind: chanKind(), name: $('chanName').value, adm: adm || undefined }));
+    return true;
   }
 
   const two = (n) => String(n).padStart(2, '0');
@@ -1421,7 +1664,7 @@
     const gone = chat.list.length && id > chat.list[0].id; // estaria carregada: foi apagada
     if (gone || !chat.more || tries >= 10 || !chatOpen()) { toast('Essa mensagem foi apagada.'); return; }
     chat.jump = { id, tries: tries + 1 }; // carrega as antigas até achar
-    chat.ws.send(JSON.stringify({ t: 'more', before: chat.list[0].id }));
+    chat.ws.send(JSON.stringify({ t: 'more', before: chat.list[0].id, ch: textCh }));
   }
 
   // ---------- ações na mensagem: reagir, responder, editar, copiar, apagar ----------
@@ -1440,7 +1683,7 @@
     t.hidden = false;
     toolsFor = m.id;
   }
-  function closeMenus() { $('msgMenu').hidden = true; $('reactPop').hidden = true; }
+  function closeMenus() { $('msgMenu').hidden = true; $('reactPop').hidden = true; $('userMenu').hidden = true; menuFor = null; }
   function place(el, x, y) { // menu flutuante perto do ponto, sem sair da janela; no celular vira folha de baixo
     el.classList.toggle('sheet', narrow());
     el.style.left = el.style.top = '';
@@ -1659,7 +1902,7 @@
   }
   function chatPost(text, media, reply) {
     if (!chatOpen()) return false;
-    chat.ws.send(JSON.stringify({ t: 'msg', name: myName, av: myAv, text, media, reply: reply || undefined }));
+    chat.ws.send(JSON.stringify({ t: 'msg', name: myName, av: myAv, text, media, reply: reply || undefined, ch: textCh }));
     return true;
   }
   let sending = false;
@@ -1967,6 +2210,7 @@
     const pc = e.vpc;
     e.vpc = null; e.vsend = null; e.vq = []; e.vprev = null; e.ping = e.lat = null; e.vinfo = '';
     if (pc) pc.close();
+    unboost(e.audio);
     e.audio.srcObject = null;
   }
   function voiceFlush(e) { // candidatos que chegaram antes da descrição remota esperam aqui
@@ -2011,10 +2255,92 @@
       sender.setParameters(params).catch((err) => console.warn('BAGRENATION: ajuste de voz não aplicado', err));
     }
   }
-  function voiceOut(e) { // volume desta pessoa + ensurdecer
-    e.audio.volume = e.vvol;
-    e.audio.muted = voice.deaf || e.vvol === 0;
+  function voiceOut(e) { // volume desta pessoa (lembrado, até 200%) + silenciar só para mim + ensurdecer
+    const pf = pref(e);
+    outLevel(e.audio, pf.v, voice.deaf || pf.m || pf.v === 0);
   }
+
+  // ---------- volume por pessoa (S-1363) ----------
+  // Só neste aparelho, lembrado por pessoa (pelo uid; quem ainda não tem, pelo nome). v = voz, s = som da tela,
+  // de 0 a 2 (200%); m = silenciada só para mim (voz e tela).
+  const prefs = (() => { try { const o = JSON.parse(store('pvol') || '{}'); return o && typeof o === 'object' ? o : {}; } catch { return {}; } })();
+  const pkey = (e) => (e.uid ? `u:${e.uid}` : `n:${e.name}`);
+  const num = (v, d) => (Number.isFinite(v) ? Math.min(2, Math.max(0, v)) : d);
+  function pref(e) { const x = prefs[pkey(e)] || {}; return { v: num(x.v, 1), s: num(x.s, 1), m: x.m === true }; }
+  function setPref(e, patch) {
+    const pf = { ...pref(e), ...patch };
+    if (pf.v === 1 && pf.s === 1 && !pf.m) delete prefs[pkey(e)]; else prefs[pkey(e)] = pf;
+    store('pvol', JSON.stringify(prefs));
+    voiceOut(e);
+    if (e.tile) e.tile.sync();
+    if (menuFor === e) paintUserMenu();
+    renderPeople();
+  }
+  // Até 100% o próprio elemento toca, como sempre. Acima, o elemento fica mudo (só segura o fluxo do WebRTC, que o
+  // Chrome exige para o Web Audio receber o som) e o som sai por um ganho do Web Audio. Antes do primeiro clique na
+  // página o navegador não deixa o Web Audio tocar: fica em 100% até lá.
+  let boostAc = null;
+  const boosts = new WeakMap(); // elemento -> { src, gain, stream }
+  function unboost(el) { const b = boosts.get(el); if (b) { b.src.disconnect(); b.gain.disconnect(); boosts.delete(el); } }
+  function outLevel(el, vol, muted) {
+    const s = el.srcObject;
+    const want = !muted && vol > 1 && !!s && s.getAudioTracks().length > 0 && !(navigator.userActivation && !navigator.userActivation.hasBeenActive);
+    if (!want) { unboost(el); el.volume = Math.min(1, vol); el.muted = muted; return; }
+    if (!boostAc) {
+      boostAc = new AudioContext({ latencyHint: 'interactive' });
+      if (voice.out && boostAc.setSinkId) boostAc.setSinkId(voice.out).catch(() => {});
+    }
+    if (boostAc.state === 'suspended') boostAc.resume().catch(() => {});
+    let b = boosts.get(el);
+    if (!b || b.stream !== s) {
+      unboost(el);
+      const src = boostAc.createMediaStreamSource(s);
+      const gain = boostAc.createGain();
+      src.connect(gain).connect(boostAc.destination);
+      b = { src, gain, stream: s };
+      boosts.set(el, b);
+    }
+    b.gain.gain.value = vol;
+    el.volume = 1;
+    el.muted = true;
+  }
+  const reOut = () => { for (const e of peers.values()) { voiceOut(e); if (e.tile) e.tile.sync(); } };
+  document.addEventListener('pointerdown', reOut, { once: true, capture: true });
+  document.addEventListener('keydown', reOut, { once: true, capture: true });
+  // menu da pessoa: botão direito (ou toque longo) em quem está no canal de voz, no cartão ou na tela dela
+  let menuFor = null;
+  function openUserMenu(e, x, y) {
+    if (!e || !e.ready) return;
+    closeMenus(); parkTools();
+    menuFor = e;
+    paintUserMenu();
+    const menu = $('userMenu');
+    menu.hidden = false;
+    place(menu, x, y);
+    $('umV').focus();
+  }
+  function paintUserMenu() {
+    const e = menuFor;
+    const pf = pref(e);
+    paintAvatar($('umAvatar'), e.name, e.av);
+    $('umName').textContent = e.name;
+    for (const [id, k, what] of [['umV', 'v', 'voz'], ['umS', 's', 'tela']]) {
+      const r = $(id);
+      if (document.activeElement !== r) r.value = pf[k];
+      r.style.setProperty('--fill', `${pf[k] * 50}%`);
+      r.setAttribute('aria-label', `Volume da ${what} de ${e.name}`);
+      $(`${id}Out`).textContent = `${Math.round(pf[k] * 100)}%`;
+      $(`${id}Out`).classList.toggle('loud', pf[k] > 1);
+    }
+    $('umMute').checked = pf.m;
+    $('userMenu').classList.toggle('is-hushed', pf.m);
+  }
+  const personAt = (t) => {
+    const tile = t.closest('.tile:not(.is-local)');
+    if (tile) return [...peers.values()].find((e) => e.tile && e.tile.el === tile) || null;
+    const el = t.closest('.people li[data-id], .vcard[data-id], #focusFaces li[data-id]');
+    return el ? peers.get(el.dataset.id) || null : null;
+  };
   // Navegador recusou tocar som antes de um clique na página: o primeiro clique/tecla libera.
   let soundBlocked = false;
   function needGesture() {
@@ -2099,6 +2425,19 @@
     members: () => [...members.values()],
     me: () => ({ uid: myUid, status: myStatus(), pick: stPick }),
     idleAfter: (ms) => { idleMs = ms; return checkIdle(); },
+    // S-1363: canais, volume por pessoa (ganho acima de 100%) e o que o codificador da tela recebeu
+    chans: () => ({ list: chans, textCh, myVch, viewVch, unread: Object.fromEntries(unreadBy) }),
+    boost: () => [...peers.values()].map((e) => ({
+      name: e.name, ac: boostAc ? boostAc.state : null, audioMuted: e.audio.muted, audioVol: e.audio.volume,
+      voice: boosts.has(e.audio) ? boosts.get(e.audio).gain.gain.value : null,
+      screen: e.tile && boosts.has(e.tile.video) ? boosts.get(e.tile.video).gain.gain.value : null,
+      screenMuted: e.tile ? e.tile.video.muted : null, screenVol: e.tile ? e.tile.video.volume : null,
+    })),
+    sendParams: () => [...peers.values()].filter((e) => e.out && e.out.peerConnection).map((e) => {
+      const s = e.out.peerConnection.getSenders().find((x) => x.track && x.track.kind === 'video');
+      return { name: e.name, enc: s ? s.getParameters().encodings[0] : null, settings: local ? local.stream.getVideoTracks()[0].getSettings() : null };
+    }),
+    band: (limited, avail) => { if (local) checkBand(limited, avail, target(local.stream.getVideoTracks()[0])); return { n: band.n, warned: band.warned }; },
   };
 
   // ---------- manutenção periódica ----------
@@ -2110,9 +2449,9 @@
       if (now - e.seen > 20000) { dropPeer(e.id); continue; } // aba fechada sem avisar
       send(e, { t: 'ping' });
       // diz que transmite mas a imagem não chegou (ou caiu): pede de novo
-      if (inVoice && e.invoice && e.sharing && !e.stopped && !e.call && now - e.wanted > 8000) { e.wanted = now; send(e, { t: 'want' }); }
+      if (withMe(e) && e.sharing && !e.stopped && !e.call && now - e.wanted > 8000) { e.wanted = now; send(e, { t: 'want' }); }
       // voz que não fechou (ou caiu): quem oferece tenta de novo
-      if (inVoice && e.invoice && myId > e.id && (!e.vpc || e.vpc.connectionState !== 'connected') && now - e.vAt > 15000) voiceStart(e);
+      if (withMe(e) && myId > e.id && (!e.vpc || e.vpc.connectionState !== 'connected') && now - e.vAt > 15000) voiceStart(e);
     }
     if (dirConn && dirConn.open) {
       if (now - dirSeen > 20000) dirConn.close(); else dirConn.send({ t: 'ping' });
@@ -2320,10 +2659,40 @@
   });
   $('guideBtn').addEventListener('click', () => $('guideDlg').showModal());
   const POPS = { settings: 'settingsBtn', voicePop: 'voiceBtn', statusPop: 'statusBtn' }; // painel -> botão que abre
-  $('chanChat').addEventListener('click', () => { setView('chat'); $('chatInput').focus(); });
-  $('chanVoice').addEventListener('click', joinVoice);
-  $('joinVoiceBtn').addEventListener('click', joinVoice);
-  $('vconnGo').addEventListener('click', () => setView('voice'));
+  $('channels').addEventListener('click', (ev) => {
+    const add = ev.target.closest('.chan-add');
+    if (add) { openChanDlg(null, add.dataset.kind); return; }
+    const gear = ev.target.closest('.chan-gear');
+    if (gear) { openChanDlg(gear.dataset.ch); return; }
+    const b = ev.target.closest('.chan[data-ch]');
+    const c = b && chanOf(b.dataset.ch);
+    if (!c) return;
+    if (c.kind === 'text') { openText(c.id); $('chatInput').focus(); } else joinVoice(c.id);
+  });
+  $('channels').addEventListener('contextmenu', (ev) => {
+    const b = ev.target.closest('.chan[data-ch]');
+    if (!b) return;
+    ev.preventDefault();
+    openChanDlg(b.dataset.ch);
+  });
+  $('chanKinds').addEventListener('change', chanIcon);
+  $('chanName').addEventListener('input', () => { // canal de texto: minúsculo e com hífen no lugar do espaço, como no Discord
+    const f = $('chanName');
+    if (chanKind() !== 'text') return;
+    const v = f.value.toLowerCase().replace(/\s/g, '-');
+    if (v !== f.value) { const at = f.selectionStart; f.value = v; f.setSelectionRange(at, at); }
+  });
+  $('chanForm').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    if (!clean($('chanName').value, 32)) { $('chanName').focus(); return; }
+    if (chanSend(chanEdit ? 'ren' : 'add')) $('chanDlg').close();
+  });
+  $('chanDel').addEventListener('click', () => {
+    if (!delArmed) { delArmed = true; $('chanDel').textContent = 'Confirmar: apagar com as mensagens'; return; }
+    if (chanSend('del')) $('chanDlg').close();
+  });
+  $('joinVoiceBtn').addEventListener('click', () => joinVoice());
+  $('vconnGo').addEventListener('click', () => { viewVch = myVch || viewVch; setView('voice'); renderPeople(); });
   for (const id of ['leaveBtn', 'vconnLeave']) $(id).addEventListener('click', leaveVoice);
   function togglePop(id, open) {
     $(id).hidden = !open;
@@ -2355,6 +2724,7 @@
   $('outSelect').addEventListener('change', () => {
     voice.out = $('outSelect').value; store('vout', voice.out);
     for (const e of peers.values()) { sink(e.audio); if (e.tile) sink(e.tile.video); }
+    if (boostAc && boostAc.setSinkId) boostAc.setSinkId(voice.out).catch(() => {});
     sink(testAudio);
   });
   $('micTestBtn').addEventListener('click', () => micTest(!voice.testing));
@@ -2420,7 +2790,8 @@
     renderShareUi();
     toast(audioMuted ? 'Seu áudio foi silenciado para todos.' : 'Seu áudio voltou para todos.');
   });
-  $('quality').addEventListener('change', applyQuality);
+  $('qRes').addEventListener('click', (ev) => { const b = ev.target.closest('[data-v]'); if (b) { qRes = b.dataset.v; applyQuality(); } });
+  $('qFps').addEventListener('click', (ev) => { const b = ev.target.closest('[data-v]'); if (b) { qFps = Number(b.dataset.v); applyQuality(); } });
   $('hint').addEventListener('change', applyQuality);
   $('panelBtn').addEventListener('click', () => {
     togglePanel($('panel').hidden);
@@ -2432,7 +2803,7 @@
     if (!$('settings').hidden) { toggleSettings(false); $('settingsBtn').focus(); }
     else if (!$('voicePop').hidden) { togglePop('voicePop', false); $('voiceBtn').focus(); }
     else if (!$('statusPop').hidden) { togglePop('statusPop', false); $('statusBtn').focus(); }
-    else if (!$('msgMenu').hidden || !$('reactPop').hidden) closeMenus();
+    else if (!$('msgMenu').hidden || !$('reactPop').hidden || !$('userMenu').hidden) closeMenus();
     else if (replyTo !== null) cancelReply();
     else if (focusOn()) { setFocus(''); $('focusBtn').focus(); }
     else if (!$('panel').hidden && narrow()) { togglePanel(false); $('panelBtn').focus(); }
@@ -2476,7 +2847,7 @@
     drags = 0; $('chat').classList.remove('dragging');
     addFiles([...ev.dataTransfer.files]);
   });
-  $('moreBtn').addEventListener('click', () => { if (chatOpen() && chat.list.length) chat.ws.send(JSON.stringify({ t: 'more', before: chat.list[0].id })); });
+  $('moreBtn').addEventListener('click', () => { if (chatOpen() && chat.list.length) chat.ws.send(JSON.stringify({ t: 'more', before: chat.list[0].id, ch: textCh })); });
   $('chatScroll').addEventListener('scroll', () => { if (chatSeen() && atBottom()) readAll(); });
   // ações na mensagem: barra no hover (mouse), menu no botão direito e no toque longo (celular)
   const hoverable = window.matchMedia('(hover: hover)');
@@ -2506,9 +2877,40 @@
   $('chatLog').addEventListener('click', (ev) => { if (press && press.fired) { ev.preventDefault(); ev.stopPropagation(); } press = null; }, true); // o toque longo não abre a imagem
   $('chatScroll').addEventListener('scroll', () => { if (!$('msgMenu').hidden && !narrow()) closeMenus(); }, { passive: true });
   document.addEventListener('pointerdown', (ev) => {
-    if (!ev.target.closest('#msgMenu, #reactPop, #msgTools')) closeMenus();
+    if (!ev.target.closest('#msgMenu, #reactPop, #msgTools, #userMenu')) closeMenus();
   });
   $('replyX').addEventListener('click', () => { cancelReply(); $('chatInput').focus(); });
+  // volume por pessoa: botão direito, toque longo, clique (ou Enter) em quem está num canal de voz da lateral
+  $('umV').addEventListener('input', () => { if (menuFor) setPref(menuFor, { v: Number($('umV').value), m: false }); });
+  $('umS').addEventListener('input', () => { if (menuFor) { menuFor.muted = false; setPref(menuFor, { s: Number($('umS').value), m: false }); } });
+  $('umMute').addEventListener('change', () => { if (menuFor) setPref(menuFor, { m: $('umMute').checked }); });
+  $('umReset').addEventListener('click', () => { if (menuFor) setPref(menuFor, { v: 1, s: 1, m: false }); });
+  document.addEventListener('contextmenu', (ev) => {
+    if (ev.target.closest('#chatLog, input, a')) return;
+    const e = personAt(ev.target);
+    if (!e) return;
+    ev.preventDefault();
+    openUserMenu(e, ev.clientX, ev.clientY);
+  });
+  const fromList = (ev) => {
+    if (ev.target.closest('button, input, a')) return;
+    const li = ev.target.closest('.people-voice li[data-id]');
+    const e = li && peers.get(li.dataset.id);
+    if (!e) return;
+    const r = li.getBoundingClientRect();
+    openUserMenu(e, r.left + 44, r.bottom);
+  };
+  $('panel').addEventListener('click', (ev) => { if (!upress || !upress.fired) fromList(ev); });
+  $('panel').addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.matches('.people-voice li[data-id]')) { ev.preventDefault(); fromList(ev); } });
+  let upress = null; // toque longo numa pessoa
+  document.addEventListener('pointerdown', (ev) => {
+    const e = ev.pointerType === 'touch' && personAt(ev.target);
+    if (!e) return;
+    upress = { x: ev.clientX, y: ev.clientY, timer: setTimeout(() => { upress.fired = true; openUserMenu(e, upress.x, upress.y); }, 450) };
+  }, true);
+  document.addEventListener('pointermove', (ev) => { if (upress && !upress.fired && Math.hypot(ev.clientX - upress.x, ev.clientY - upress.y) > 10) { clearTimeout(upress.timer); upress = null; } }, true);
+  for (const t of ['pointerup', 'pointercancel']) document.addEventListener(t, () => { if (upress) clearTimeout(upress.timer); }, true);
+  document.addEventListener('click', (ev) => { if (upress && upress.fired) { ev.preventDefault(); ev.stopPropagation(); } upress = null; }, true);
   $('delDlg').addEventListener('close', () => {
     if ($('delDlg').returnValue === 'yes' && delId !== null) delMsg(delId);
     delId = null;
@@ -2524,7 +2926,7 @@
     const now = Date.now();
     if (!$('chatInput').value.trim() || now - typedAt < 3000 || !chatOpen() || !store('name')) return;
     typedAt = now;
-    chat.ws.send(JSON.stringify({ t: 'typing' }));
+    chat.ws.send(JSON.stringify({ t: 'typing', ch: textCh }));
   });
 
   window.addEventListener('online', () => { refreshStatus(); if (peer && peer.disconnected && !peer.destroyed) peer.reconnect(); if (!chat.ws) chatConnect(); });
@@ -2586,7 +2988,7 @@
 
   // ---------- início ----------
   // Abrir = já estar no servidor (sem tela de criar/entrar em sala). Primeira vez: pergunta o nome.
-  if (QUALITY[store('quality')]) $('quality').value = store('quality');
+  renderQuality();
   if (store('hint') === 'detail') $('hint').value = 'detail';
   if (location.hash) history.replaceState(null, '', location.pathname + location.search); // links antigos de sala (#ID) caem aqui
   renderDiscord();

@@ -916,3 +916,77 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
   .msg-tools { right: 8px; }
   .msg-reply { margin-left: 10px; }
 }
+
+/* ===== S-1363: vários canais, volume por pessoa, qualidade da transmissão ===== */
+.chan-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 0 2px 6px; }
+.chan-head:first-child { padding-top: 0; }
+.chan-head .label { padding: 0; }
+.chan-add { width: 30px; height: 30px; }
+.chan-add .ic { width: 14px; height: 14px; }
+.chan-row { position: relative; }
+.chan-row .chan { padding-right: 40px; }
+.chan-gear { position: absolute; top: 50%; right: 4px; width: 32px; height: 32px; transform: translateY(-50%); opacity: 0; }
+.chan-gear .ic { width: 14px; height: 14px; }
+.chan-row:hover .chan-gear, .chan-row:focus-within .chan-gear, .chan-gear:focus-visible { opacity: 1; }
+.chan-gear:active { transform: translateY(calc(-50% + 2px)); }
+@media (hover: none) { .chan-gear { opacity: .7; } }
+.chan-row:hover .chan-badge, .chan-row:hover .chan-count { margin-right: 4px; }
+.chan.unread { color: var(--text); }
+.chan.unread .chan-name { color: #fff; }
+.chan.unread::before { content: ""; position: absolute; left: -10px; top: 50%; width: 6px; height: 10px; margin-top: -5px; background: var(--text); }
+.chan-list { display: grid; gap: 2px; }
+.chan-list:empty { display: none; }
+.people-voice li[tabindex] { cursor: context-menu; }
+.people-voice li[tabindex]:focus-visible { outline: var(--u) solid var(--yel); outline-offset: -3px; }
+.people-voice li.is-hushed .nm { text-decoration: line-through; text-decoration-thickness: 2px; color: var(--muted); }
+.people-voice li.is-hushed .sub { color: #ff8fa3; }
+
+/* começo de um canal vazio */
+.chat-start { display: grid; gap: 6px; margin-top: auto; padding: 18px 10px 8px; color: var(--muted); }
+.chat-start .cs-ic { display: grid; place-items: center; width: 56px; height: 56px; margin-bottom: 4px; background: var(--panel-2); color: var(--cyan); }
+.chat-start .cs-ic .ic { width: 28px; height: 28px; }
+.chat-start b { color: var(--text); font: 400 12px/1.5 var(--pix); text-transform: uppercase; }
+
+/* menu da pessoa: volume da voz e da tela (até 200%), silenciar só para mim */
+.user-menu { width: 272px; gap: 10px; padding: 10px 12px 12px; }
+.um-head { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; border-bottom: 2px solid var(--line); }
+.um-head .avatar { width: 32px; height: 32px; font-size: 12px; }
+.um-head b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 10px/1.4 var(--pix); text-transform: uppercase; color: var(--yel); }
+.um-row { display: grid; gap: 4px; }
+.um-row > span { display: flex; justify-content: space-between; color: var(--muted); font: 400 9px/1.4 var(--pix); text-transform: uppercase; }
+.um-row output { color: var(--text); font: 400 20px/1 var(--term); }
+.um-row output.loud { color: var(--yel); }
+.um-row input[type="range"] { width: 100%; }
+/* marca de 100% no meio da barra */
+.um-row input[type="range"]::-webkit-slider-runnable-track { background: linear-gradient(to right, transparent calc(50% - 1px), #ffffffa0 calc(50% - 1px), #ffffffa0 calc(50% + 1px), transparent calc(50% + 1px)), linear-gradient(to right, var(--cyan) var(--fill, 50%), #ffffff40 var(--fill, 50%)); }
+.um-check { padding: 4px 0; }
+.um-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--faint); font-size: 17px; }
+.um-foot .linkish { padding: 4px 0; font-size: 18px; white-space: nowrap; }
+.user-menu.is-hushed .um-row { opacity: .45; }
+.user-menu.sheet { gap: 14px; }
+
+/* criar/editar canal */
+.chan-kinds { display: grid; gap: 6px; margin-bottom: 16px; }
+.chan-kinds[hidden] { display: none; }
+.chan-kind { display: grid; grid-template-columns: 18px 20px 1fr; align-items: center; gap: 10px; padding: 10px 12px; background: var(--panel-2); cursor: pointer; }
+.chan-kind input { accent-color: var(--yel); width: 16px; height: 16px; margin: 0; }
+.chan-kind .ic { color: var(--faint); }
+.chan-kind b { display: block; font: 400 10px/1.4 var(--pix); text-transform: uppercase; }
+.chan-kind small { display: block; color: var(--muted); font-size: 18px; line-height: 1.1; }
+.chan-kind:has(input:checked) { box-shadow: inset 0 0 0 var(--u) var(--cyan); }
+.chan-kind:has(input:checked) .ic { color: var(--cyan); }
+.chan-field { position: relative; margin-bottom: 16px; }
+.chan-field .ic { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); z-index: 1; color: var(--faint); pointer-events: none; }
+.chan-field .field { padding-left: 40px; }
+#chanAdmWrap { margin-bottom: 16px; }
+#chanAdmWrap .pop-note { margin-top: 6px; }
+.chan-actions { flex-wrap: wrap; }
+.chan-del { margin-right: auto; color: #ff8fa3; }
+.chan-del:hover:not([disabled]) { --fr: var(--fr-red); color: var(--ink); }
+
+/* qualidade da transmissão */
+.q-seg { width: 100%; }
+.q-seg .seg-btn { flex: 1; justify-content: center; }
+.q-note { margin-top: -6px; }
+.q-warn { padding: 8px 10px; background: #ff335522; box-shadow: inset var(--u) 0 0 var(--red); color: #ffb3c0; font-size: 19px; line-height: 1.1; }
+.q-warn[hidden] { display: none; }

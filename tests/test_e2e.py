@@ -178,10 +178,10 @@ def run(base):
         playing(b)
         assert b.locator(".tile video").evaluate("v => v.srcObject.getAudioTracks().length") == 1, "sem faixa de áudio"
         expect(b.locator(".tile-name")).to_have_text("Ana")
-        expect(b.locator(".tile-stats")).to_contain_text("1920×1080", timeout=15000)
+        expect(b.locator(".tile-stats")).to_contain_text("1280×720", timeout=15000)  # padrão 720p30 (S-1363); a tela é 1920×1080
         expect(a.locator(".tile-stats")).to_contain_text("1 pessoa assistindo", timeout=15000)
         shot(b, "02_assistindo_desktop")
-        step("B recebe a transmissão 1920×1080 com áudio; números reais na barra")
+        step("B recebe a transmissão (padrão 720p, tela 1920×1080 reduzida) com áudio; números reais na barra")
 
         # 5. som: bloqueio de autoplay tratado; mutar e volume por transmissão
         vid = b.locator(".tile video")
@@ -213,7 +213,8 @@ def run(base):
 
         # 7. trocar qualidade e prioridade ao vivo não derruba a transmissão
         a.click("#settingsBtn")
-        a.select_option("#quality", "720p30")
+        a.click('#qRes [data-v="1080"]')
+        a.click('#qFps [data-v="60"]')
         a.select_option("#hint", "detail")
         a.keyboard.press("Escape")
         expect(a.locator("#settings")).to_be_hidden()

@@ -9,6 +9,9 @@
 // Identidade (S-1357): cada aparelho guarda uma chave aleatória; o id público (uid) é o hash dela. Só quem tem a
 // chave edita e apaga as próprias mensagens. Presença (online/ausente/offline), "digitando", respostas e reações
 // vão pelo mesmo WebSocket. Mensagens antigas (sem uid) continuam como estavam.
+// Canais (S-1363): vários canais de texto e de voz. #chat (id 'chat') guarda o histórico de antes e "Canal de voz"
+// (id 'voz') é o canal das versões antigas. Quem criou um canal (ou quem tem a ADMIN_KEY) renomeia e apaga.
+// Mensagens de outros canais só vão para clientes novos (que mandam { t:'v' }): o app antigo as mostraria no #chat.
 
 const ORIGINS = [/^https:\/\/alissonlittig\.github\.io$/, /^https?:\/\/tauri\.localhost$/, /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/];
 const MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime']);
@@ -19,6 +22,9 @@ const HISTORY = 150;
 const STALE = 150000;                   // conexão identificada sem sinal (ping a cada 25 s) há 150 s = caiu sem avisar
 const EMOJIS = new Set(['👍', '❤️', '😂', '😮', '😢', '😡', '🔥', '🎉', '👀', '💀', '🐟', '🙏', '👏', '🤡', '💯', '✅']);
 const ST = ['on', 'idle', 'off'];       // off = invisível (para os outros, igual a offline)
+const FIXED = { chat: 'text', voz: 'voice' }; // canais de sempre: renomeia (moderação), não apaga
+const MAX_CHANS = 30;
+const chanName = (v, kind) => { const n = clean(v, 32); return kind === 'text' ? n.toLowerCase().replace(/\s+/g, '-') : n; };
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, max);
 const avOf = (v) => (/^[a-z0-9-]{0,24}$/.test(v || '') ? v || '' : '');
 const row = (r) => ({ ...r, media: r.media ? JSON.parse(r.media) : null, reply: r.reply ? JSON.parse(r.reply) : null, reacts: r.reacts ? JSON.parse(r.reacts) : null });
@@ -54,12 +60,19 @@ export class Server {
     this.sql.exec(`CREATE TABLE IF NOT EXISTS msgs (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, name TEXT NOT NULL, av TEXT NOT NULL, text TEXT NOT NULL, media TEXT);
       CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, mime TEXT NOT NULL, size INTEGER NOT NULL, ts INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS chunks (id TEXT NOT NULL, n INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (id, n));
-      CREATE TABLE IF NOT EXISTS members (uid TEXT PRIMARY KEY, name TEXT NOT NULL, av TEXT NOT NULL, seen INTEGER NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS members (uid TEXT PRIMARY KEY, name TEXT NOT NULL, av TEXT NOT NULL, seen INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS chans (id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, uid TEXT, pos INTEGER NOT NULL, ts INTEGER NOT NULL);
+      INSERT OR IGNORE INTO chans (id, kind, name, uid, pos, ts) VALUES ('chat', 'text', 'chat', NULL, 0, 0), ('voz', 'voice', 'Canal de voz', NULL, 0, 0);`);
     // migração S-1357: só acrescenta colunas (nada é apagado); mensagens antigas ficam com uid vazio
     const cols = new Set(this.sql.exec('PRAGMA table_info(msgs)').toArray().map((c) => c.name));
     for (const [c, type] of [['uid', 'TEXT'], ['edited', 'INTEGER'], ['reply', 'TEXT'], ['reacts', 'TEXT']]) {
       if (!cols.has(c)) this.sql.exec(`ALTER TABLE msgs ADD COLUMN ${c} ${type}`);
     }
+    if (!cols.has('ch')) { // migração S-1363: só acrescenta; tudo o que já existe é do #chat
+      this.sql.exec('ALTER TABLE msgs ADD COLUMN ch TEXT');
+      this.sql.exec("UPDATE msgs SET ch = 'chat' WHERE ch IS NULL");
+    }
+    this.sql.exec('CREATE INDEX IF NOT EXISTS msgs_ch ON msgs (ch, id)');
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong')); // responde sem acordar o objeto
     this.upAt = new Map(); // ip -> últimos envios (limite simples, some quando o objeto hiberna)
     this.shown = new Map(); // uid -> último estado avisado (some ao hibernar: no pior caso repete um aviso igual)
@@ -75,6 +88,7 @@ export class Server {
       server.serializeAttachment({ at: 0, since: Date.now() });
       server.send(JSON.stringify({ t: 'hist', list: this.history() }));
       server.send(JSON.stringify({ t: 'members', list: this.members() }));
+      server.send(JSON.stringify({ t: 'chans', list: this.chans() }));
       return new Response(null, { status: 101, webSocket: client });
     }
     if (route === 'up') return this.upload(req, origin);
@@ -82,16 +96,72 @@ export class Server {
     return this.media(req, route.slice(2));
   }
 
-  history(before) {
+  history(before, ch = 'chat') {
     const rows = before
-      ? this.sql.exec('SELECT * FROM msgs WHERE id < ? ORDER BY id DESC LIMIT ?', before, HISTORY).toArray()
-      : this.sql.exec('SELECT * FROM msgs ORDER BY id DESC LIMIT ?', HISTORY).toArray();
+      ? this.sql.exec('SELECT * FROM msgs WHERE ch = ? AND id < ? ORDER BY id DESC LIMIT ?', ch, before, HISTORY).toArray()
+      : this.sql.exec('SELECT * FROM msgs WHERE ch = ? ORDER BY id DESC LIMIT ?', ch, HISTORY).toArray();
     return rows.reverse().map(row);
   }
 
-  broadcast(obj, skip) {
+  broadcast(obj, skip, onlyNew) { // onlyNew: só para quem entende canais (mensagem fora do #chat)
     const s = JSON.stringify(obj);
-    for (const ws of this.ctx.getWebSockets()) { if (ws !== skip) try { ws.send(s); } catch { /* fechando */ } }
+    for (const ws of this.ctx.getWebSockets()) {
+      if (ws === skip || (onlyNew && !(ws.deserializeAttachment() || {}).c2)) continue;
+      try { ws.send(s); } catch { /* fechando */ }
+    }
+  }
+
+  // ---------- canais ----------
+  chans() { // lista com a última mensagem de cada canal de texto (para "não lidas")
+    const last = new Map(this.sql.exec('SELECT ch, MAX(id) AS last FROM msgs GROUP BY ch').toArray().map((r) => [r.ch, r.last]));
+    return this.sql.exec('SELECT id, kind, name, uid FROM chans ORDER BY pos, ts').toArray()
+      .map((c) => ({ ...c, uid: c.uid || '', last: last.get(c.id) || 0 }));
+  }
+  textChan(id) { // id de canal de texto válido, ou '' (sem id = versão antiga = #chat)
+    if (id === undefined || id === null) return 'chat';
+    const c = typeof id === 'string' && this.sql.exec('SELECT kind FROM chans WHERE id = ?', id).toArray()[0];
+    return c && c.kind === 'text' ? id : '';
+  }
+  chan(ws, att, d, now) { // { t:'chan', op:'add'|'ren'|'del', kind, id, name, adm? }
+    const no = (text) => ws.send(JSON.stringify({ t: 'err', text }));
+    if (!att.uid) return no('Espere o chat conectar e tente de novo.');
+    if (now - (att.ct || 0) < 800) return no('Calma: um canal por vez.');
+    att.ct = now;
+    ws.serializeAttachment(att);
+    const admin = !!this.env.ADMIN_KEY && typeof d.adm === 'string' && d.adm === this.env.ADMIN_KEY;
+    if (d.op === 'add') {
+      const kind = d.kind === 'voice' ? 'voice' : 'text';
+      const name = chanName(d.name, kind);
+      if (!name) return no('Dê um nome ao canal.');
+      if (this.sql.exec('SELECT COUNT(*) AS n FROM chans').one().n >= MAX_CHANS) return no(`Limite de ${MAX_CHANS} canais.`);
+      const id = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => 'abcdefghijklmnopqrstuvwxyz234567'[b & 31]).join('');
+      const pos = this.sql.exec('SELECT COALESCE(MAX(pos), 0) + 1 AS p FROM chans WHERE kind = ?', kind).one().p;
+      this.sql.exec('INSERT INTO chans (id, kind, name, uid, pos, ts) VALUES (?, ?, ?, ?, ?, ?)', id, kind, name, att.uid, pos, now);
+      this.broadcast({ t: 'chans', list: this.chans() });
+      ws.send(JSON.stringify({ t: 'chanok', id, kind }));
+      return;
+    }
+    const c = typeof d.id === 'string' && this.sql.exec('SELECT * FROM chans WHERE id = ?', d.id).toArray()[0];
+    if (!c) return no('Esse canal não existe mais.');
+    if (d.op === 'del' && FIXED[c.id]) return no('Esse canal é fixo: dá para renomear, não para apagar.');
+    if (c.uid !== att.uid && !admin) return no(d.adm ? 'Chave de moderação errada.' : 'Só quem criou o canal (ou a moderação) pode mudar ele.');
+    if (d.op === 'ren') {
+      const name = chanName(d.name, c.kind);
+      if (!name) return no('Dê um nome ao canal.');
+      this.sql.exec('UPDATE chans SET name = ? WHERE id = ?', name, c.id);
+    } else if (d.op === 'del') {
+      this.ctx.storage.transactionSync(() => { // some o canal com as mensagens e arquivos dele
+        for (const r of this.sql.exec('SELECT media FROM msgs WHERE ch = ? AND media IS NOT NULL', c.id).toArray()) {
+          const id = JSON.parse(r.media).id;
+          this.sql.exec('DELETE FROM chunks WHERE id = ?', id);
+          this.sql.exec('DELETE FROM media WHERE id = ?', id);
+        }
+        this.sql.exec('DELETE FROM msgs WHERE ch = ?', c.id);
+        this.sql.exec('DELETE FROM chans WHERE id = ?', c.id);
+      });
+    } else return;
+    ws.send(JSON.stringify({ t: 'chanok', id: c.id, kind: c.kind, op: d.op }));
+    this.broadcast({ t: 'chans', list: this.chans() });
   }
 
   // ---------- presença ----------
@@ -147,21 +217,31 @@ export class Server {
     let d;
     try { d = JSON.parse(raw); } catch { return; }
     if (!d || typeof d !== 'object') return;
-    if (d.t === 'more' && Number.isInteger(d.before)) { ws.send(JSON.stringify({ t: 'old', list: this.history(d.before) })); return; }
+    if (d.t === 'more' && Number.isInteger(d.before)) {
+      const ch = this.textChan(d.ch);
+      if (ch) ws.send(JSON.stringify({ t: 'old', ch, list: this.history(d.before, ch) }));
+      return;
+    }
+    if (d.t === 'hist') { const ch = this.textChan(d.ch); if (ch) ws.send(JSON.stringify({ t: 'hist', ch, list: this.history(null, ch) })); return; }
     const att = ws.deserializeAttachment() || { at: 0 };
     const now = Date.now();
     att.lt = now;
+    if (d.t === 'v') { att.c2 = true; ws.serializeAttachment(att); return; } // cliente que entende canais
     if (d.t === 'me') return this.hello(ws, att, d);
+    if (d.t === 'chan') return this.chan(ws, att, d, now);
     if (d.t === 'typing') { // nada é gravado: só repassa, no máximo 1 a cada 2 s por conexão
-      if (!att.uid || now - (att.ty || 0) < 2000) return;
+      const ch = this.textChan(d.ch);
+      if (!att.uid || !ch || now - (att.ty || 0) < 2000) return;
       att.ty = now;
       ws.serializeAttachment(att);
-      this.broadcast({ t: 'typing', uid: att.uid }, ws);
+      this.broadcast({ t: 'typing', uid: att.uid, ch }, ws, ch !== 'chat');
       return;
     }
     if (d.t === 'react') return this.react(ws, att, d, now);
     if (d.t === 'edit' || d.t === 'del') return this.change(ws, att, d, now);
     if (d.t !== 'msg') return;
+    const ch = this.textChan(d.ch);
+    if (!ch) return; // canal apagado
     if (now - (att.at || 0) < 250) return; // no máximo 4 por segundo por conexão
     att.at = now;
     ws.serializeAttachment(att);
@@ -179,13 +259,14 @@ export class Server {
     if (!text && !media) return;
     let reply = null; // cópia curta da mensagem respondida (a original pode não estar no histórico carregado)
     if (Number.isInteger(d.reply)) {
-      const r = this.sql.exec('SELECT id, uid, name, text, media FROM msgs WHERE id = ?', d.reply).toArray()[0];
+      const r = this.sql.exec('SELECT id, uid, name, text, media FROM msgs WHERE id = ? AND ch = ?', d.reply, ch).toArray()[0];
       if (r) reply = { id: r.id, uid: r.uid || '', name: r.name, text: r.text.slice(0, 140), media: !!r.media };
     }
     const uid = att.uid || null;
-    const id = this.sql.exec('INSERT INTO msgs (ts, name, av, text, media, uid, reply) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
-      now, name, av, text, media ? JSON.stringify(media) : null, uid, reply ? JSON.stringify(reply) : null).one().id;
-    this.broadcast({ t: 'msg', m: { id, ts: now, name, av, text, media, uid, reply, edited: null, reacts: null }, nonce: typeof d.nonce === 'string' ? d.nonce.slice(0, 40) : undefined });
+    const id = this.sql.exec('INSERT INTO msgs (ts, name, av, text, media, uid, reply, ch) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      now, name, av, text, media ? JSON.stringify(media) : null, uid, reply ? JSON.stringify(reply) : null, ch).one().id;
+    this.broadcast({ t: 'msg', m: { id, ts: now, name, av, text, media, uid, reply, edited: null, reacts: null, ch },
+      nonce: typeof d.nonce === 'string' ? d.nonce.slice(0, 40) : undefined }, null, ch !== 'chat');
   }
 
   async hello(ws, att, d) { // { t:'me', key, name, av, st }: quem é esta conexão e como quer aparecer

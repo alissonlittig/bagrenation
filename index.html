@@ -21,7 +21,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/vt323-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=1357">
+<link rel="stylesheet" href="style.css?v=1363">
 </head>
 <body>
 
@@ -85,20 +85,34 @@
       <button id="panelClose" class="icon-btn side-close" type="button" aria-label="Fechar painel"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
     </div>
 
-    <nav class="channels" aria-label="Canais">
-      <h2 class="label">Canais de texto</h2>
-      <button id="chanChat" class="chan" type="button" aria-current="page">
-        <svg class="ic" aria-hidden="true"><use href="#i-hash"/></svg>
-        <span class="chan-name">chat</span>
-        <span id="unread" class="badge chan-badge" hidden></span>
-      </button>
-      <h2 class="label">Canais de voz</h2>
-      <button id="chanVoice" class="chan" type="button">
-        <svg class="ic" aria-hidden="true"><use href="#i-vol"/></svg>
-        <span class="chan-name">Canal de voz</span>
-        <span id="voiceCount" class="chan-count"></span>
-      </button>
-      <ul id="people" class="people people-voice" aria-label="No canal de voz"></ul>
+    <nav id="channels" class="channels" aria-label="Canais">
+      <div class="chan-head">
+        <h2 class="label">Canais de texto</h2>
+        <button class="icon-btn chan-add" type="button" data-kind="text" aria-label="Criar canal de texto" title="Criar canal de texto"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>
+      </div>
+      <div class="chan-row" data-ch="chat">
+        <button id="chanChat" class="chan" type="button" data-ch="chat" aria-current="page">
+          <svg class="ic" aria-hidden="true"><use href="#i-hash"/></svg>
+          <span class="chan-name">chat</span>
+          <span id="unread" class="badge chan-badge" hidden></span>
+        </button>
+        <button class="icon-btn chan-gear" type="button" data-ch="chat" aria-label="Editar canal chat" title="Editar canal"><svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg></button>
+      </div>
+      <div id="textChans" class="chan-list"></div>
+      <div class="chan-head">
+        <h2 class="label">Canais de voz</h2>
+        <button class="icon-btn chan-add" type="button" data-kind="voice" aria-label="Criar canal de voz" title="Criar canal de voz"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>
+      </div>
+      <div class="chan-row" data-ch="voz">
+        <button id="chanVoice" class="chan" type="button" data-ch="voz">
+          <svg class="ic" aria-hidden="true"><use href="#i-vol"/></svg>
+          <span class="chan-name">Canal de voz</span>
+          <span id="voiceCount" class="chan-count"></span>
+        </button>
+        <button class="icon-btn chan-gear" type="button" data-ch="voz" aria-label="Editar Canal de voz" title="Editar canal"><svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg></button>
+      </div>
+      <ul id="people" class="people people-voice" data-ch="voz" aria-label="No canal de voz"></ul>
+      <div id="voiceChans" class="chan-list"></div>
     </nav>
 
     <div class="side-section side-online" aria-label="Membros">
@@ -282,15 +296,23 @@
               <button id="settingsBtn" class="dock-icon" type="button" aria-expanded="false" aria-controls="settings" aria-label="Qualidade da transmissão"><svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg></button>
               <div id="settings" class="pop" hidden>
                 <p class="pop-title">Qualidade da transmissão</p>
-                <label class="select">
-                  <span>Resolução</span>
-                  <select id="quality">
-                    <option value="720p30">720p · 30 fps · leve</option>
-                    <option value="1080p30">1080p · 30 fps</option>
-                    <option value="1080p60" selected>1080p · 60 fps · jogos</option>
-                    <option value="1440p60">1440p · 60 fps · pesado</option>
-                  </select>
-                </label>
+                <div class="select">
+                  <span id="qResLabel">Resolução</span>
+                  <div id="qRes" class="seg q-seg" role="group" aria-labelledby="qResLabel">
+                    <button class="seg-btn" type="button" data-v="720" aria-pressed="true">720p</button>
+                    <button class="seg-btn" type="button" data-v="1080" aria-pressed="false">1080p</button>
+                    <button class="seg-btn" type="button" data-v="src" aria-pressed="false" title="Sem reduzir: a resolução da tela ou janela escolhida">Fonte</button>
+                  </div>
+                </div>
+                <div class="select">
+                  <span id="qFpsLabel">Quadros por segundo</span>
+                  <div id="qFps" class="seg q-seg" role="group" aria-labelledby="qFpsLabel">
+                    <button class="seg-btn" type="button" data-v="30" aria-pressed="true">30 fps</button>
+                    <button class="seg-btn" type="button" data-v="60" aria-pressed="false">60 fps</button>
+                  </div>
+                </div>
+                <p id="qNote" class="pop-note q-note"></p>
+                <p id="qWarn" class="q-warn" role="status" hidden></p>
                 <label class="select">
                   <span>Prioridade</span>
                   <select id="hint">
@@ -298,7 +320,7 @@
                     <option value="detail">Nitidez · texto e código</option>
                   </select>
                 </label>
-                <p class="pop-note">Vale já na transmissão em andamento.</p>
+                <p class="pop-note">Vale já na transmissão em andamento. Padrão: 720p · 30 fps.</p>
               </div>
             </div>
             <span class="dock-sep" aria-hidden="true"></span>
@@ -311,7 +333,7 @@
       <section id="chat" class="chat" aria-label="Chat de texto">
         <header class="chat-head">
           <svg class="ic" aria-hidden="true"><use href="#i-hash"/></svg>
-          <h2>chat</h2>
+          <h2 id="chatTitle">chat</h2>
           <span id="chatState" class="chat-state"></span>
         </header>
         <div id="chatScroll" class="chat-scroll">
@@ -428,6 +450,43 @@
 
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 
+<!-- Volume por pessoa (S-1363): botão direito / toque longo em quem está no canal de voz -->
+<div id="userMenu" class="msg-menu user-menu" role="dialog" aria-labelledby="umName" hidden>
+  <div class="um-head"><span id="umAvatar" class="avatar" aria-hidden="true"></span><b id="umName"></b></div>
+  <label class="um-row"><span>Volume da voz <output id="umVOut">100%</output></span><input id="umV" type="range" min="0" max="2" step="0.01" value="1"></label>
+  <label class="um-row"><span>Volume da tela <output id="umSOut">100%</output></span><input id="umS" type="range" min="0" max="2" step="0.01" value="1"></label>
+  <label class="check um-check"><input id="umMute" type="checkbox"><span class="switch" aria-hidden="true"></span>Silenciar só para mim</label>
+  <p class="um-foot"><span>Só neste aparelho</span><button id="umReset" class="linkish" type="button">Voltar a 100%</button></p>
+</div>
+
+<!-- Criar, renomear e apagar canal -->
+<dialog id="chanDlg" class="dlg" aria-labelledby="chanTitle">
+  <form id="chanForm" class="dlg-body" novalidate>
+    <div class="dlg-head">
+      <h2 id="chanTitle">Criar canal</h2>
+      <button class="icon-btn js-close" type="button" aria-label="Fechar"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
+    </div>
+    <div id="chanKinds" class="chan-kinds" role="radiogroup" aria-label="Tipo de canal">
+      <label class="chan-kind"><input type="radio" name="kind" value="text" checked><svg class="ic" aria-hidden="true"><use href="#i-hash"/></svg><span><b>Texto</b><small>Mensagens, imagens, GIFs e vídeos</small></span></label>
+      <label class="chan-kind"><input type="radio" name="kind" value="voice"><svg class="ic" aria-hidden="true"><use href="#i-vol"/></svg><span><b>Voz</b><small>Conversar e compartilhar a tela</small></span></label>
+    </div>
+    <div>
+      <label class="field-label" for="chanName">Nome do canal</label>
+      <div class="chan-field"><svg class="ic" aria-hidden="true"><use id="chanNameIcon" href="#i-hash"/></svg><input id="chanName" class="field" type="text" maxlength="32" autocomplete="off" spellcheck="false" placeholder="novo-canal"></div>
+    </div>
+    <div id="chanAdmWrap" hidden>
+      <label class="field-label" for="chanAdm">Chave de moderação</label>
+      <input id="chanAdm" class="field field-sm" type="password" autocomplete="off" spellcheck="false">
+      <p class="pop-note">Este canal não foi criado por você: só a moderação muda.</p>
+    </div>
+    <div class="dlg-actions chan-actions">
+      <button id="chanDel" class="btn btn-quiet chan-del" type="button" hidden>Apagar canal</button>
+      <button class="btn btn-quiet js-close" type="button">Cancelar</button>
+      <button id="chanOk" class="btn btn-primary" type="submit">Criar canal</button>
+    </div>
+  </form>
+</dialog>
+
 
 <!-- Apagar a própria mensagem -->
 <dialog id="delDlg" class="dlg" aria-labelledby="delTitle">
@@ -455,7 +514,7 @@
       <span class="pill-live">ao vivo</span>
     </span>
     <button class="wbtn btn" type="button" hidden>Parar de assistir</button>
-    <input class="pvol" type="range" min="0" max="1" step="0.01" value="1">
+    <input class="pvol" type="range" min="0" max="2" step="0.01" value="1">
   </li>
 </template>
 <template id="vcardTpl">
@@ -483,7 +542,7 @@
       <div class="tile-bar">
         <div class="vol">
           <button class="icon-btn js-mute" type="button" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-vol"/></svg></button>
-          <input class="js-vol" type="range" min="0" max="1" step="0.01" value="1">
+          <input class="js-vol" type="range" min="0" max="2" step="0.01" value="1">
         </div>
         <button class="icon-btn js-preview" type="button" aria-pressed="true" hidden><svg class="ic" aria-hidden="true"><use href="#i-eye"/></svg></button>
         <span class="tile-stats" aria-live="off"></span>
@@ -499,6 +558,6 @@
 </template>
 
 <noscript><p class="noscript">O BAGRENATION precisa de JavaScript para conectar as pessoas da sala.</p></noscript>
-<script src="app.js?v=1357" defer></script>
+<script src="app.js?v=1363" defer></script>
 </body>
 </html>

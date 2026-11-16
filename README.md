@@ -18,6 +18,10 @@ Um servidor fixo, como um servidor do Discord: abriu o BAGRENATION (site ou app)
 6. **Mensagens**: passe o mouse numa mensagem (ou botão direito; no celular, toque longo) para **reagir** com emoji, **responder** (a citação leva até a mensagem original), **copiar o texto**, **editar** ou **apagar** a sua. Seta para cima no campo vazio edita a sua última. Mensagem editada ganha "(editada)".
 7. **Membros e status**: a lateral mostra **Online**, **Ausente** e **Offline** (quem já entrou um dia continua lá, com "visto por último"). No seu nome, embaixo, escolha **Online** (fica ausente sozinho depois de 10 min parado; no app vale o teclado e o mouse do Windows, então jogando você continua online), **Ausente** ou **Invisível** (aparece offline, mas usa tudo normal). A bolinha de status aparece nos avatares da lista, do canal de voz e do #chat. Embaixo do campo aparece quem está digitando.
 
+8. **Canais**: o **+** ao lado de "Canais de texto" e de "Canais de voz" cria um canal novo. Quem está em cada canal de voz aparece embaixo dele; clicar num canal de voz entra nele (e sai do outro). Canal de texto com mensagem nova fica em negrito, com o número de mensagens. A engrenagem (ou botão direito no canal) renomeia ou apaga: só quem criou o canal, ou com a chave de moderação. O **#chat** e o **Canal de voz** são fixos (dá para renomear, não para apagar).
+9. **Volume por pessoa**: botão direito (no celular, toque longo; ou clique) em quem está no canal de voz, no cartão dela ou na tela que ela compartilha: volume da voz e da tela de 0 a 200% e **Silenciar só para mim**. Fica lembrado por pessoa, só no seu aparelho.
+10. **Qualidade da transmissão** (botão de controles no dock): **720p**, **1080p** ou **Fonte** (sem reduzir) e **30** ou **60 fps**. Padrão 720p · 30 fps. Vale na hora, até no meio da transmissão; se a internet não aguentar, aparece um aviso para baixar.
+
 Mais de uma pessoa pode transmitir ao mesmo tempo no canal. Quem está fora do canal continua online e no chat, sem receber voz nem tela.
 
 ## App para PC (Windows)
@@ -54,6 +58,9 @@ Código: `desktop/` (o `copy-site.mjs` copia os arquivos do site para dentro do 
 - **#chat permanente**: texto (links clicáveis), imagem, GIF e vídeo com prévia; mensagens seguidas da mesma pessoa agrupadas; imagem amplia no clique; vídeo toca no próprio chat; "Carregar mensagens antigas" para trás das últimas 150.
 - **Ações na mensagem**: reagir (16 emojis, contador e quem reagiu no hover), responder com citação clicável, copiar, editar (marca "(editada)") e apagar a própria, com confirmação (Shift+clique apaga direto). Tudo em tempo real para todos e salvo.
 - **Membros como no Discord**: Online / Ausente / Offline, status manual (ausente, invisível) e automático (ausente após 10 min parado), bolinha de status nos avatares e "Fulano está digitando…" (ou "A e B estão digitando…").
+- **Vários canais** de texto e de voz (até 30), com não lidas por canal; voz e tela só entre quem está no mesmo canal de voz.
+- **Volume por pessoa** até 200% (acima de 100% o som passa por um ganho do Web Audio) e silenciar só para mim, para a voz e para a tela de cada um.
+- **Qualidade da tela** aplicada de verdade: limite na captura (resolução e fps) e no codificador do WebRTC (taxa máxima proporcional aos pixels, fps máximo e redução de resolução quando a captura vem maior).
 - Funciona no celular para falar, ouvir e assistir.
 - Sons 8-bit opcionais na interface (desligados por padrão): cliques e teclado mecânico antigo ao digitar.
 
@@ -96,6 +103,8 @@ O **#chat** fica num Worker da Cloudflare (`server/worker.js`, plano grátis, se
 
 **Identidade** (sem conta): cada aparelho gera uma chave aleatória e guarda no navegador/app; o Worker guarda só o hash dela (o `uid` que os outros veem). É ela que permite editar e apagar as próprias mensagens e liga o nome ao mesmo membro mesmo trocando de apelido. Site e app no mesmo PC são dois aparelhos (dois membros). Limpar os dados do navegador = membro novo (o antigo fica em Offline). O mesmo WebSocket do chat leva a presença (cada conexão diz online/ausente/invisível; o Worker junta por pessoa e avisa só quando muda), o "digitando" (repassado, nada é gravado, no máximo 1 a cada 2 s por conexão), as reações, as edições e as respostas. Um ping a cada 25 s é respondido pela Cloudflare sem acordar o Durable Object; conexão sem sinal por 150 s cai e a pessoa vai para Offline (um alarme por minuto confere, só enquanto há gente conectada).
 
+**Canais** (S-1363): o Worker guarda a lista (`chans`) e cada mensagem diz o canal dela (`ch`; as de antes são do #chat). O app/site novo avisa que entende canais (`{ t: 'v' }`) e só então recebe as mensagens dos outros canais: o app antigo, até atualizar, continua vendo só o #chat e entrando só no "Canal de voz". Na malha, cada pessoa diz em que canal de voz está (`vch`) e a voz/tela só abre entre quem está no mesmo. Apagar um canal de texto apaga as mensagens e os arquivos dele.
+
 O site é estático: `index.html`, `style.css`, `app.js`, a biblioteca PeerJS e as fontes, todos servidos do próprio repositório. Não há build. `?servidor=nome` abre outro servidor (os testes usam isso para não aparecer no de verdade).
 
 ## Limites
@@ -128,6 +137,7 @@ python tests/test_e2e.py                                   # servidor local
 python tests/test_e2e.py https://alissonlittig.github.io/bagrenation/   # site publicado
 python tests/test_foco.py                                  # modo foco (retrair laterais)
 python tests/test_membros.py                               # membros, status, digitando, reagir/responder/editar/apagar (3 navegadores)
+python tests/test_canais.py                                # canais, volume por pessoa, qualidade da tela (3 navegadores + celular)
 python tests/test_eco.py <bagrenation.exe de teste>        # tela inteira no app sem a voz do BAGRENATION (análise de frequência)
 ONLY=voz python tests/test_e2e.py                           # só o cenário de voz
 ```
