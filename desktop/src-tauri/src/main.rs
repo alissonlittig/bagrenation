@@ -226,6 +226,19 @@ fn quit_now(app: AppHandle) {
     app.exit(0);
 }
 
+// Segundos sem mexer no teclado/mouse do Windows (status "ausente" automático, S-1357): jogando = ativo,
+// mesmo com o BAGRENATION escondido na bandeja.
+#[tauri::command]
+fn idle_secs() -> u32 {
+    use windows::Win32::System::SystemInformation::GetTickCount;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
+    let mut info = LASTINPUTINFO { cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32, dwTime: 0 };
+    if !unsafe { GetLastInputInfo(&mut info) }.as_bool() {
+        return 0;
+    }
+    unsafe { GetTickCount() }.wrapping_sub(info.dwTime) / 1000
+}
+
 static VISIBLE: AtomicBool = AtomicBool::new(true);
 #[tauri::command]
 fn is_visible() -> bool {
@@ -345,7 +358,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![set_keys, tray_state, notify, autostart, quit_now, is_visible, sysaudio::sys_audio_start, sysaudio::sys_audio_stop])
+        .invoke_handler(tauri::generate_handler![set_keys, tray_state, notify, autostart, quit_now, is_visible, idle_secs, sysaudio::sys_audio_start, sysaudio::sys_audio_stop])
         .setup(|app| {
             build_tray(app)?;
             hook_thread(app.handle().clone());

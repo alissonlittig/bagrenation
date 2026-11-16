@@ -1,11 +1,14 @@
 // BAGRENATION · chat de texto permanente (Cloudflare Worker + Durable Object com SQLite, plano grátis).
 // Um Durable Object por servidor (o fixo é "bagrenation"; os testes usam outro nome e não sujam o histórico).
-//   GET  /s/<srv>/ws          WebSocket: histórico ao conectar + mensagens novas em tempo real
+//   GET  /s/<srv>/ws          WebSocket: histórico + membros ao conectar, depois tudo em tempo real
 //   POST /s/<srv>/up          envia um arquivo (imagem, GIF ou vídeo) e devolve { id, mime, size }
 //   GET  /s/<srv>/m/<id>      devolve o arquivo (com Range, para o vídeo poder avançar)
 //   POST /s/<srv>/del?id=N    apaga uma mensagem (moderação: Authorization: Bearer <ADMIN_KEY>)
 // Escrever exige Origin do site ou do app: não é segredo (dá para forjar fora do navegador), só impede
 // que outra página use o chat. Moderação de verdade = ADMIN_KEY, guardada como secret do Worker.
+// Identidade (S-1357): cada aparelho guarda uma chave aleatória; o id público (uid) é o hash dela. Só quem tem a
+// chave edita e apaga as próprias mensagens. Presença (online/ausente/offline), "digitando", respostas e reações
+// vão pelo mesmo WebSocket. Mensagens antigas (sem uid) continuam como estavam.
 
 const ORIGINS = [/^https:\/\/alissonlittig\.github\.io$/, /^https?:\/\/tauri\.localhost$/, /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/];
 const MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime']);
@@ -13,7 +16,12 @@ const MAX_FILE = 25 * 1024 * 1024;
 const CHUNK = 1024 * 1024;              // SQLite do Durable Object aceita até 2 MB por valor
 const MAX_TOTAL = 3 * 1024 ** 3;        // plano grátis = 5 GB; acima de 3 GB os arquivos mais antigos saem
 const HISTORY = 150;
+const STALE = 150000;                   // conexão identificada sem sinal (ping a cada 25 s) há 150 s = caiu sem avisar
+const EMOJIS = new Set(['👍', '❤️', '😂', '😮', '😢', '😡', '🔥', '🎉', '👀', '💀', '🐟', '🙏', '👏', '🤡', '💯', '✅']);
+const ST = ['on', 'idle', 'off'];       // off = invisível (para os outros, igual a offline)
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, max);
+const avOf = (v) => (/^[a-z0-9-]{0,24}$/.test(v || '') ? v || '' : '');
+const row = (r) => ({ ...r, media: r.media ? JSON.parse(r.media) : null, reply: r.reply ? JSON.parse(r.reply) : null, reacts: r.reacts ? JSON.parse(r.reacts) : null });
 
 function cors(origin) {
   return origin ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', Vary: 'Origin' } : {};
@@ -45,8 +53,16 @@ export class Server {
     this.sql = ctx.storage.sql;
     this.sql.exec(`CREATE TABLE IF NOT EXISTS msgs (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, name TEXT NOT NULL, av TEXT NOT NULL, text TEXT NOT NULL, media TEXT);
       CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, mime TEXT NOT NULL, size INTEGER NOT NULL, ts INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS chunks (id TEXT NOT NULL, n INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (id, n));`);
+      CREATE TABLE IF NOT EXISTS chunks (id TEXT NOT NULL, n INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (id, n));
+      CREATE TABLE IF NOT EXISTS members (uid TEXT PRIMARY KEY, name TEXT NOT NULL, av TEXT NOT NULL, seen INTEGER NOT NULL);`);
+    // migração S-1357: só acrescenta colunas (nada é apagado); mensagens antigas ficam com uid vazio
+    const cols = new Set(this.sql.exec('PRAGMA table_info(msgs)').toArray().map((c) => c.name));
+    for (const [c, type] of [['uid', 'TEXT'], ['edited', 'INTEGER'], ['reply', 'TEXT'], ['reacts', 'TEXT']]) {
+      if (!cols.has(c)) this.sql.exec(`ALTER TABLE msgs ADD COLUMN ${c} ${type}`);
+    }
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong')); // responde sem acordar o objeto
     this.upAt = new Map(); // ip -> últimos envios (limite simples, some quando o objeto hiberna)
+    this.shown = new Map(); // uid -> último estado avisado (some ao hibernar: no pior caso repete um aviso igual)
   }
 
   async fetch(req) {
@@ -56,8 +72,9 @@ export class Server {
       if (req.headers.get('Upgrade') !== 'websocket') return new Response('esperava WebSocket', { status: 426 });
       const [client, server] = Object.values(new WebSocketPair());
       this.ctx.acceptWebSocket(server);
-      server.serializeAttachment({ at: 0 });
+      server.serializeAttachment({ at: 0, since: Date.now() });
       server.send(JSON.stringify({ t: 'hist', list: this.history() }));
+      server.send(JSON.stringify({ t: 'members', list: this.members() }));
       return new Response(null, { status: 101, webSocket: client });
     }
     if (route === 'up') return this.upload(req, origin);
@@ -69,12 +86,61 @@ export class Server {
     const rows = before
       ? this.sql.exec('SELECT * FROM msgs WHERE id < ? ORDER BY id DESC LIMIT ?', before, HISTORY).toArray()
       : this.sql.exec('SELECT * FROM msgs ORDER BY id DESC LIMIT ?', HISTORY).toArray();
-    return rows.reverse().map((r) => ({ ...r, media: r.media ? JSON.parse(r.media) : null }));
+    return rows.reverse().map(row);
   }
 
-  broadcast(obj) {
+  broadcast(obj, skip) {
     const s = JSON.stringify(obj);
-    for (const ws of this.ctx.getWebSockets()) { try { ws.send(s); } catch { /* fechando */ } }
+    for (const ws of this.ctx.getWebSockets()) { if (ws !== skip) try { ws.send(s); } catch { /* fechando */ } }
+  }
+
+  // ---------- presença ----------
+  dead(ws, a, now) {
+    const pong = this.ctx.getWebSocketAutoResponseTimestamp(ws);
+    return now - Math.max(a.since || 0, a.lt || 0, pong ? pong.getTime() : 0) > STALE;
+  }
+  live(skip) { // uid -> melhor estado entre as conexões abertas dessa pessoa ('on' > 'idle' > 'off')
+    const now = Date.now();
+    const out = new Map();
+    for (const ws of this.ctx.getWebSockets()) {
+      const a = ws.deserializeAttachment() || {};
+      if (ws === skip || !a.uid || a.closed || this.dead(ws, a, now)) continue;
+      const cur = out.get(a.uid);
+      if (!cur || a.st === 'on' || (a.st === 'idle' && cur === 'off')) out.set(a.uid, a.st);
+    }
+    return out;
+  }
+  members() {
+    const live = this.live();
+    return this.sql.exec('SELECT uid, name, av, seen FROM members ORDER BY seen DESC LIMIT 300').toArray()
+      .map((m) => ({ ...m, st: live.get(m.uid) || 'off' }));
+  }
+  presence(uid, skip) { // avisa todo mundo se o estado público (ou nome/avatar) dessa pessoa mudou
+    const m = this.sql.exec('SELECT uid, name, av, seen FROM members WHERE uid = ?', uid).toArray()[0];
+    if (!m) return;
+    const st = this.live(skip).get(uid) || 'off';
+    const key = `${st}|${m.name}|${m.av}`;
+    if (this.shown.get(uid) === key) return;
+    this.shown.set(uid, key);
+    this.broadcast({ t: 'pres', m: { ...m, st } });
+  }
+  gone(ws, a) { // conexão fechou (ou sumiu): a pessoa pode ter ido para offline
+    if (a.closed) return;
+    try { ws.serializeAttachment({ ...a, closed: true }); } catch { /* já fechou */ }
+    try { ws.close(1000, 'fim'); } catch { /* já fechou */ }
+    if (!a.uid) return;
+    this.sql.exec('UPDATE members SET seen = ? WHERE uid = ?', Date.now(), a.uid);
+    this.presence(a.uid, ws);
+  }
+  async alarm() { // a cada minuto, enquanto houver gente: derruba conexão que sumiu sem avisar (PC dormiu, rede caiu)
+    const now = Date.now();
+    let left = false;
+    for (const ws of this.ctx.getWebSockets()) {
+      const a = ws.deserializeAttachment() || {};
+      if (!a.uid || a.closed) continue;
+      if (this.dead(ws, a, now)) this.gone(ws, a); else left = true;
+    }
+    if (left) await this.ctx.storage.setAlarm(now + 60000);
   }
 
   async webSocketMessage(ws, raw) {
@@ -82,30 +148,103 @@ export class Server {
     try { d = JSON.parse(raw); } catch { return; }
     if (!d || typeof d !== 'object') return;
     if (d.t === 'more' && Number.isInteger(d.before)) { ws.send(JSON.stringify({ t: 'old', list: this.history(d.before) })); return; }
-    if (d.t !== 'msg') return;
     const att = ws.deserializeAttachment() || { at: 0 };
     const now = Date.now();
-    if (now - att.at < 250) return; // no máximo 4 por segundo por conexão
-    ws.serializeAttachment({ at: now });
+    att.lt = now;
+    if (d.t === 'me') return this.hello(ws, att, d);
+    if (d.t === 'typing') { // nada é gravado: só repassa, no máximo 1 a cada 2 s por conexão
+      if (!att.uid || now - (att.ty || 0) < 2000) return;
+      att.ty = now;
+      ws.serializeAttachment(att);
+      this.broadcast({ t: 'typing', uid: att.uid }, ws);
+      return;
+    }
+    if (d.t === 'react') return this.react(ws, att, d, now);
+    if (d.t === 'edit' || d.t === 'del') return this.change(ws, att, d, now);
+    if (d.t !== 'msg') return;
+    if (now - (att.at || 0) < 250) return; // no máximo 4 por segundo por conexão
+    att.at = now;
+    ws.serializeAttachment(att);
     const name = clean(d.name, 24) || 'Visitante';
-    const av = /^[a-z0-9-]{0,24}$/.test(d.av || '') ? d.av || '' : '';
+    const av = avOf(d.av);
     const text = clean(d.text, 2000);
     let media = null;
     if (d.media && typeof d.media === 'object' && /^[a-z0-9]{20}$/.test(d.media.id)) {
-      const row = this.sql.exec('SELECT mime, size FROM media WHERE id = ?', d.media.id).toArray()[0];
-      if (row) {
+      const r = this.sql.exec('SELECT mime, size FROM media WHERE id = ?', d.media.id).toArray()[0];
+      if (r) {
         const dim = (v) => (Number.isInteger(v) && v > 0 && v <= 20000 ? v : 0);
-        media = { id: d.media.id, mime: row.mime, size: row.size, w: dim(d.media.w), h: dim(d.media.h), name: clean(d.media.name, 80) };
+        media = { id: d.media.id, mime: r.mime, size: r.size, w: dim(d.media.w), h: dim(d.media.h), name: clean(d.media.name, 80) };
       }
     }
     if (!text && !media) return;
-    const id = this.sql.exec('INSERT INTO msgs (ts, name, av, text, media) VALUES (?, ?, ?, ?, ?) RETURNING id',
-      now, name, av, text, media ? JSON.stringify(media) : null).one().id;
-    this.broadcast({ t: 'msg', m: { id, ts: now, name, av, text, media }, nonce: typeof d.nonce === 'string' ? d.nonce.slice(0, 40) : undefined });
+    let reply = null; // cópia curta da mensagem respondida (a original pode não estar no histórico carregado)
+    if (Number.isInteger(d.reply)) {
+      const r = this.sql.exec('SELECT id, uid, name, text, media FROM msgs WHERE id = ?', d.reply).toArray()[0];
+      if (r) reply = { id: r.id, uid: r.uid || '', name: r.name, text: r.text.slice(0, 140), media: !!r.media };
+    }
+    const uid = att.uid || null;
+    const id = this.sql.exec('INSERT INTO msgs (ts, name, av, text, media, uid, reply) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id',
+      now, name, av, text, media ? JSON.stringify(media) : null, uid, reply ? JSON.stringify(reply) : null).one().id;
+    this.broadcast({ t: 'msg', m: { id, ts: now, name, av, text, media, uid, reply, edited: null, reacts: null }, nonce: typeof d.nonce === 'string' ? d.nonce.slice(0, 40) : undefined });
   }
 
-  webSocketClose(ws, code) { try { ws.close(code === 1005 ? 1000 : code); } catch { /* já fechou */ } }
-  webSocketError() {}
+  async hello(ws, att, d) { // { t:'me', key, name, av, st }: quem é esta conexão e como quer aparecer
+    if (typeof d.key !== 'string' || !/^[a-f0-9]{32,64}$/.test(d.key)) return;
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`bagrenation:${d.key}`)));
+    const uid = [...hash.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    if (att.uid && att.uid !== uid) return; // a conexão não troca de dono
+    const first = !att.uid;
+    att.uid = uid;
+    att.st = ST.includes(d.st) ? d.st : 'on';
+    ws.serializeAttachment(att);
+    this.sql.exec('INSERT INTO members (uid, name, av, seen) VALUES (?, ?, ?, ?) ON CONFLICT(uid) DO UPDATE SET name = excluded.name, av = excluded.av, seen = excluded.seen',
+      uid, clean(d.name, 24) || 'Visitante', avOf(d.av), Date.now());
+    if (first) ws.send(JSON.stringify({ t: 'you', uid }));
+    this.presence(uid);
+    if (first && !(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + 60000);
+  }
+
+  react(ws, att, d, now) { // liga/desliga a minha reação com um emoji da lista
+    if (!att.uid || !Number.isInteger(d.id) || !EMOJIS.has(d.e) || now - (att.rt || 0) < 120) return;
+    att.rt = now;
+    ws.serializeAttachment(att);
+    const r0 = this.sql.exec('SELECT reacts FROM msgs WHERE id = ?', d.id).toArray()[0];
+    if (!r0) return;
+    const r = r0.reacts ? JSON.parse(r0.reacts) : {};
+    const list = r[d.e] || [];
+    if (list.includes(att.uid)) r[d.e] = list.filter((u) => u !== att.uid);
+    else r[d.e] = [...list, att.uid].slice(-100);
+    if (!r[d.e].length) delete r[d.e];
+    this.sql.exec('UPDATE msgs SET reacts = ? WHERE id = ?', Object.keys(r).length ? JSON.stringify(r) : null, d.id);
+    this.broadcast({ t: 'react', id: d.id, reacts: r });
+  }
+
+  change(ws, att, d, now) { // editar ou apagar a própria mensagem (dona = mesmo uid)
+    if (!att.uid || !Number.isInteger(d.id) || now - (att.at || 0) < 250) return;
+    att.at = now;
+    ws.serializeAttachment(att);
+    const r = this.sql.exec('SELECT uid, media FROM msgs WHERE id = ?', d.id).toArray()[0];
+    if (!r || r.uid !== att.uid) return;
+    if (d.t === 'del') { this.remove(d.id, r.media); return; }
+    const text = clean(d.text, 2000);
+    if (!text && !r.media) return;
+    this.sql.exec('UPDATE msgs SET text = ?, edited = ? WHERE id = ?', text, now, d.id);
+    this.broadcast({ t: 'edit', id: d.id, text, edited: now });
+  }
+
+  remove(id, mediaJson) {
+    const media = mediaJson ? JSON.parse(mediaJson) : null;
+    if (media) { this.sql.exec('DELETE FROM chunks WHERE id = ?', media.id); this.sql.exec('DELETE FROM media WHERE id = ?', media.id); }
+    this.sql.exec('DELETE FROM msgs WHERE id = ?', id);
+    this.broadcast({ t: 'del', id });
+  }
+
+  webSocketClose(ws, code) {
+    const a = ws.deserializeAttachment() || {};
+    try { ws.close(code === 1005 ? 1000 : code); } catch { /* já fechou */ }
+    this.gone(ws, a);
+  }
+  webSocketError(ws) { this.gone(ws, ws.deserializeAttachment() || {}); }
 
   async upload(req, origin) {
     const ip = req.headers.get('CF-Connecting-IP') || '?';
@@ -141,13 +280,13 @@ export class Server {
   }
 
   media(req, id) {
-    const row = this.sql.exec('SELECT mime, size FROM media WHERE id = ?', id).toArray()[0];
-    if (!row) return new Response('arquivo expirou', { status: 404 });
-    let start = 0, end = row.size - 1, status = 200;
+    const r0 = this.sql.exec('SELECT mime, size FROM media WHERE id = ?', id).toArray()[0];
+    if (!r0) return new Response('arquivo expirou', { status: 404 });
+    let start = 0, end = r0.size - 1, status = 200;
     const r = (req.headers.get('Range') || '').match(/^bytes=(\d*)-(\d*)$/);
     if (r && (r[1] || r[2])) {
-      if (r[1]) { start = Number(r[1]); if (r[2]) end = Math.min(Number(r[2]), end); } else start = Math.max(0, row.size - Number(r[2]));
-      if (start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${row.size}` } });
+      if (r[1]) { start = Number(r[1]); if (r[2]) end = Math.min(Number(r[2]), end); } else start = Math.max(0, r0.size - Number(r[2]));
+      if (start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${r0.size}` } });
       status = 206;
     }
     const out = new Uint8Array(end - start + 1);
@@ -158,8 +297,8 @@ export class Server {
       out.set(part, Math.max(0, base - start));
     }
     return new Response(out, { status, headers: {
-      'Content-Type': row.mime, 'Content-Length': String(out.length), 'Accept-Ranges': 'bytes',
-      ...(status === 206 ? { 'Content-Range': `bytes ${start}-${end}/${row.size}` } : {}),
+      'Content-Type': r0.mime, 'Content-Length': String(out.length), 'Accept-Ranges': 'bytes',
+      ...(status === 206 ? { 'Content-Range': `bytes ${start}-${end}/${r0.size}` } : {}),
       'Cache-Control': 'public, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff',
       'Content-Security-Policy': "default-src 'none'", 'Cross-Origin-Resource-Policy': 'cross-origin', 'Access-Control-Allow-Origin': '*',
     } });
@@ -169,12 +308,9 @@ export class Server {
     const key = this.env.ADMIN_KEY;
     if (!key || req.method !== 'POST' || req.headers.get('Authorization') !== `Bearer ${key}`) return json({ error: 'sem permissão' }, 403);
     const id = Number(new URL(req.url).searchParams.get('id'));
-    const row = this.sql.exec('SELECT media FROM msgs WHERE id = ?', id).toArray()[0];
-    if (!row) return json({ error: 'não existe' }, 404);
-    const media = row.media ? JSON.parse(row.media) : null;
-    if (media) { this.sql.exec('DELETE FROM chunks WHERE id = ?', media.id); this.sql.exec('DELETE FROM media WHERE id = ?', media.id); }
-    this.sql.exec('DELETE FROM msgs WHERE id = ?', id);
-    this.broadcast({ t: 'del', id });
+    const r = this.sql.exec('SELECT media FROM msgs WHERE id = ?', id).toArray()[0];
+    if (!r) return json({ error: 'não existe' }, 404);
+    this.remove(id, r.media);
     return json({ ok: true }, 200);
   }
 }

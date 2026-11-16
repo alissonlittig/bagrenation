@@ -15,6 +15,9 @@ Um servidor fixo, como um servidor do Discord: abriu o BAGRENATION (site ou app)
 
 5. **Modo foco** (botão **Retrair laterais** no topo, botão de moldura no dock ou tecla **F**): esconde canais, pessoas online, #chat e barras, e deixa só o canal de voz. **Tela**: a tela compartilhada ocupa tudo (com mais de uma, escolha qual pelo nome ou clicando na miniatura; quem está no canal vira uma faixa de rostos em cima). **Pessoas**: grade grande com quem está no canal, contorno verde em quem fala. **Esc** ou **Sair** volta; mensagem nova no #chat aparece no botão Sair. A escolha fica lembrada.
 
+6. **Mensagens**: passe o mouse numa mensagem (ou botão direito; no celular, toque longo) para **reagir** com emoji, **responder** (a citação leva até a mensagem original), **copiar o texto**, **editar** ou **apagar** a sua. Seta para cima no campo vazio edita a sua última. Mensagem editada ganha "(editada)".
+7. **Membros e status**: a lateral mostra **Online**, **Ausente** e **Offline** (quem já entrou um dia continua lá, com "visto por último"). No seu nome, embaixo, escolha **Online** (fica ausente sozinho depois de 10 min parado; no app vale o teclado e o mouse do Windows, então jogando você continua online), **Ausente** ou **Invisível** (aparece offline, mas usa tudo normal). A bolinha de status aparece nos avatares da lista, do canal de voz e do #chat. Embaixo do campo aparece quem está digitando.
+
 Mais de uma pessoa pode transmitir ao mesmo tempo no canal. Quem está fora do canal continua online e no chat, sem receber voz nem tela.
 
 ## App para PC (Windows)
@@ -49,6 +52,8 @@ Código: `desktop/` (o `copy-site.mjs` copia os arquivos do site para dentro do 
 - Números reais de cada transmissão: resolução, quadros por segundo, taxa e latência; quem transmite vê quantos estão assistindo e se o limite é a rede ou o processador.
 - Indicador de conexão e reconexão automática.
 - **#chat permanente**: texto (links clicáveis), imagem, GIF e vídeo com prévia; mensagens seguidas da mesma pessoa agrupadas; imagem amplia no clique; vídeo toca no próprio chat; "Carregar mensagens antigas" para trás das últimas 150.
+- **Ações na mensagem**: reagir (16 emojis, contador e quem reagiu no hover), responder com citação clicável, copiar, editar (marca "(editada)") e apagar a própria, com confirmação (Shift+clique apaga direto). Tudo em tempo real para todos e salvo.
+- **Membros como no Discord**: Online / Ausente / Offline, status manual (ausente, invisível) e automático (ausente após 10 min parado), bolinha de status nos avatares e "Fulano está digitando…" (ou "A e B estão digitando…").
 - Funciona no celular para falar, ouvir e assistir.
 - Sons 8-bit opcionais na interface (desligados por padrão): cliques e teclado mecânico antigo ao digitar.
 
@@ -85,9 +90,11 @@ Com `prefers-reduced-motion`, as linhas de CRT, o glitch e as animações são d
 
 O vídeo e o áudio vão de navegador para navegador por WebRTC, criptografados, sem passar por servidor. A sinalização é o servidor público do [PeerJS](https://peerjs.com/), usado só para os navegadores se encontrarem.
 
-Todo mundo que abre entra no mesmo servidor (`bagrenation`). Um dos participantes mantém o "diretório" (a lista de quem está online); se ele sai, outro assume automaticamente. Os participantes se ligam em malha por canal de dados (presença); voz e tela só abrem entre quem está no canal de voz, e quem transmite envia uma cópia para cada espectador. Links antigos de sala (`#K7Q-M4P`) abrem o servidor.
+Todo mundo que abre entra no mesmo servidor (`bagrenation`). Um dos participantes mantém o "diretório" (a lista de quem está conectado na malha de voz e tela; a lista de membros e o status vêm do Worker do chat); se ele sai, outro assume automaticamente. Os participantes se ligam em malha por canal de dados (presença); voz e tela só abrem entre quem está no canal de voz, e quem transmite envia uma cópia para cada espectador. Links antigos de sala (`#K7Q-M4P`) abrem o servidor.
 
 O **#chat** fica num Worker da Cloudflare (`server/worker.js`, plano grátis, sem cartão): um Durable Object com SQLite guarda as mensagens e os arquivos (em pedaços de 1 MB), manda o histórico ao conectar e as mensagens novas por WebSocket. Para estranhos não escreverem de outras páginas, enviar exige a origem do site ou do app (não é senha: um script fora do navegador consegue forjar); apagar mensagem exige a chave de moderação (`ADMIN_KEY`, secret do Worker). Acima de 3 GB de arquivos os mais antigos saem (a mensagem fica com "arquivo expirou"). Publicar o Worker: `cd server && npx wrangler deploy`.
+
+**Identidade** (sem conta): cada aparelho gera uma chave aleatória e guarda no navegador/app; o Worker guarda só o hash dela (o `uid` que os outros veem). É ela que permite editar e apagar as próprias mensagens e liga o nome ao mesmo membro mesmo trocando de apelido. Site e app no mesmo PC são dois aparelhos (dois membros). Limpar os dados do navegador = membro novo (o antigo fica em Offline). O mesmo WebSocket do chat leva a presença (cada conexão diz online/ausente/invisível; o Worker junta por pessoa e avisa só quando muda), o "digitando" (repassado, nada é gravado, no máximo 1 a cada 2 s por conexão), as reações, as edições e as respostas. Um ping a cada 25 s é respondido pela Cloudflare sem acordar o Durable Object; conexão sem sinal por 150 s cai e a pessoa vai para Offline (um alarme por minuto confere, só enquanto há gente conectada).
 
 O site é estático: `index.html`, `style.css`, `app.js`, a biblioteca PeerJS e as fontes, todos servidos do próprio repositório. Não há build. `?servidor=nome` abre outro servidor (os testes usam isso para não aparecer no de verdade).
 
@@ -102,7 +109,7 @@ O site é estático: `index.html`, `style.css`, `app.js`, a biblioteca PeerJS e 
 - **Áudio.** Chrome e Edge enviam o áudio de uma guia em qualquer sistema e o áudio do sistema inteiro só no Windows. Firefox e Safari não capturam áudio de tela.
 - **Celular** não transmite tela (os navegadores móveis não oferecem essa função); fala, ouve e assiste.
 - **Quem tem o link entra.** Não há senha nem conta: qualquer um que abrir o site entra no servidor, lê o #chat e aparece online. Nome é só um apelido (dá para usar o de outra pessoa). Para algo sigiloso, não use o BAGRENATION.
-- **Chat sem apagar pelo app.** Apagar mensagem só pela chave de moderação (`POST /s/bagrenation/del?id=N` com `Authorization: Bearer <ADMIN_KEY>`). GIF é arquivo `.gif` (não há busca de GIFs, que exigiria chave de um serviço de terceiros).
+- **Apagar.** Cada um apaga e edita só as próprias mensagens (as anteriores à versão 1.2.0 não têm autor guardado e ficam como estão). Apagar a de outra pessoa só pela chave de moderação (`POST /s/bagrenation/del?id=N` com `Authorization: Bearer <ADMIN_KEY>`). GIF é arquivo `.gif` (não há busca de GIFs, que exigiria chave de um serviço de terceiros).
 - **Sem Discord** não separa aplicativos dentro do som do sistema (nenhum navegador permite isso). Ele funciona escolhendo uma fonte sem o Discord: guia (Chrome/Edge) ou janela (Chrome/Edge recentes, que oferecem o áudio só da janela).
 - **Sinalização de terceiros.** O servidor público do PeerJS é gratuito, sem garantia de disponibilidade, e enxerga os identificadores das salas (não o vídeo nem o áudio). Se ele cair, ninguém novo entra; as transmissões abertas continuam.
 
@@ -120,6 +127,7 @@ python tests/test_servidor.py                              # servidor fixo + cha
 python tests/test_e2e.py                                   # servidor local
 python tests/test_e2e.py https://alissonlittig.github.io/bagrenation/   # site publicado
 python tests/test_foco.py                                  # modo foco (retrair laterais)
+python tests/test_membros.py                               # membros, status, digitando, reagir/responder/editar/apagar (3 navegadores)
 python tests/test_eco.py <bagrenation.exe de teste>        # tela inteira no app sem a voz do BAGRENATION (análise de frequência)
 ONLY=voz python tests/test_e2e.py                           # só o cenário de voz
 ```

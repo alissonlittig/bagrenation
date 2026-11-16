@@ -65,6 +65,18 @@
   const AVATARS = AV_SYM.map((el) => el.id.slice(3));
   const savedAv = store('avatar'); // avatar que não existe mais (galeria só tem bagres) volta para o bagre clássico
   let myAv = AVATARS.includes(savedAv) ? savedAv : savedAv ? 'bagre' : '';
+  // Identidade (S-1357): chave aleatória deste aparelho (só fica aqui); o servidor do chat guarda o hash dela (uid),
+  // que é o que os outros veem. Com ela dá para editar e apagar as próprias mensagens. Site e app são aparelhos diferentes.
+  let myKey = store('key');
+  if (!/^[a-f0-9]{32}$/.test(myKey || '')) {
+    myKey = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    store('key', myKey);
+  }
+  let myUid = /^[a-f0-9]{16}$/.test(store('uid') || '') ? store('uid') : '';
+  // Status: 'auto' = online (vira ausente sozinho após 10 min parado) · 'idle' = ausente fixo · 'off' = invisível
+  let stPick = ['auto', 'idle', 'off'].includes(store('status')) ? store('status') : 'auto';
+  let autoIdle = false;
+  const members = new Map(); // uid -> { uid, name, av, seen, st } (lista que o servidor do chat guarda)
   // Voz. Preferências lembradas no navegador; mudo/ensurdecido valem só até fechar a página.
   const voice = {
     track: null,      // faixa do microfone que vai para a sala (ligada/desligada pelo portão)
@@ -286,7 +298,7 @@
     c.on('error', () => {});
   }
 
-  const hello = () => ({ t: 'hello', name: myName, av: myAv, voice: inVoice, sharing: !!local, muted: voice.muted || !voice.track, deaf: voice.deaf, talking: voice.talking });
+  const hello = () => ({ t: 'hello', uid: myUid, name: myName, av: myAv, voice: inVoice, sharing: !!local, muted: voice.muted || !voice.track, deaf: voice.deaf, talking: voice.talking });
   function send(e, msg) { if (e.conn && e.conn.open) e.conn.send(msg); }
   function broadcast(msg) { for (const e of peers.values()) send(e, msg); }
 
@@ -299,6 +311,7 @@
       e.named = true;
       e.sharing = d.sharing === true;
       e.av = AVATARS.includes(d.av) ? d.av : d.av ? 'bagre' : '';
+      e.uid = /^[a-f0-9]{16}$/.test(d.uid || '') ? d.uid : '';
       e.vmuted = d.muted === true;
       e.vdeaf = d.deaf === true;
       e.talking = d.talking === true && !e.vmuted; // quem chega no meio de uma fala já vê o anel aceso
@@ -980,6 +993,7 @@
         els.push(card);
       }
       for (const el of els) {
+        el.querySelector('.avatar').dataset.st = p.you ? myStatus() : stOf(p.e.uid) || 'on';
         paintAvatar(el.querySelector('.avatar'), p.name, p.av);
         el.querySelector('.avatar').classList.toggle('speaking', p.talking);
         el.classList.toggle('is-live', p.sharing);
@@ -989,23 +1003,7 @@
         el.classList.toggle('is-off', p.off);
       }
     }
-    // eu primeiro, depois por ordem de chegada (ordem do Map)
-    $('peopleCount').textContent = String(all.length);
-    // Online: todo mundo com o BAGRENATION aberto (quem está na voz ganha o ícone do canal)
-    olist.replaceChildren(...all.map((p) => {
-      const li = document.createElement('li');
-      li.dataset.id = p.id;
-      li.classList.toggle('is-voice', !!p.invoice);
-      const av = document.createElement('span');
-      av.className = 'avatar';
-      av.setAttribute('aria-hidden', 'true');
-      paintAvatar(av, p.name, p.av);
-      av.classList.toggle('speaking', !!p.talking);
-      li.append(av, Object.assign(document.createElement('span'), { className: 'nm', textContent: p.you ? `${p.name} (você)` : p.name }));
-      if (p.invoice) li.insertAdjacentHTML('beforeend', '<svg class="ic on-voice" role="img" aria-label="no canal de voz"><use href="#i-vol"/></svg>');
-      return li;
-    }));
-    $('peopleCountSide').textContent = String(all.length);
+    renderMembers();
     $('voiceCount').textContent = voiceIds.size ? String(voiceIds.size) : '';
     const others = all.filter((p) => !p.you && p.invoice);
     $('emptySay').textContent = inVoice ? (others.length ? `Você e mais ${others.length} no canal` : 'Só você no canal. Chame a galera.')
@@ -1027,6 +1025,7 @@
       li.dataset.id = p.id;
       const av = Object.assign(document.createElement('span'), { className: 'avatar' });
       av.setAttribute('aria-hidden', 'true');
+      av.dataset.st = p.you ? myStatus() : stOf(p.e.uid) || 'on';
       paintAvatar(av, p.name, p.av);
       av.classList.toggle('speaking', !!p.talking);
       li.append(av, Object.assign(document.createElement('span'), { className: 'sr-only', textContent: li.title }));
@@ -1037,6 +1036,97 @@
     $('chanVoice').classList.toggle('is-in', inVoice);
     renderTalk();
   }
+  // ---------- membros (S-1357): Online / Ausente / Offline, como no Discord ----------
+  // A lista vem do servidor do chat (todo mundo que já entrou, com o estado de agora). Quem está no canal de voz
+  // ganha o ícone e o anel de "falando" pela malha. Versão antiga (sem uid) aparece online como antes.
+  const myStatus = () => (stPick === 'off' ? 'off' : stPick === 'idle' || autoIdle ? 'idle' : 'on');
+  const ST_NAME = { on: 'Online', idle: 'Ausente', off: 'Offline' };
+  function stOf(uid) {
+    if (!uid) return '';
+    if (uid === myUid) return myStatus();
+    const m = members.get(uid);
+    if (m) return m.st;
+    return [...peers.values()].some((e) => e.uid === uid && e.ready) ? 'on' : '';
+  }
+  function renderMembers() {
+    const mesh = new Map();
+    const groups = { on: [], idle: [], off: [] };
+    for (const e of peers.values()) {
+      if (!e.ready || !e.named) continue; // ainda não disse quem é: não vira um "Convidado" a mais na lista
+      if (e.uid && e.uid !== myUid) mesh.set(e.uid, e);
+      if (!e.uid || !members.has(e.uid)) groups.on.push({ id: e.id, uid: e.uid, name: e.name, av: e.av, st: 'on', invoice: e.invoice, talking: e.invoice && e.talking });
+    }
+    groups[myStatus()].push({ id: 'me', uid: myUid, name: myName, av: myAv, st: myStatus(), you: true, invoice: inVoice, talking: voice.talking });
+    for (const m of members.values()) {
+      if (m.uid === myUid) continue;
+      const e = mesh.get(m.uid);
+      groups[m.st].push({ ...m, id: e ? e.id : `u-${m.uid}`, invoice: !!(e && e.invoice), talking: !!(e && e.invoice && e.talking) });
+    }
+    const byName = (a, b) => a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' });
+    const item = (p) => {
+      const li = document.createElement('li');
+      li.dataset.id = p.id;
+      li.classList.toggle('is-voice', !!p.invoice);
+      const av = document.createElement('span');
+      av.className = 'avatar';
+      av.setAttribute('aria-hidden', 'true');
+      if (p.uid) av.dataset.uid = p.uid;
+      av.dataset.st = p.st;
+      paintAvatar(av, p.name, AVATARS.includes(p.av) ? p.av : '');
+      av.classList.toggle('speaking', !!p.talking);
+      const who = Object.assign(document.createElement('span'), { className: 'who' });
+      who.append(Object.assign(document.createElement('span'), { className: 'nm', textContent: p.you ? `${p.name} (você)` : p.name }));
+      const sub = p.you && stPick === 'off' ? 'invisível' : p.st === 'idle' ? 'ausente' : p.st === 'off' && p.seen ? `visto ${when(p.seen)}` : '';
+      if (sub) who.append(Object.assign(document.createElement('span'), { className: 'sub', textContent: sub }));
+      li.append(av, who);
+      li.title = `${p.name} · ${p.you && stPick === 'off' ? 'Invisível' : ST_NAME[p.st]}${p.invoice ? ' · no canal de voz' : ''}`;
+      if (p.invoice) li.insertAdjacentHTML('beforeend', '<svg class="ic on-voice" role="img" aria-label="no canal de voz"><use href="#i-vol"/></svg>');
+      return li;
+    };
+    $('online').replaceChildren(...groups.on.sort(byName).map(item));
+    $('idle').replaceChildren(...groups.idle.sort(byName).map(item));
+    $('offline').replaceChildren(...groups.off.sort(byName).map(item));
+    const up = groups.on.length + groups.idle.length;
+    $('peopleCountSide').textContent = String(groups.on.length);
+    $('peopleCount').textContent = String(up);
+    $('idleCount').textContent = String(groups.idle.length);
+    $('offCount').textContent = String(groups.off.length);
+    $('idleHead').hidden = !groups.idle.length;
+    $('offHead').hidden = !groups.off.length;
+  }
+  function refreshDots() { // bolinha de status nos avatares do #chat
+    for (const el of document.querySelectorAll('#chatLog .avatar[data-uid]')) el.dataset.st = stOf(el.dataset.uid);
+    renderTyping();
+  }
+  function renderStatus() {
+    const st = myStatus();
+    const label = stPick === 'off' ? 'Invisível' : ST_NAME[st];
+    $('statusLabel').textContent = label;
+    $('statusBtn').querySelector('.st-dot').dataset.st = st;
+    $('statusBtn').setAttribute('aria-label', `Status: ${label}. Trocar status`);
+    $('meAvatar').dataset.st = st;
+    for (const b of $('statusPop').querySelectorAll('.st-opt')) b.setAttribute('aria-checked', String(b.dataset.st === stPick));
+  }
+  function sendMe() { // quem sou eu e como quero aparecer (só depois de ter nome)
+    if (chatOpen() && store('name')) chat.ws.send(JSON.stringify({ t: 'me', key: myKey, name: myName, av: myAv, st: myStatus() }));
+  }
+  // Ausente automático: 10 min sem mexer. No app vale o teclado/mouse do Windows inteiro (jogando = ativo).
+  let lastInput = Date.now();
+  let idleMs = 600000;
+  async function checkIdle() {
+    if (voice.talking) lastInput = Date.now();
+    let quiet = Date.now() - lastInput;
+    if (DESK) { try { quiet = Math.min(quiet, (await DESK.core.invoke('idle_secs')) * 1000); } catch { /* sem o comando: vale só a página */ } }
+    const idle = quiet >= idleMs;
+    if (idle === autoIdle) return;
+    autoIdle = idle;
+    renderStatus(); sendMe(); renderPeople(); refreshDots();
+  }
+  for (const t of ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart']) {
+    window.addEventListener(t, () => { lastInput = Date.now(); if (autoIdle) checkIdle(); }, { capture: true, passive: true });
+  }
+  setInterval(checkIdle, 15000);
+
   function renderTalk() { // quem está falando agora, por nome
     const names = [...(voice.talking ? ['você'] : []), ...[...peers.values()].filter((e) => e.ready && e.invoice && e.talking).map((e) => e.name)];
     $('vbTalk').textContent = names.length ? `falando: ${names.join(', ')}` : '';
@@ -1081,7 +1171,7 @@
     clearTimeout(chat.timer);
     if (!navigator.onLine) { chat.timer = setTimeout(chatConnect, 3000); return; }
     const ws = chat.ws = new WebSocket(`${CHAT.replace(/^http/, 'ws')}/ws`);
-    ws.addEventListener('open', () => { chat.backoff = 0; chatState(); });
+    ws.addEventListener('open', () => { chat.backoff = 0; chatState(); sendMe(); });
     ws.addEventListener('message', (ev) => {
       let d;
       try { d = JSON.parse(ev.data); } catch { return; }
@@ -1091,6 +1181,7 @@
       if (chat.ws !== ws) return;
       chat.ws = null;
       chatState();
+      typers.clear(); renderTyping();
       chat.timer = setTimeout(chatConnect, Math.min(1000 * 2 ** chat.backoff++, 15000));
     });
     chatState();
@@ -1111,25 +1202,108 @@
       chat.more = d.list.length >= 150;
       renderChat(false);
       box.scrollTop = box.scrollHeight - fromBottom; // continua vendo a mesma mensagem
+      if (chat.jump) { const j = chat.jump; chat.jump = null; jumpTo(j.id, j.tries); }
     } else if (d.t === 'msg' && okMsg(d.m)) {
       if (chat.list.some((m) => m.id === d.m.id)) return;
       const stick = atBottom();
       chat.list.push(d.m);
       $('chatLog').append(msgEl(d.m, chat.list[chat.list.length - 2]));
-      if (stick || d.m.name === myName) scrollDown();
-      if (d.m.name !== myName) incoming(d.m);
+      if (stick || mine(d.m)) scrollDown();
+      if (!mine(d.m)) incoming(d.m);
+      if (d.m.uid && typers.delete(d.m.uid)) renderTyping();
     } else if (d.t === 'del') {
+      if (editing && editing.id === d.id) editing = null;
+      if (replyTo === d.id) cancelReply();
       chat.list = chat.list.filter((m) => m.id !== d.id);
       renderChat(false);
+    } else if (d.t === 'edit' && Number.isInteger(d.id) && typeof d.text === 'string') {
+      patch(d.id, { text: d.text, edited: Number(d.edited) || Date.now() });
+    } else if (d.t === 'react' && Number.isInteger(d.id) && d.reacts && typeof d.reacts === 'object') {
+      patch(d.id, { reacts: d.reacts });
+    } else if (d.t === 'you' && /^[a-f0-9]{16}$/.test(d.uid || '')) {
+      const changed = d.uid !== myUid;
+      myUid = d.uid;
+      store('uid', myUid);
+      broadcast(hello());
+      if (changed) renderChat(false); // minhas mensagens ganham editar/apagar
+      renderPeople();
+    } else if (d.t === 'members' && Array.isArray(d.list)) {
+      members.clear();
+      for (const m of d.list) if (okMember(m)) members.set(m.uid, m);
+      renderPeople(); refreshDots();
+    } else if (d.t === 'pres' && okMember(d.m)) {
+      const old = members.get(d.m.uid);
+      members.set(d.m.uid, d.m);
+      renderPeople(); refreshDots();
+      if (old && (old.name !== d.m.name || old.av !== d.m.av) && chat.list.some((m) => m.uid === d.m.uid)) { // trocou nome/avatar: as mensagens dela acompanham
+        const box = $('chatScroll');
+        const top = box.scrollTop;
+        renderChat(false);
+        box.scrollTop = top;
+      }
+    } else if (d.t === 'typing' && /^[a-f0-9]{16}$/.test(d.uid || '') && d.uid !== myUid) {
+      typers.set(d.uid, Date.now());
+      renderTyping();
     }
   }
   const okMsg = (m) => !!m && Number.isInteger(m.id) && typeof m.name === 'string' && typeof m.text === 'string';
+  const okMember = (m) => !!m && /^[a-f0-9]{16}$/.test(m.uid || '') && typeof m.name === 'string' && ['on', 'idle', 'off'].includes(m.st)
+    && ((m.av = AVATARS.includes(m.av) ? m.av : m.av ? 'bagre' : ''), true);
+  const mine = (m) => (m.uid ? m.uid === myUid : m.name === myName); // antigas (sem uid): pelo nome, como antes
+  const canEdit = (m) => !!m && !!m.uid && m.uid === myUid;
+  const msgById = (id) => chat.list.find((m) => m.id === id);
+  const author = (m) => { const x = m.uid && members.get(m.uid); return x ? x : { name: m.name, av: m.av }; };
+  const snippet = (m) => (m.text || (m.media ? 'imagem ou vídeo' : '')).slice(0, 140);
+  const listNames = (n) => (n.length < 2 ? n.join('') : `${n.slice(0, -1).join(', ')} e ${n[n.length - 1]}`);
+  function patch(id, fields) { // mensagem mudou (editada, reação): troca só ela, no lugar
+    const i = chat.list.findIndex((m) => m.id === id);
+    if (i < 0) return;
+    const m = chat.list[i] = { ...chat.list[i], ...fields };
+    const el = $('chatLog').querySelector(`.msg[data-id="${id}"]`);
+    if (el) {
+      const stick = atBottom();
+      if (el.contains($('msgTools'))) parkTools();
+      el.replaceWith(msgEl(m, chat.list[i - 1]));
+      if (editing && editing.id === id) paintEdit();
+      if (stick) scrollDown();
+    }
+    if ('text' in fields) for (const q of $('chatLog').querySelectorAll(`.msg-reply[data-to="${id}"] .rp-text`)) q.textContent = snippet(m);
+  }
+
+  // "Fulano está digitando…": o aviso chega a cada ~3 s enquanto a pessoa digita e some 6 s depois do último
+  const typers = new Map(); // uid -> quando avisou
+  let typedAt = 0;
+  function renderTyping() {
+    const now = Date.now();
+    for (const [u, t] of typers) if (now - t > 6000 || u === myUid) typers.delete(u);
+    const names = [...typers.keys()].map((u) => (members.get(u) || {}).name).filter(Boolean);
+    const el = $('typing');
+    el.classList.toggle('on', names.length > 0);
+    if (!names.length) { el.textContent = ''; return; }
+    const dots = Object.assign(document.createElement('span'), { className: 'typing-dots' });
+    dots.setAttribute('aria-hidden', 'true');
+    dots.append(document.createElement('i'), document.createElement('i'), document.createElement('i'));
+    const parts = [dots];
+    if (names.length > 3) parts.push('Várias pessoas estão digitando…');
+    else {
+      names.forEach((n, i) => {
+        if (i) parts.push(i === names.length - 1 ? ' e ' : ', ');
+        parts.push(Object.assign(document.createElement('b'), { textContent: n }));
+      });
+      parts.push(names.length === 1 ? ' está digitando…' : ' estão digitando…');
+    }
+    el.replaceChildren(...parts);
+  }
+  setInterval(() => { if (typers.size) renderTyping(); }, 1000);
+  setInterval(() => { if (chatOpen()) chat.ws.send('ping'); }, 25000); // sinal de vida: sem ele o servidor põe offline
   const atBottom = () => { const b = $('chatScroll'); return b.scrollHeight - b.scrollTop - b.clientHeight < 80; };
   const scrollDown = () => { const b = $('chatScroll'); b.scrollTop = b.scrollHeight; };
   function renderChat(down) {
     const log = $('chatLog');
+    parkTools();
     log.textContent = '';
     chat.list.forEach((m, i) => log.append(msgEl(m, chat.list[i - 1])));
+    if (editing) paintEdit();
     $('moreBtn').hidden = !chat.more;
     chatState();
     if (down) scrollDown();
@@ -1169,26 +1343,227 @@
     const li = document.createElement('li');
     li.className = 'msg';
     li.dataset.id = String(m.id);
-    // mensagens seguidas da mesma pessoa em até 5 min ficam juntas (sem repetir nome e avatar)
-    if (prev && prev.name === m.name && m.ts - prev.ts < 300000) li.classList.add('cont');
-    if (m.name === myName) li.classList.add('mine');
+    const who = author(m);
+    // mensagens seguidas da mesma pessoa em até 5 min ficam juntas (sem repetir nome e avatar); resposta sempre mostra
+    const same = prev && (m.uid || prev.uid ? prev.uid === m.uid : prev.name === m.name);
+    if (same && m.ts - prev.ts < 300000 && !m.reply) li.classList.add('cont');
+    if (mine(m)) li.classList.add('mine');
     const av = document.createElement('span');
     av.className = 'avatar';
     av.setAttribute('aria-hidden', 'true');
-    paintAvatar(av, m.name, AVATARS.includes(m.av) ? m.av : '');
+    if (m.uid) { av.dataset.uid = m.uid; av.dataset.st = stOf(m.uid); }
+    paintAvatar(av, who.name, AVATARS.includes(who.av) ? who.av : '');
+    if (m.reply && Number.isInteger(m.reply.id)) li.append(replyEl(m.reply));
     const body = document.createElement('div');
     body.className = 'msg-body';
     const head = document.createElement('p');
     head.className = 'msg-head';
-    const nm = Object.assign(document.createElement('b'), { className: 'msg-name', textContent: m.name });
+    const nm = Object.assign(document.createElement('b'), { className: 'msg-name', textContent: who.name });
     const t = Object.assign(document.createElement('time'), { textContent: when(m.ts), dateTime: new Date(m.ts).toISOString() });
     t.title = new Date(m.ts).toLocaleString('pt-BR');
     head.append(nm, t);
     body.append(head);
-    if (m.text) { const p = document.createElement('p'); p.className = 'msg-text'; linkify(p, m.text); body.append(p); }
+    const edited = () => {
+      const e = Object.assign(document.createElement('span'), { className: 'msg-edited', textContent: '(editada)' });
+      e.title = `editada ${when(m.edited)}`;
+      return e;
+    };
+    if (m.text) {
+      const p = document.createElement('p');
+      p.className = 'msg-text';
+      linkify(p, m.text);
+      if (m.edited) p.append(' ', edited());
+      body.append(p);
+    }
     if (m.media && /^[a-z0-9]{20}$/.test(m.media.id)) body.append(mediaEl(m.media));
+    if (!m.text && m.edited) body.append(edited());
+    if (m.reacts && typeof m.reacts === 'object') {
+      const row = Object.assign(document.createElement('div'), { className: 'reacts' });
+      for (const [e, uids] of Object.entries(m.reacts)) {
+        if (!EMOJI.includes(e) || !Array.isArray(uids) || !uids.length) continue;
+        const b = Object.assign(document.createElement('button'), { type: 'button', className: 'react' });
+        const me = uids.includes(myUid);
+        b.setAttribute('aria-pressed', String(me));
+        b.append(Object.assign(document.createElement('span'), { className: 'emo', textContent: e }), Object.assign(document.createElement('b'), { textContent: String(uids.length) }));
+        const names = uids.map((u) => (u === myUid ? 'você' : (members.get(u) || {}).name || 'alguém'));
+        b.title = `${listNames(names)} ${names.length === 1 ? 'reagiu' : 'reagiram'} com ${e}`;
+        b.setAttribute('aria-label', `${b.title}. ${me ? 'Clique para tirar a sua' : 'Clique para reagir também'}`);
+        b.addEventListener('click', () => react(m.id, e));
+        row.append(b);
+      }
+      if (row.childElementCount) body.append(row);
+    }
     li.append(av, body);
     return li;
+  }
+  function replyEl(r) { // citação clicável da mensagem respondida (leva até ela)
+    const orig = msgById(r.id);
+    const name = orig ? author(orig).name : (r.uid && members.get(r.uid) || r).name;
+    const q = Object.assign(document.createElement('button'), { type: 'button', className: 'msg-reply' });
+    q.dataset.to = String(r.id);
+    q.setAttribute('aria-label', `Resposta a ${name}. Ir para a mensagem`);
+    q.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-reply"/></svg>';
+    q.append(Object.assign(document.createElement('b'), { className: 'rp-name', textContent: name }),
+      Object.assign(document.createElement('span'), { className: 'rp-text', textContent: orig ? snippet(orig) : r.text || (r.media ? 'imagem ou vídeo' : '') }));
+    q.addEventListener('click', () => jumpTo(r.id));
+    return q;
+  }
+  function jumpTo(id, tries = 0) {
+    const el = $('chatLog').querySelector(`.msg[data-id="${id}"]`);
+    if (el) {
+      el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+      el.classList.remove('flash');
+      void el.offsetWidth; // reinicia a animação
+      el.classList.add('flash');
+      setTimeout(() => el.classList.remove('flash'), 2200);
+      return;
+    }
+    const gone = chat.list.length && id > chat.list[0].id; // estaria carregada: foi apagada
+    if (gone || !chat.more || tries >= 10 || !chatOpen()) { toast('Essa mensagem foi apagada.'); return; }
+    chat.jump = { id, tries: tries + 1 }; // carrega as antigas até achar
+    chat.ws.send(JSON.stringify({ t: 'more', before: chat.list[0].id }));
+  }
+
+  // ---------- ações na mensagem: reagir, responder, editar, copiar, apagar ----------
+  const EMOJI = ['👍', '❤️', '😂', '😮', '😢', '😡', '🔥', '🎉', '👀', '💀', '🐟', '🙏', '👏', '🤡', '💯', '✅'];
+  let toolsFor = null; // mensagem com a barra de ações aberta
+  let replyTo = null;
+  let editing = null; // { id, draft }
+  function parkTools() { const t = $('msgTools'); t.hidden = true; if (t.parentElement !== $('chat')) $('chat').append(t); toolsFor = null; }
+  function showTools(li) {
+    const m = li && msgById(Number(li.dataset.id));
+    if (!m || li.classList.contains('editing')) return;
+    const t = $('msgTools');
+    for (const b of t.querySelectorAll('.js-own')) b.hidden = !canEdit(m);
+    t.querySelector('[data-act="copy"]').hidden = !m.text;
+    li.append(t);
+    t.hidden = false;
+    toolsFor = m.id;
+  }
+  function closeMenus() { $('msgMenu').hidden = true; $('reactPop').hidden = true; }
+  function place(el, x, y) { // menu flutuante perto do ponto, sem sair da janela; no celular vira folha de baixo
+    el.classList.toggle('sheet', narrow());
+    el.style.left = el.style.top = '';
+    if (narrow()) return;
+    const w = el.offsetWidth, h = el.offsetHeight;
+    el.style.left = `${Math.max(8, Math.min(x, innerWidth - w - 8))}px`;
+    el.style.top = `${Math.max(8, y + h + 8 > innerHeight ? y - h : y)}px`;
+  }
+  function openMenu(id, x, y) {
+    const m = msgById(id);
+    if (!m) return;
+    closeMenus(); parkTools();
+    const menu = $('msgMenu');
+    menu.dataset.id = String(id);
+    for (const b of menu.querySelectorAll('.js-own')) b.hidden = !canEdit(m);
+    menu.querySelector('[data-act="copy"]').hidden = !m.text;
+    menu.querySelector('.menu-emojis').replaceChildren(...EMOJI.slice(0, 6).map((e) => emojiBtn(m, e)));
+    menu.hidden = false;
+    place(menu, x, y);
+    menu.querySelector('button').focus();
+  }
+  function emojiBtn(m, e) {
+    const b = Object.assign(document.createElement('button'), { type: 'button', className: 'emo-btn', textContent: e });
+    b.setAttribute('aria-label', `Reagir com ${e}`);
+    b.setAttribute('aria-pressed', String(!!(m.reacts && Array.isArray(m.reacts[e]) && m.reacts[e].includes(myUid))));
+    b.addEventListener('click', () => { react(m.id, e); closeMenus(); });
+    return b;
+  }
+  function openReact(id, anchor) {
+    const m = msgById(id);
+    if (!m) return;
+    const pop = $('reactPop');
+    $('msgMenu').hidden = true;
+    pop.replaceChildren(...EMOJI.map((e) => emojiBtn(m, e)));
+    pop.hidden = false;
+    const r = anchor.getBoundingClientRect();
+    place(pop, r.right - pop.offsetWidth, r.top - pop.offsetHeight - 6);
+    pop.querySelector('button').focus();
+  }
+  function react(id, e) {
+    if (!chatOpen()) { toast('O chat está reconectando. Tente de novo em instantes.'); return; }
+    chat.ws.send(JSON.stringify({ t: 'react', id, e }));
+  }
+  function startReply(id) {
+    const m = msgById(id);
+    if (!m) return;
+    replyTo = id;
+    $('replyName').textContent = author(m).name;
+    $('replyBar').hidden = false;
+    $('chatInput').focus();
+  }
+  function cancelReply() { replyTo = null; $('replyBar').hidden = true; }
+  function startEdit(id) {
+    const m = msgById(id);
+    if (!canEdit(m)) return;
+    if (editing) stopEdit(true);
+    parkTools(); closeMenus();
+    editing = { id, draft: m.text };
+    paintEdit();
+  }
+  function paintEdit() { // caixa de edição no lugar do texto da mensagem
+    const li = $('chatLog').querySelector(`.msg[data-id="${editing.id}"]`);
+    if (!li) return;
+    li.classList.add('editing');
+    const body = li.querySelector('.msg-body');
+    const box = Object.assign(document.createElement('div'), { className: 'msg-edit' });
+    const input = Object.assign(document.createElement('input'), { type: 'text', className: 'field field-sm', maxLength: 2000, value: editing.draft, autocomplete: 'off' });
+    input.setAttribute('aria-label', 'Editar mensagem');
+    input.addEventListener('input', () => { editing.draft = input.value; });
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); saveEdit(); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); stopEdit(); }
+    });
+    const hint = document.createElement('p');
+    hint.className = 'edit-hint';
+    const link = (label, fn) => { const b = Object.assign(document.createElement('button'), { type: 'button', className: 'linkish', textContent: label }); b.addEventListener('click', fn); return b; };
+    hint.append('Esc para ', link('cancelar', () => stopEdit()), ' · Enter para ', link('salvar', saveEdit));
+    box.append(input, hint);
+    const text = body.querySelector('.msg-text');
+    if (text) text.replaceWith(box); else body.querySelector('.msg-head').after(box);
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+  function saveEdit() {
+    const m = msgById(editing.id);
+    const text = clean(editing.draft, 2000);
+    if (!m) { stopEdit(); return; }
+    if (!text && !m.media) { const id = m.id; stopEdit(); confirmDel(id); return; } // texto vazio = quer apagar
+    if (text !== m.text) {
+      if (!chatOpen()) { toast('O chat está reconectando. Tente de novo em instantes.'); return; }
+      chat.ws.send(JSON.stringify({ t: 'edit', id: m.id, text }));
+    }
+    stopEdit();
+  }
+  function stopEdit(keepFocus) {
+    const id = editing && editing.id;
+    editing = null;
+    if (id) patch(id, {});
+    if (!keepFocus) $('chatInput').focus();
+  }
+  let delId = null;
+  function confirmDel(id) {
+    const m = msgById(id);
+    if (!m) return;
+    delId = id;
+    $('delPrev').replaceChildren(msgEl(m, null));
+    $('delDlg').returnValue = '';
+    $('delDlg').showModal();
+  }
+  function delMsg(id) {
+    if (!chatOpen()) { toast('O chat está reconectando. Tente de novo em instantes.'); return; }
+    chat.ws.send(JSON.stringify({ t: 'del', id }));
+  }
+  function act(kind, id, ev, anchor) {
+    const m = msgById(id);
+    if (!m) return;
+    if (kind === 'react') { openReact(id, anchor); return; }
+    closeMenus();
+    if (kind === 'reply') startReply(id);
+    else if (kind === 'edit') startEdit(id);
+    else if (kind === 'copy') {
+      navigator.clipboard.writeText(m.text).then(() => toast('Texto copiado.')).catch(() => toast('Não deu para copiar o texto.'));
+    } else if (kind === 'del') { if (ev.shiftKey) delMsg(id); else confirmDel(id); }
   }
   function mediaEl(md) {
     const src = `${CHAT}/m/${md.id}`;
@@ -1282,9 +1657,9 @@
       x.send(p.file);
     });
   }
-  function chatPost(text, media) {
+  function chatPost(text, media, reply) {
     if (!chatOpen()) return false;
-    chat.ws.send(JSON.stringify({ t: 'msg', name: myName, av: myAv, text, media }));
+    chat.ws.send(JSON.stringify({ t: 'msg', name: myName, av: myAv, text, media, reply: reply || undefined }));
     return true;
   }
   let sending = false;
@@ -1293,9 +1668,12 @@
     if (sending || (!text && !chat.pending.length)) return;
     if (!chatOpen()) { toast('O chat está reconectando. Tente de novo em instantes.'); return; }
     const files = chat.pending.splice(0);
+    let reply = replyTo;
+    cancelReply();
+    typedAt = 0;
     $('chatInput').value = '';
     renderAttach();
-    if (!files.length) { chatPost(text); return; }
+    if (!files.length) { chatPost(text, null, reply); return; }
     sending = true;
     let first = text;
     for (const p of files) {
@@ -1309,10 +1687,10 @@
       row.remove();
       URL.revokeObjectURL(p.url);
       if (!r) continue;
-      if (!chatPost(first, { id: r.id, w: p.w, h: p.h, name: p.file.name || '' })) { toast('O chat caiu no meio do envio. Mande de novo.'); break; }
-      first = '';
+      if (!chatPost(first, { id: r.id, w: p.w, h: p.h, name: p.file.name || '' }, reply)) { toast('O chat caiu no meio do envio. Mande de novo.'); break; }
+      first = ''; reply = null;
     }
-    if (first) chatPost(first); // nenhum arquivo subiu: o texto vai sozinho
+    if (first) chatPost(first, null, reply); // nenhum arquivo subiu: o texto vai sozinho
     sending = false;
   }
 
@@ -1717,6 +2095,10 @@
       return { name: e.name, out: !!e.out, call: !!e.call, sent: await sum(e.out, 'outbound-rtp'), got: await sum(e.call, 'inbound-rtp') };
     })),
     mic: () => (voice.track ? { ...voice.track.getSettings(), enabled: voice.track.enabled, levelDb: Math.round(voice.db), talking: voice.talking } : null),
+    // S-1357: membros como o servidor do chat informou e "ausente automático" com prazo curto (teste)
+    members: () => [...members.values()],
+    me: () => ({ uid: myUid, status: myStatus(), pick: stPick }),
+    idleAfter: (ms) => { idleMs = ms; return checkIdle(); },
   };
 
   // ---------- manutenção periódica ----------
@@ -1869,6 +2251,7 @@
     $('nameInput').value = $('homeName').value = myName;
     store('name', myName);
     myFace();
+    sendMe();
   }
   function myFace() { // meu avatar; com a janela de boas-vindas aberta vale o nome que está sendo digitado
     const name = $('nameDlg').open ? clean($('homeName').value) || '?' : myName;
@@ -1890,6 +2273,7 @@
       b.addEventListener('click', () => {
         myAv = av;
         store('avatar', av);
+        sendMe();
         $('avatarDlg').close();
         if (local) local.tile.setName();
         broadcast(hello());
@@ -1910,6 +2294,7 @@
     setName(v);
     $('nameDlg').close();
     joinMesh();
+    sendMe();
     broadcast(hello());
     renderPeople();
     renderChat(false); // minhas mensagens antigas (pelo nome) ganham o destaque
@@ -1934,7 +2319,7 @@
     else toast('Ao compartilhar, escolha a janela do jogo ou uma guia: o som do Discord não vai junto.', 6000);
   });
   $('guideBtn').addEventListener('click', () => $('guideDlg').showModal());
-  const POPS = { settings: 'settingsBtn', voicePop: 'voiceBtn' }; // painel -> botão que abre
+  const POPS = { settings: 'settingsBtn', voicePop: 'voiceBtn', statusPop: 'statusBtn' }; // painel -> botão que abre
   $('chanChat').addEventListener('click', () => { setView('chat'); $('chatInput').focus(); });
   $('chanVoice').addEventListener('click', joinVoice);
   $('joinVoiceBtn').addEventListener('click', joinVoice);
@@ -1973,6 +2358,15 @@
     sink(testAudio);
   });
   $('micTestBtn').addEventListener('click', () => micTest(!voice.testing));
+  for (const b of $('statusPop').querySelectorAll('.st-opt')) {
+    b.addEventListener('click', () => {
+      stPick = b.dataset.st;
+      store('status', stPick);
+      togglePop('statusPop', false);
+      renderStatus(); sendMe(); renderPeople(); refreshDots();
+      $('statusBtn').focus();
+    });
+  }
   $('voiceMode').addEventListener('change', () => {
     voice.mode = $('voiceMode').value === 'ptt' ? 'ptt' : 'vad';
     store('vmode', voice.mode);
@@ -2037,6 +2431,9 @@
     if (ev.key !== 'Escape' || document.fullscreenElement || document.querySelector('dialog[open]')) return;
     if (!$('settings').hidden) { toggleSettings(false); $('settingsBtn').focus(); }
     else if (!$('voicePop').hidden) { togglePop('voicePop', false); $('voiceBtn').focus(); }
+    else if (!$('statusPop').hidden) { togglePop('statusPop', false); $('statusBtn').focus(); }
+    else if (!$('msgMenu').hidden || !$('reactPop').hidden) closeMenus();
+    else if (replyTo !== null) cancelReply();
     else if (focusOn()) { setFocus(''); $('focusBtn').focus(); }
     else if (!$('panel').hidden && narrow()) { togglePanel(false); $('panelBtn').focus(); }
   });
@@ -2081,6 +2478,54 @@
   });
   $('moreBtn').addEventListener('click', () => { if (chatOpen() && chat.list.length) chat.ws.send(JSON.stringify({ t: 'more', before: chat.list[0].id })); });
   $('chatScroll').addEventListener('scroll', () => { if (chatSeen() && atBottom()) readAll(); });
+  // ações na mensagem: barra no hover (mouse), menu no botão direito e no toque longo (celular)
+  const hoverable = window.matchMedia('(hover: hover)');
+  $('chatLog').addEventListener('mouseover', (ev) => {
+    const li = hoverable.matches && ev.target.closest('.msg[data-id]');
+    if (li && Number(li.dataset.id) !== toolsFor) showTools(li);
+  });
+  $('chatLog').addEventListener('focusin', (ev) => { const li = ev.target.closest('.msg[data-id]'); if (li && Number(li.dataset.id) !== toolsFor) showTools(li); });
+  $('chatScroll').addEventListener('mouseleave', () => { if ($('reactPop').hidden) parkTools(); });
+  $('msgTools').addEventListener('click', (ev) => { const b = ev.target.closest('[data-act]'); if (b && toolsFor !== null) act(b.dataset.act, toolsFor, ev, b); });
+  $('msgMenu').addEventListener('click', (ev) => { const b = ev.target.closest('[data-act]'); if (b) act(b.dataset.act, Number($('msgMenu').dataset.id), ev, b); });
+  $('chatLog').addEventListener('contextmenu', (ev) => {
+    const li = ev.target.closest('.msg[data-id]');
+    if (!li || ev.target.closest('a, img, video, input') || li.classList.contains('editing')) return; // link e mídia: menu do navegador
+    ev.preventDefault();
+    openMenu(Number(li.dataset.id), ev.clientX, ev.clientY);
+  });
+  let press = null; // toque longo
+  $('chatLog').addEventListener('pointerdown', (ev) => {
+    const li = ev.pointerType === 'touch' && ev.target.closest('.msg[data-id]');
+    if (!li || li.classList.contains('editing')) return;
+    press = { x: ev.clientX, y: ev.clientY, timer: setTimeout(() => { press.fired = true; openMenu(Number(li.dataset.id), press.x, press.y); }, 450) };
+  });
+  const unpress = () => { if (press) clearTimeout(press.timer); };
+  $('chatLog').addEventListener('pointermove', (ev) => { if (press && Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > 10) { unpress(); press = null; } });
+  for (const t of ['pointerup', 'pointercancel']) $('chatLog').addEventListener(t, unpress);
+  $('chatLog').addEventListener('click', (ev) => { if (press && press.fired) { ev.preventDefault(); ev.stopPropagation(); } press = null; }, true); // o toque longo não abre a imagem
+  $('chatScroll').addEventListener('scroll', () => { if (!$('msgMenu').hidden && !narrow()) closeMenus(); }, { passive: true });
+  document.addEventListener('pointerdown', (ev) => {
+    if (!ev.target.closest('#msgMenu, #reactPop, #msgTools')) closeMenus();
+  });
+  $('replyX').addEventListener('click', () => { cancelReply(); $('chatInput').focus(); });
+  $('delDlg').addEventListener('close', () => {
+    if ($('delDlg').returnValue === 'yes' && delId !== null) delMsg(delId);
+    delId = null;
+    $('delPrev').textContent = '';
+  });
+  $('chatInput').addEventListener('keydown', (ev) => {
+    if (ev.key === 'ArrowUp' && !$('chatInput').value && !ev.shiftKey && !ev.altKey && !ev.ctrlKey) { // seta para cima: editar a última minha
+      const m = [...chat.list].reverse().find(canEdit);
+      if (m) { ev.preventDefault(); startEdit(m.id); }
+    }
+  });
+  $('chatInput').addEventListener('input', () => { // aviso de "digitando" no máximo a cada 3 s
+    const now = Date.now();
+    if (!$('chatInput').value.trim() || now - typedAt < 3000 || !chatOpen() || !store('name')) return;
+    typedAt = now;
+    chat.ws.send(JSON.stringify({ t: 'typing' }));
+  });
 
   window.addEventListener('online', () => { refreshStatus(); if (peer && peer.disconnected && !peer.destroyed) peer.reconnect(); if (!chat.ws) chatConnect(); });
   window.addEventListener('offline', refreshStatus);
@@ -2145,6 +2590,7 @@
   if (store('hint') === 'detail') $('hint').value = 'detail';
   if (location.hash) history.replaceState(null, '', location.pathname + location.search); // links antigos de sala (#ID) caem aqui
   renderDiscord();
+  renderStatus();
   enterServer();
   renderVoice();
   if (!store('name')) {
