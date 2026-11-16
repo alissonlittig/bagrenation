@@ -21,7 +21,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/vt323-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=1318">
+<link rel="stylesheet" href="style.css?v=1351">
 </head>
 <body>
 
@@ -157,6 +157,17 @@
           Clique para ouvir
         </button>
 
+        <!-- Modo foco (S-1351): só o canal de voz na janela, focado na tela ou nas pessoas -->
+        <div id="focusBar" class="focusbar" role="toolbar" aria-label="Modo foco" hidden>
+          <div class="seg" role="group" aria-label="Focar em">
+            <button id="focusScreen" class="seg-btn" type="button" aria-pressed="false" title="Focar na tela compartilhada"><svg class="ic" aria-hidden="true"><use href="#i-cast"/></svg><span class="lbl">Tela</span></button>
+            <button id="focusPeople" class="seg-btn" type="button" aria-pressed="false" title="Focar nas pessoas do canal"><svg class="ic" aria-hidden="true"><use href="#i-people"/></svg><span class="lbl">Pessoas</span></button>
+          </div>
+          <div id="focusScreens" class="seg focus-screens" role="group" aria-label="Qual tela" hidden></div>
+          <ul id="focusFaces" class="focus-faces" aria-label="Quem está no canal"></ul>
+          <button id="focusExit" class="seg-btn focus-exit" type="button" title="Sair do modo foco (Esc)"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg><span class="lbl">Sair</span><span class="sr-only"> do modo foco</span><span id="focusUnread" class="badge" hidden></span></button>
+        </div>
+
         <main id="stage" class="stage" aria-label="Canal de voz e telas compartilhadas">
           <div id="empty" class="empty">
             <div class="empty-mascot">
@@ -274,6 +285,7 @@
               </div>
             </div>
             <span class="dock-sep" aria-hidden="true"></span>
+            <button id="focusBtn" class="dock-icon" type="button" aria-pressed="false" aria-label="Modo foco: só o canal de voz (F)"><svg class="ic" aria-hidden="true"><use href="#i-full"/></svg></button>
             <button id="leaveBtn" class="dock-icon dock-leave" type="button" aria-label="Sair do canal de voz"><svg class="ic" aria-hidden="true"><use href="#i-leave"/></svg></button>
           </div>
         </footer>
@@ -433,6 +445,6 @@
 </template>
 
 <noscript><p class="noscript">O BAGRENATION precisa de JavaScript para conectar as pessoas da sala.</p></noscript>
-<script src="app.js?v=1318" defer></script>
+<script src="app.js?v=1351" defer></script>
 </body>
 </html>

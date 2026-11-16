@@ -737,3 +737,47 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
   .msg-media { width: min(var(--w, 420px), 100%); }
 }
 @media (min-width: 961px) { #panelBtn { display: none; } }
+
+/* ---------- Modo foco (S-1351): só o canal de voz, focado na tela ou nas pessoas ---------- */
+.room[data-focus] .side, .room[data-focus] .chat, .room[data-focus] .topbar, .room[data-focus] .voicebar { display: none; }
+#focusBtn[aria-pressed="true"] { --fr: var(--fr-dark-on); color: var(--yel); }
+.focusbar { flex: none; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 12px; padding: 12px 14px 0; padding-top: max(12px, env(safe-area-inset-top)); animation: rise .25s steps(4); }
+.seg, .focus-exit { --fr: var(--fr-black); --u: 2px; border: calc(var(--u) * 3) solid transparent; border-image: var(--fr) 3 fill; }
+.seg { display: flex; gap: 2px; min-width: 0; }
+.seg-btn { position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border: 0; background: none; color: var(--muted); font: 400 10px/1 var(--pix); text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+.seg-btn:hover { background: var(--panel-2); color: var(--cyan); }
+.seg-btn[aria-pressed="true"], .seg-btn[aria-pressed="true"]:hover { background: var(--yel); color: var(--ink); }
+.focus-screens { max-width: 100%; overflow-x: auto; }
+.focus-screens .seg-btn { max-width: 200px; overflow: hidden; text-overflow: ellipsis; font: 400 22px/1 var(--term); text-transform: none; }
+.focus-exit { color: var(--text); }
+.focus-exit:hover { --fr: var(--fr-red); background: none; color: var(--ink); }
+.focus-faces { display: flex; align-items: center; gap: 14px; padding: 0 6px; }
+.focus-faces .avatar { width: 30px; height: 30px; font-size: 12px; transition: outline-color .15s; }
+.room[data-focus="people"] .focus-faces { display: none; }
+
+/* foco na tela: uma tela ocupa o palco; as outras viram miniaturas clicáveis */
+.room[data-focus="screen"] .tile .js-focus { display: none; }
+.room[data-focus="screen"] .stage.has-focus .tile:not(.focused) { cursor: pointer; opacity: .8; transition: opacity .15s; }
+.room[data-focus="screen"] .stage.has-focus .tile:not(.focused):hover { opacity: 1; border-color: var(--cyan); }
+
+/* foco nas pessoas: grade grande com quem está no canal, destaque em quem fala */
+.room[data-focus="people"] .stage { display: grid; grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
+.room[data-focus="people"] .stage .tile { display: none; }
+.room[data-focus="people"] .empty { width: min(1100px, 100%); border-image: none; }
+.room[data-focus="people"] .empty-mascot, .room[data-focus="people"] #emptyTitle { display: none; }
+.room[data-focus="people"] .voice-grid { gap: 22px; margin-top: 0; }
+.room[data-focus="people"] .vcard { --av: clamp(84px, 10vw, 128px); width: calc(var(--av) + 48px); gap: 14px; padding: 18px 10px 14px; background: var(--panel); box-shadow: inset 0 0 0 var(--u) var(--line); transition: box-shadow .15s, transform .15s; }
+.room[data-focus="people"] .vcard .avatar-xl { width: var(--av); height: var(--av); font-size: calc(var(--av) * .36); }
+.room[data-focus="people"] .vcard .avatar.speaking { outline-width: calc(var(--u) * 2); }
+.room[data-focus="people"] .vcard:has(> .avatar.speaking) { box-shadow: inset 0 0 0 var(--u) var(--ok), 0 0 0 var(--u) var(--ok), 0 0 26px #39ff8859; transform: translateY(-3px); }
+.room[data-focus="people"] .vname { font-size: 26px; }
+.room[data-focus="people"] .vcard .st-mic { top: 10px; right: 10px; }
+.room[data-focus="people"] .vcard.is-live::before { content: "ao vivo"; position: absolute; z-index: 1; top: calc(18px + var(--av) - 9px); left: 50%; transform: translateX(-50%); padding: 4px 6px; box-shadow: 0 0 0 var(--u) var(--ink); background: var(--red); color: var(--ink); font: 400 8px/1 var(--pix); text-transform: uppercase; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .22s; }
+@media (max-width: 560px) {
+  .focusbar { padding-inline: 8px; gap: 6px; }
+  .seg-btn { padding: 0 9px; gap: 6px; font-size: 9px; }
+  .focus-faces .avatar { width: 26px; height: 26px; }
+  .room[data-focus="people"] .voice-grid { gap: 12px; }
+  .room[data-focus="people"] .vcard { --av: 72px; width: calc(50% - 6px); max-width: 150px; }
+}

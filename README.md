@@ -13,6 +13,8 @@ Um servidor fixo, como um servidor do Discord: abriu o BAGRENATION (site ou app)
 3. **Canal de voz**: clique no canal (ou em **Entrar no canal de voz**). O navegador pede o microfone: aceitou, já está falando. Sem microfone (ou negando), você só ouve. Para sair, o botão vermelho no dock ou em **Voz conectada**.
 4. Dentro do canal, **Compartilhar tela** e escolha a guia, a janela ou o monitor. Para enviar som, marque "Compartilhar áudio" no seletor do navegador.
 
+5. **Modo foco** (botão de moldura no dock ou tecla **F**): esconde canais, pessoas online, #chat e barras, e deixa só o canal de voz. **Tela**: a tela compartilhada ocupa tudo (com mais de uma, escolha qual pelo nome ou clicando na miniatura; quem está no canal vira uma faixa de rostos em cima). **Pessoas**: grade grande com quem está no canal, contorno verde em quem fala. **Esc** ou **Sair** volta; mensagem nova no #chat aparece no botão Sair. A escolha fica lembrada.
+
 Mais de uma pessoa pode transmitir ao mesmo tempo no canal. Quem está fora do canal continua online e no chat, sem receber voz nem tela.
 
 ## App para PC (Windows)

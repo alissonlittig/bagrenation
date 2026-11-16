@@ -42,6 +42,8 @@
   // ---------- estado ----------
   let room = null;          // nome do servidor (fixo) quando conectado
   let inVoice = false;      // estou no canal de voz?
+  // Modo foco (S-1351): '' normal · 'screen' tela grande · 'people' grade de quem está no canal. Lembrado no navegador.
+  let focusMode = ['screen', 'people'].includes(store('focus')) ? store('focus') : '';
   let myId = null;
   let peer = null;          // meu Peer de membro
   let dirPeer = null;       // Peer do diretório, se eu for o responsável
@@ -630,6 +632,7 @@
     const range = q('.js-vol');
     const muteBtn = q('.js-mute');
     const isLocal = !e;
+    el.classList.toggle('is-local', isLocal);
     const who = () => (isLocal ? 'sua tela' : `tela de ${e.name}`);
 
     function labels() {
@@ -681,9 +684,12 @@
 
     q('.js-focus').addEventListener('click', () => {
       const on = !el.classList.contains('focused');
-      for (const t of $('stage').querySelectorAll('.tile')) t.classList.remove('focused');
+      for (const t of $('stage').querySelectorAll('.tile')) t.classList.remove('focused', 'auto-focused');
       el.classList.toggle('focused', on);
       layout();
+    });
+    el.addEventListener('click', (ev) => { // modo foco na tela: clicar na miniatura troca a tela grande
+      if (focusOn() === 'screen' && !el.classList.contains('focused') && !ev.target.closest('button, input')) pickTile(el);
     });
     q('.tile-video').addEventListener('dblclick', () => q('.js-full').click());
     q('.js-full').addEventListener('click', () => {
@@ -733,13 +739,63 @@
 
   function layout() {
     const stage = $('stage');
-    const tiles = stage.querySelectorAll('.tile');
+    const tiles = [...stage.querySelectorAll('.tile')];
     const n = tiles.length;
-    $('empty').hidden = n > 0;
+    const fm = focusOn();
+    if (fm === 'screen' && n && !stage.querySelector('.tile.focused')) { // foco na tela: sempre uma grande, a de outra pessoa antes da minha prévia
+      (tiles.find((t) => !t.classList.contains('is-local')) || tiles[0]).classList.add('focused', 'auto-focused');
+    }
+    $('empty').hidden = n > 0 && fm !== 'people';
     if (n) stage.dataset.count = n > 4 ? 'many' : String(n); else delete stage.dataset.count;
     stage.classList.toggle('has-focus', !!stage.querySelector('.tile.focused'));
     stage.classList.toggle('only-one', n === 1);
     for (const t of tiles) t.querySelector('.js-focus').setAttribute('aria-pressed', String(t.classList.contains('focused')));
+    renderFocus(tiles);
+  }
+
+  // ---------- modo foco: esconde lateral, #chat e barras; fica só o canal de voz ----------
+  function focusOn() { return (inVoice && $('room').dataset.view === 'voice' && focusMode) || ''; }
+  function renderFocus(tiles) {
+    const fm = focusOn();
+    const box = $('room');
+    if (fm) box.dataset.focus = fm; else delete box.dataset.focus;
+    $('focusBar').hidden = !fm;
+    $('focusBtn').setAttribute('aria-pressed', String(!!fm));
+    $('focusScreen').setAttribute('aria-pressed', String(fm === 'screen'));
+    $('focusPeople').setAttribute('aria-pressed', String(fm === 'people'));
+    const pick = $('focusScreens'); // mais de uma tela aberta: escolher qual fica grande
+    pick.hidden = fm !== 'screen' || tiles.length < 2;
+    if (!pick.hidden) {
+      pick.replaceChildren(...tiles.map((t) => {
+        const name = t.querySelector('.tile-name').textContent;
+        const b = Object.assign(document.createElement('button'), { type: 'button', className: 'seg-btn', textContent: name, title: `Tela de ${name}` });
+        b.setAttribute('aria-pressed', String(t.classList.contains('focused')));
+        b.setAttribute('aria-label', `Tela de ${name}`);
+        b.addEventListener('click', () => pickTile(t));
+        return b;
+      }));
+    }
+    if (fm && narrow()) togglePanel(false);
+  }
+  function pickTile(t) {
+    for (const x of $('stage').querySelectorAll('.tile')) x.classList.remove('focused', 'auto-focused');
+    t.classList.add('focused');
+    layout();
+  }
+  function setFocus(m) {
+    focusMode = m;
+    store('focus', m);
+    if (m) store('focuslast', m);
+    else for (const t of $('stage').querySelectorAll('.tile.auto-focused')) t.classList.remove('focused', 'auto-focused');
+    const go = () => { layout(); if (chatSeen()) readAll(); };
+    if (document.startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      document.startViewTransition(go).ready.catch(() => {}); // pulada (janela escondida etc.): só não anima
+    } else go();
+  }
+  function toggleFocus() {
+    if (focusOn()) { setFocus(''); return; }
+    const last = store('focuslast');
+    setFocus(last === 'screen' || last === 'people' ? last : $('stage').querySelector('.tile') ? 'screen' : 'people');
   }
 
   // ---------- números de cada transmissão ----------
@@ -922,6 +978,16 @@
     $('voiceBar').dataset.state = !voice.track ? (voice.err ? 'off' : 'wait') : voice.muted ? 'muted' : linked < others.length ? 'wait' : 'on';
     $('micFixBtn').hidden = !!voice.track || !voice.err;
     for (const id of ['voiceBar', 'dockWrap', 'vconn']) $(id).hidden = !inVoice;
+    $('focusFaces').replaceChildren(...all.filter((p) => p.invoice).map((p) => { // faixa de rostos do modo foco na tela
+      const li = Object.assign(document.createElement('li'), { title: p.you ? `${p.name} (você)` : p.name });
+      li.dataset.id = p.id;
+      const av = Object.assign(document.createElement('span'), { className: 'avatar' });
+      av.setAttribute('aria-hidden', 'true');
+      paintAvatar(av, p.name, p.av);
+      av.classList.toggle('speaking', !!p.talking);
+      li.append(av, Object.assign(document.createElement('span'), { className: 'sr-only', textContent: li.title }));
+      return li;
+    }));
     $('joinVoiceBtn').hidden = inVoice;
     for (const b of $('empty').querySelectorAll('.js-share')) b.hidden = !inVoice || !CAN_SHARE;
     $('chanVoice').classList.toggle('is-in', inVoice);
@@ -953,7 +1019,7 @@
     layout();
   }
   const chatSeen = () => document.visibilityState === 'visible' && !document.documentElement.classList.contains('app-hidden')
-    && ($('room').dataset.view === 'chat' || wideChat());
+    && ($('room').dataset.view === 'chat' || (wideChat() && !focusOn()));
 
   function togglePanel(open) {
     const panel = $('panel');
@@ -1027,7 +1093,7 @@
   function incoming(m) {
     if (chatSeen()) return;
     chat.unread++;
-    for (const b of [$('unread'), $('unreadTop')]) { b.hidden = false; b.textContent = String(Math.min(99, chat.unread)); }
+    for (const b of [$('unread'), $('unreadTop'), $('focusUnread')]) { b.hidden = false; b.textContent = String(Math.min(99, chat.unread)); }
     sfx('tap');
     const now = Date.now();
     if (DESK && document.documentElement.classList.contains('app-hidden') && now - chat.notifyAt > 10000) {
@@ -1037,7 +1103,7 @@
   }
   function readAll() {
     chat.unread = 0;
-    for (const b of [$('unread'), $('unreadTop')]) { b.hidden = true; b.textContent = ''; }
+    for (const b of [$('unread'), $('unreadTop'), $('focusUnread')]) { b.hidden = true; b.textContent = ''; }
   }
 
   const two = (n) => String(n).padStart(2, '0');
@@ -1927,7 +1993,19 @@
     if (ev.key !== 'Escape' || document.fullscreenElement || document.querySelector('dialog[open]')) return;
     if (!$('settings').hidden) { toggleSettings(false); $('settingsBtn').focus(); }
     else if (!$('voicePop').hidden) { togglePop('voicePop', false); $('voiceBtn').focus(); }
+    else if (focusOn()) { setFocus(''); $('focusBtn').focus(); }
     else if (!$('panel').hidden && narrow()) { togglePanel(false); $('panelBtn').focus(); }
+  });
+  $('focusBtn').addEventListener('click', toggleFocus);
+  $('focusScreen').addEventListener('click', () => setFocus('screen'));
+  $('focusPeople').addEventListener('click', () => setFocus('people'));
+  $('focusExit').addEventListener('click', () => { setFocus(''); $('focusBtn').focus(); });
+  document.addEventListener('keydown', (ev) => { // F liga/desliga o modo foco (fora de campo de texto, no canal de voz)
+    if (ev.code !== 'KeyF' || ev.repeat || ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey || pickingKey || typing(ev.target)) return;
+    if (!inVoice || $('room').dataset.view !== 'voice' || document.querySelector('dialog[open]')) return;
+    if ((voice.mode === 'ptt' && voice.key === 'KeyF') || voice.muteKey === 'KeyF') return; // F já é a tecla de falar/mutar
+    ev.preventDefault();
+    toggleFocus();
   });
   window.matchMedia('(min-width: 1200px)').addEventListener('change', () => { if (chatSeen()) readAll(); });
   window.matchMedia('(max-width: 960px)').addEventListener('change', () => togglePanel(!narrow())); // janela cresceu: a lateral volta fixa
