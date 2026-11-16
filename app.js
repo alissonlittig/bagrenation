@@ -1155,6 +1155,7 @@
     const item = (p) => {
       const li = document.createElement('li');
       li.dataset.id = p.id;
+      if (p.uid) li.tabIndex = 0; // Enter abre o perfil
       li.classList.toggle('is-voice', !!p.invoice);
       const av = document.createElement('span');
       av.className = 'avatar';
@@ -1182,6 +1183,7 @@
     $('offCount').textContent = String(groups.off.length);
     $('idleHead').hidden = !groups.idle.length;
     $('offHead').hidden = !groups.off.length;
+    if ($('profDlg').open) paintProfile(true);
   }
   function refreshDots() { // bolinha de status nos avatares do #chat
     for (const el of document.querySelectorAll('#chatLog .avatar[data-uid]')) el.dataset.st = stOf(el.dataset.uid);
@@ -1197,7 +1199,7 @@
     for (const b of $('statusPop').querySelectorAll('.st-opt')) b.setAttribute('aria-checked', String(b.dataset.st === stPick));
   }
   function sendMe() { // quem sou eu e como quero aparecer (só depois de ter nome)
-    if (chatOpen() && store('name')) chat.ws.send(JSON.stringify({ t: 'me', key: myKey, name: myName, av: myAv, st: myStatus() }));
+    if (chatOpen() && store('name')) chat.ws.send(JSON.stringify({ t: 'me', key: myKey, name: myName, av: myAv, st: myStatus(), ...(store('bio') !== null ? { bio: store('bio') } : {}) }));
   }
   // Ausente automático: 10 min sem mexer. No app vale o teclado/mouse do Windows inteiro (jogando = ativo).
   let lastInput = Date.now();
@@ -2343,6 +2345,102 @@
     const el = t.closest('.people li[data-id], .vcard[data-id], #focusFaces li[data-id]');
     return el ? peers.get(el.dataset.id) || null : null;
   };
+
+  // ---------- perfil da pessoa (S-1412): foto grande, status, Sobre mim (público), Nota (só neste aparelho), Mensagem, volume ----------
+  let profUid = '';
+  const noteKey = (uid) => `note:${uid}`;
+  function uidOfEl(li) {
+    const id = li.dataset.id || '';
+    if (id === 'me') return myUid;
+    if (id.startsWith('u-')) return id.slice(2);
+    const e = peers.get(id);
+    return (e && e.uid) || li.querySelector('.avatar')?.dataset.uid || '';
+  }
+  function profInfo(uid) {
+    const m = members.get(uid);
+    if (uid === myUid) return { uid, name: myName, av: myAv, st: myStatus(), bio: store('bio') ?? (m ? m.bio : '') ?? '', since: m ? m.since : 0, you: true };
+    if (m) return { ...m, bio: m.bio || '', you: false };
+    const e = [...peers.values()].find((x) => x.uid === uid && x.ready);
+    return e ? { uid, name: e.name, av: e.av, st: 'on', bio: '', since: 0, you: false } : null;
+  }
+  const bioSaved = () => store('bio') ?? (members.get(myUid)?.bio || '');
+  function bioCount() {
+    $('pfBioN').textContent = `${[...$('pfBioIn').value].length}/190`;
+    $('pfBioSave').disabled = $('pfBioIn').value.trim() === bioSaved();
+  }
+  function paintProfile(live) {
+    const p = profInfo(profUid);
+    if (!p) { $('profDlg').close(); return; }
+    let hue = 0;
+    for (const ch of p.name) hue = (hue * 31 + ch.codePointAt(0)) % 360;
+    $('pfBanner').style.setProperty('--h', String(hue));
+    paintAvatar($('pfAv'), p.name, p.av);
+    $('pfAv').dataset.st = p.st;
+    $('pfName').textContent = p.you ? `${p.name} (você)` : p.name;
+    $('pfDot').dataset.st = p.st;
+    $('pfStTx').textContent = p.you && stPick === 'off' ? 'Invisível' : p.st === 'off' ? `Offline${p.seen ? ` · visto ${when(p.seen)}` : ''}` : ST_NAME[p.st];
+    $('pfSince').textContent = p.since ? new Date(p.since).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+    $('pfBio').hidden = p.you;
+    $('pfBioEdit').hidden = !p.you;
+    $('pfBio').textContent = p.bio || 'Sem nada por aqui ainda.';
+    $('pfBio').classList.toggle('is-empty', !p.bio);
+    if (p.you && !(live && document.activeElement === $('pfBioIn'))) { $('pfBioIn').value = p.bio; }
+    if (p.you) bioCount();
+    $('pfNoteSec').hidden = p.you;
+    if (!p.you && !(live && document.activeElement === $('pfNote'))) $('pfNote').value = store(noteKey(p.uid)) || '';
+    $('pfMsg').hidden = p.you;
+    const e = [...peers.values()].find((x) => x.uid === p.uid && x.ready && x.invoice);
+    $('pfVol').hidden = p.you || !e;
+    if (e) {
+      const pf = pref(e);
+      if (document.activeElement !== $('pfVolIn')) $('pfVolIn').value = pf.m ? 0 : pf.v;
+      $('pfVolIn').style.setProperty('--fill', `${$('pfVolIn').value * 50}%`);
+      $('pfVolOut').textContent = `${Math.round($('pfVolIn').value * 100)}%`;
+      $('pfVolIn').setAttribute('aria-label', `Volume da voz de ${p.name}`);
+    }
+  }
+  function openProfile(uid) {
+    if (!/^[a-f0-9]{16}$/.test(uid || '') || !profInfo(uid)) return;
+    closeMenus();
+    profUid = uid;
+    paintProfile(false);
+    if (!$('profDlg').open) $('profDlg').showModal();
+    $('profDlg').scrollTop = 0;
+  }
+  $('pfAv').addEventListener('click', () => {
+    const p = profInfo(profUid);
+    if (!p) return;
+    $('zoomAv').removeAttribute('data-av');
+    paintAvatar($('zoomAv'), p.name, p.av);
+    $('zoomAv').setAttribute('aria-label', `Foto de ${p.name}`);
+    $('zoomDlg').showModal();
+  });
+  $('zoomDlg').addEventListener('click', () => $('zoomDlg').close());
+  $('profDlg').addEventListener('click', (ev) => { if (ev.target === $('profDlg')) $('profDlg').close(); }); // clique fora fecha
+  $('pfBioIn').addEventListener('input', bioCount);
+  $('pfBioSave').addEventListener('click', () => {
+    store('bio', $('pfBioIn').value.replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim().slice(0, 190));
+    sendMe(); paintProfile(false); toast('Sobre mim salvo');
+  });
+  $('pfNote').addEventListener('input', () => { if (profUid) store(noteKey(profUid), $('pfNote').value.slice(0, 200)); }); // só localStorage: nunca vai ao servidor
+  $('pfVolIn').addEventListener('input', () => {
+    const e = [...peers.values()].find((x) => x.uid === profUid && x.ready);
+    if (e) setPref(e, { v: Number($('pfVolIn').value), m: false });
+    $('pfVolOut').textContent = `${Math.round($('pfVolIn').value * 100)}%`;
+    $('pfVolIn').style.setProperty('--fill', `${$('pfVolIn').value * 50}%`);
+  });
+  $('pfMsg').addEventListener('click', () => {
+    const p = profInfo(profUid);
+    $('profDlg').close();
+    if (!p) return;
+    openText(textCh || 'chat');
+    const inp = $('chatInput');
+    const tag = `@${p.name} `;
+    if (!inp.value.includes(tag)) inp.value = `${inp.value}${inp.value && !/\s$/.test(inp.value) ? ' ' : ''}${tag}`;
+    inp.focus();
+    inp.setSelectionRange(inp.value.length, inp.value.length);
+  });
+
   // Navegador recusou tocar som antes de um clique na página: o primeiro clique/tecla libera.
   let soundBlocked = false;
   function needGesture() {
@@ -2970,13 +3068,18 @@
     ev.preventDefault();
     openUserMenu(e, ev.clientX, ev.clientY);
   });
+  const fromMembers = (ev) => { const li = ev.target.closest('.people:not(.people-voice) li[data-id]'); if (li && !ev.target.closest('button, input, a')) openProfile(uidOfEl(li)); };
+  $('panel').addEventListener('click', fromMembers);
+  $('panel').addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.matches('.people:not(.people-voice) li[data-id]')) { ev.preventDefault(); fromMembers(ev); } });
+  $('chatLog').addEventListener('click', (ev) => {
+    const t = ev.target.closest('.msg .avatar, .msg .msg-name');
+    const m = t && msgById(Number(t.closest('.msg').dataset.id));
+    if (m) openProfile(m.uid);
+  });
   const fromList = (ev) => {
     if (ev.target.closest('button, input, a')) return;
     const li = ev.target.closest('.people-voice li[data-id]');
-    const e = li && peers.get(li.dataset.id);
-    if (!e) return;
-    const r = li.getBoundingClientRect();
-    openUserMenu(e, r.left + 44, r.bottom);
+    if (li) openProfile(uidOfEl(li));
   };
   $('panel').addEventListener('click', (ev) => { if (!upress || !upress.fired) fromList(ev); });
   $('panel').addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target.matches('.people-voice li[data-id]')) { ev.preventDefault(); fromList(ev); } });

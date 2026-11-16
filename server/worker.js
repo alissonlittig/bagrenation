@@ -35,6 +35,7 @@ const MAX_SIG = 32000;                  // oferta/resposta (SDP) cabem folgados;
 const STUN = { urls: 'stun:stun.cloudflare.com:3478' };
 const chanName = (v, kind) => { const n = clean(v, 32); return kind === 'text' ? n.toLowerCase().replace(/\s+/g, '-') : n; };
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, max);
+const bioClean = (s) => clean(String(s ?? '').replace(/\r/g, '').replace(/\n{3,}/g, '\n\n'), 190); // bio pública (S-1412): até 190 caracteres, quebra de linha ok
 const avOf = (v) => (/^[a-z0-9-]{0,24}$/.test(v || '') ? v || '' : ''); // inclui u-<id de 20> (avatar enviado)
 const row = (r) => ({ ...r, media: r.media ? JSON.parse(r.media) : null, reply: r.reply ? JSON.parse(r.reply) : null, reacts: r.reacts ? JSON.parse(r.reacts) : null });
 
@@ -83,6 +84,12 @@ export class Server {
     }
     this.sql.exec('CREATE INDEX IF NOT EXISTS msgs_ch ON msgs (ch, id)');
     if (!this.sql.exec('PRAGMA table_info(media)').toArray().some((c) => c.name === 'av')) this.sql.exec('ALTER TABLE media ADD COLUMN av INTEGER NOT NULL DEFAULT 0'); // S-1397
+    const mcols = new Set(this.sql.exec('PRAGMA table_info(members)').toArray().map((c) => c.name)); // migração S-1412: bio pública e "membro desde"
+    if (!mcols.has('bio')) this.sql.exec("ALTER TABLE members ADD COLUMN bio TEXT NOT NULL DEFAULT ''");
+    if (!mcols.has('since')) {
+      this.sql.exec('ALTER TABLE members ADD COLUMN since INTEGER NOT NULL DEFAULT 0');
+      this.sql.exec('UPDATE members SET since = COALESCE((SELECT MIN(ts) FROM msgs WHERE msgs.uid = members.uid), seen)');
+    }
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong')); // responde sem acordar o objeto
     this.upAt = new Map(); // ip -> últimos envios (limite simples, some quando o objeto hiberna)
     this.shown = new Map(); // uid -> último estado avisado (some ao hibernar: no pior caso repete um aviso igual)
@@ -198,14 +205,14 @@ export class Server {
   }
   members() {
     const live = this.live();
-    return this.sql.exec('SELECT uid, name, av, seen FROM members ORDER BY seen DESC LIMIT 300').toArray()
+    return this.sql.exec('SELECT uid, name, av, seen, bio, since FROM members ORDER BY seen DESC LIMIT 300').toArray()
       .map((m) => ({ ...m, st: live.get(m.uid) || 'off' }));
   }
   presence(uid, skip) { // avisa todo mundo se o estado público (ou nome/avatar) dessa pessoa mudou
-    const m = this.sql.exec('SELECT uid, name, av, seen FROM members WHERE uid = ?', uid).toArray()[0];
+    const m = this.sql.exec('SELECT uid, name, av, seen, bio, since FROM members WHERE uid = ?', uid).toArray()[0];
     if (!m) return;
     const st = this.live(skip).get(uid) || 'off';
-    const key = `${st}|${m.name}|${m.av}`;
+    const key = `${st}|${m.name}|${m.av}|${m.bio}`;
     if (this.shown.get(uid) === key) return;
     this.shown.set(uid, key);
     this.broadcast({ t: 'pres', m: { ...m, st } });
@@ -350,8 +357,9 @@ export class Server {
     att.uid = uid;
     att.st = ST.includes(d.st) ? d.st : 'on';
     ws.serializeAttachment(att);
-    this.sql.exec('INSERT INTO members (uid, name, av, seen) VALUES (?, ?, ?, ?) ON CONFLICT(uid) DO UPDATE SET name = excluded.name, av = excluded.av, seen = excluded.seen',
-      uid, clean(d.name, 24) || 'Visitante', this.avOk(d.av), Date.now());
+    this.sql.exec('INSERT INTO members (uid, name, av, seen, since) VALUES (?, ?, ?, ?, ?) ON CONFLICT(uid) DO UPDATE SET name = excluded.name, av = excluded.av, seen = excluded.seen',
+      uid, clean(d.name, 24) || 'Visitante', this.avOk(d.av), Date.now(), Date.now());
+    if (typeof d.bio === 'string') this.sql.exec('UPDATE members SET bio = ? WHERE uid = ?', bioClean(d.bio), uid); // só quem mandou a bio mexe nela (cliente antigo não apaga)
     if (first) ws.send(JSON.stringify({ t: 'you', uid }));
     this.presence(uid);
     if (first && !(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + 60000);

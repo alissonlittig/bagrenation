@@ -1005,3 +1005,42 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
 .crop input[type=range] { width: 220px; }
 .crop-act { display: flex; gap: 10px; }
 .crop .muted, .av-up .muted { color: var(--muted); font-size: 18px; margin: 0; }
+
+/* ---------- Perfil da pessoa (S-1412) ---------- */
+.people li[tabindex] { cursor: pointer; }
+.people li[tabindex]:focus-visible { outline: var(--u) solid var(--yel); outline-offset: -3px; }
+#chatLog .msg .avatar, #chatLog .msg-name { cursor: pointer; }
+#chatLog .msg-name:hover { text-decoration: underline; text-underline-offset: 3px; }
+.prof { width: min(400px, calc(100vw - 32px)); position: relative; }
+.pf-banner { height: 76px; background: repeating-linear-gradient(135deg, #0000 0 6px, #ffffff12 6px 12px), linear-gradient(120deg, hsl(var(--h, 260) 80% 38%), hsl(calc(var(--h, 260) + 50) 80% 28%)); }
+.pf-x { position: absolute; top: 6px; right: 6px; background: #07040f99; }
+.pf-body { position: relative; padding: 0 16px 16px; }
+.pf-av { --ring: var(--panel); width: 92px; height: 92px; margin-top: -46px; font-size: 38px; border: 0; padding: 0; cursor: zoom-in; outline: calc(var(--u) * 2) solid var(--panel); }
+.pf-av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pf-av:hover { outline-color: var(--cyan); }
+.pf-av[data-st]::before { width: 18px; height: 18px; right: -6px; bottom: -6px; }
+.pf-body h2 { margin-top: 12px; font: 400 15px/1.3 var(--pix); color: var(--text); overflow-wrap: anywhere; }
+.pf-st { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: var(--muted); }
+.pf-dot { width: 10px; height: 10px; background: var(--ok); }
+.pf-dot[data-st="idle"] { background: var(--yel); }
+.pf-dot[data-st="off"] { background: none; box-shadow: inset 0 0 0 3px #8b82c4; }
+.pf-sec { margin-top: 14px; padding: 10px 12px; background: var(--bg); box-shadow: inset 0 0 0 var(--u) var(--line); }
+.pf-sec h3 { font: 400 10px/1.4 var(--pix); text-transform: uppercase; color: var(--yel); margin-bottom: 6px; }
+.pf-sec h3 .muted { font: 400 17px/1 var(--term); text-transform: none; color: var(--faint); margin-left: 6px; }
+.pf-bio { white-space: pre-wrap; overflow-wrap: anywhere; }
+.pf-bio.is-empty { color: var(--faint); }
+.pf-sec textarea { width: 100%; resize: none; padding: 6px 8px; background: var(--panel); color: var(--text); border: 0; box-shadow: inset 0 0 0 var(--u) var(--line); font: 400 21px/1.2 var(--term); }
+.pf-sec textarea:focus { outline: var(--u) solid var(--cyan); }
+.pf-row { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.pf-body .um-row { margin-top: 14px; }
+.pf-act { display: flex; margin-top: 16px; }
+.pf-act .btn { flex: 1; }
+.dlg-zoom { --z: min(76vw, 70dvh, 520px); width: calc(var(--z) + 44px); max-width: calc(100vw - 24px); padding: 10px; overflow: hidden; }
+.dlg-zoom .avatar { --u: 4px; width: var(--z); height: var(--z); font-size: 160px; cursor: zoom-out; }
+.dlg-zoom .avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.dlg-zoom .avatar[data-st]::before { content: none; }
+@media (max-width: 560px) { /* celular: folha de baixo */
+  .prof { width: 100vw; max-width: 100vw; margin: auto 0 0; max-height: 92dvh; padding-bottom: env(safe-area-inset-bottom); animation: sheetUp .22s ease-out; }
+  @keyframes sheetUp { from { transform: translateY(40%); opacity: 0; } to { transform: none; opacity: 1; } }
+}
+@media (prefers-reduced-motion: reduce) { .prof { animation: none; } }

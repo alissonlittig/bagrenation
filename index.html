@@ -21,7 +21,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/vt323-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=1397">
+<link rel="stylesheet" href="style.css?v=1412">
 </head>
 <body>
 
@@ -428,6 +428,36 @@
 </dialog>
 
 
+<!-- Perfil da pessoa (S-1412): clique no avatar ou no nome -->
+<dialog id="profDlg" class="dlg prof" aria-labelledby="pfName">
+  <div class="pf-banner" id="pfBanner" aria-hidden="true"></div>
+  <button class="icon-btn js-close pf-x" type="button" aria-label="Fechar"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
+  <div class="pf-body">
+    <button id="pfAv" class="avatar pf-av" type="button" aria-label="Ampliar a foto"></button>
+    <h2 id="pfName"></h2>
+    <p id="pfSt" class="pf-st"><i id="pfDot" class="pf-dot"></i><span id="pfStTx"></span></p>
+    <section class="pf-sec">
+      <h3>Sobre mim</h3>
+      <p id="pfBio" class="pf-bio"></p>
+      <div id="pfBioEdit" hidden>
+        <textarea id="pfBioIn" maxlength="190" rows="3" placeholder="Conte um pouco sobre você" aria-label="Sobre mim"></textarea>
+        <div class="pf-row"><span id="pfBioN" class="muted">0/190</span><button id="pfBioSave" class="btn" type="button">Salvar</button></div>
+      </div>
+    </section>
+    <section class="pf-sec"><h3>Membro desde</h3><p id="pfSince" class="pf-bio"></p></section>
+    <section id="pfNoteSec" class="pf-sec">
+      <h3>Nota <span class="muted">só você vê · fica neste aparelho</span></h3>
+      <textarea id="pfNote" maxlength="200" rows="2" placeholder="Clique para adicionar uma nota" aria-label="Nota privada"></textarea>
+    </section>
+    <label id="pfVol" class="um-row" hidden><span>Volume da voz <output id="pfVolOut">100%</output></span><input id="pfVolIn" type="range" min="0" max="2" step="0.01" value="1"></label>
+    <div class="pf-act"><button id="pfMsg" class="btn btn-primary" type="button">Mensagem</button></div>
+  </div>
+</dialog>
+<dialog id="zoomDlg" class="dlg dlg-zoom" aria-label="Foto ampliada">
+  <button class="icon-btn js-close view-close" type="button" aria-label="Fechar"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
+  <div id="zoomAv" class="avatar" role="img"></div>
+</dialog>
+
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 
 <!-- Volume por pessoa (S-1363): botão direito / toque longo em quem está no canal de voz -->
@@ -533,6 +563,6 @@
 </template>
 
 <noscript><p class="noscript">O BAGRENATION precisa de JavaScript para conectar as pessoas da sala.</p></noscript>
-<script src="app.js?v=1397" defer></script>
+<script src="app.js?v=1412" defer></script>
 </body>
 </html>
