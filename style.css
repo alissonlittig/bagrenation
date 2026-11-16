@@ -810,6 +810,7 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
 .side-online > .label[hidden] { display: none; }
 .side-online > .label span { color: var(--muted); }
 .people-online { padding: 0 8px; }
+.people-voice, .people-online { overflow: visible; } /* a lateral já rola; a bolinha do último não cria barra de rolagem */
 .people-online:empty { display: none; }
 .people-online .sub { font-size: 16px; color: var(--faint); }
 .people-idle .sub { color: #e8d66a; }
