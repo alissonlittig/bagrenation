@@ -220,8 +220,8 @@ export class Server {
   }
 
   change(ws, att, d, now) { // editar ou apagar a própria mensagem (dona = mesmo uid)
-    if (!att.uid || !Number.isInteger(d.id) || now - (att.at || 0) < 250) return;
-    att.at = now;
+    if (!att.uid || !Number.isInteger(d.id) || now - (att.et || 0) < 250) return; // relógio próprio: editar não segura a próxima mensagem
+    att.et = now;
     ws.serializeAttachment(att);
     const r = this.sql.exec('SELECT uid, media FROM msgs WHERE id = ?', d.id).toArray()[0];
     if (!r || r.uid !== att.uid) return;
