@@ -1,7 +1,7 @@
 """S-1363: vários canais (texto e voz), volume por pessoa e qualidade da transmissão, com 3 navegadores + celular.
 
 Prova: criar canal de texto e de voz pelo "+"; mensagem fica no canal dela; não lidas por canal (negrito + contador);
-"digitando" só no canal certo; só quem criou renomeia (chave errada é recusada); quem está em cada canal de voz aparece
+"digitando" só no canal certo; qualquer um renomeia e apaga (S-1378); quem está em cada canal de voz aparece
 embaixo dele e a voz só conecta dentro do mesmo canal; volume por pessoa no botão direito (0-200%, acima de 100% com
 ganho de verdade no Web Audio), silenciar só para mim, lembrado depois de recarregar, vale para a tela dela também;
 qualidade 720p/1080p/fonte e 30/60 fps aplicada na captura e no codificador (maxBitrate, maxFramerate, redução de
@@ -109,25 +109,18 @@ def run(base, shots):
         b.fill("#chatInput", "")
         step('"digitando" aparece só para quem está no mesmo canal')
 
-        # 4. só quem criou renomeia; chave de moderação errada é recusada; nome novo aparece para todos
+        # 4. S-1378: qualquer um renomeia (sem moderação); nome novo aparece para todos
         b.hover(".chan-row:has(.chan-name:text-is('memes-bons'))")
         b.locator(".chan-row:has(.chan-name:text-is('memes-bons')) .chan-gear").click()
-        expect(b.locator("#chanAdmWrap")).to_be_visible()
         expect(b.locator("#chanDel")).to_be_visible()
-        b.fill("#chanName", "roubado")
-        b.fill("#chanAdm", "chave-errada")
-        T.shot(b, "72_editar_canal_moderacao")
+        expect(b.locator("#chanDlg")).not_to_contain_text(re.compile("modera", re.I))
+        b.fill("#chanName", "memes 2")
+        T.shot(b, "72_editar_canal")
         b.click("#chanOk")
-        expect(b.locator("#toasts")).to_contain_text("Chave de moderação errada", timeout=8000)
-        expect(chan(a, "memes-bons")).to_be_visible()
-        a.click(".chan-row:has(.chan-name:text-is('memes-bons')) .chan-gear", force=True)
-        expect(a.locator("#chanAdmWrap")).to_be_hidden()
-        a.fill("#chanName", "memes 2")
-        a.click("#chanOk")
         for pg in (a, b, c):
             expect(chan(pg, "memes-2")).to_be_visible(timeout=8000)
         expect(b.locator("#chatTitle")).to_have_text("memes-2")
-        step("renomear: chave errada recusada; quem criou renomeia e todos veem")
+        step("renomear: quem não criou também renomeia, sem chave, e todos veem")
 
         # 5. canal de voz novo: cada um no seu canal; voz conecta só dentro do mesmo canal
         a.wait_for_timeout(900)  # o servidor aceita um comando de canal a cada 0,8 s por conexão

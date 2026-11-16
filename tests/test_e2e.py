@@ -242,11 +242,8 @@ def run(base):
         a.wait_for_function("window.__gdm.monitorTypeSurfaces === 'include'")
         playing(b)
         assert b.evaluate(AUDIO_PEAK) > 0.1, "áudio não voltou depois de desligar Sem Discord"
-        a.click("#guideBtn")
-        expect(a.locator("#guideDlg")).to_be_visible()
-        shot(a, "07_guia_discord")
-        a.keyboard.press("Escape")
-        step("Sem Discord: opções do seletor, corte na tela inteira, janela com áudio, guia")
+        expect(a.locator("#guideBtn")).to_have_count(0)  # S-1378: sem o "?" do Sem Discord
+        step("Sem Discord: opções do seletor, corte na tela inteira, janela com áudio, sem o ? ao lado")
 
         # 8. chat: entrega e não interpreta HTML (no canal de voz o chat fica ao lado, em 1366)
         a.fill("#chatInput", '<img src=x onerror="document.title=1">oi')

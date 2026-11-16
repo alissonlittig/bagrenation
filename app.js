@@ -55,6 +55,7 @@
   const withMe = (e) => inVoice && !!e.vch && e.vch === myVch; // está comigo no mesmo canal de voz
   // Modo foco (S-1351): '' normal · 'screen' tela grande · 'people' grade de quem está no canal. Lembrado no navegador.
   let focusMode = ['screen', 'people'].includes(store('focus')) ? store('focus') : '';
+  let chatOff = store('chatoff') === '1'; // S-1378: chat da direita retraído no canal de voz (lembrado no navegador)
   let myId = null;
   let peer = null;          // meu Peer de membro
   let dirPeer = null;       // Peer do diretório, se eu for o responsável
@@ -878,6 +879,10 @@
     if (fm) box.dataset.focus = fm; else delete box.dataset.focus;
     $('focusBar').hidden = !fm;
     $('focusTop').hidden = !inVoice || box.dataset.view !== 'voice'; // botão óbvio no topo enquanto se está no canal
+    if (chatOff) box.dataset.chatoff = ''; else delete box.dataset.chatoff;
+    $('chatTop').hidden = box.dataset.view !== 'voice' || !!fm; // só aparece onde o chat fica à direita (CSS esconde abaixo de 1200px)
+    $('chatTop').setAttribute('aria-pressed', String(chatOff));
+    $('chatTopLabel').textContent = chatOff ? 'Mostrar chat' : 'Retrair chat';
     $('focusBtn').setAttribute('aria-pressed', String(!!fm));
     $('focusScreen').setAttribute('aria-pressed', String(fm === 'screen'));
     $('focusPeople').setAttribute('aria-pressed', String(fm === 'people'));
@@ -909,6 +914,12 @@
     if (document.startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       document.startViewTransition(go).ready.catch(() => {}); // pulada (janela escondida etc.): só não anima
     } else go();
+  }
+  function toggleChat() {
+    chatOff = !chatOff;
+    store('chatoff', chatOff ? '1' : '0');
+    layout();
+    if (chatSeen()) readAll();
   }
   function toggleFocus() {
     if (focusOn()) { setFocus(''); return; }
@@ -1084,7 +1095,7 @@
     for (const el of document.querySelectorAll('.chan[data-ch] .chan-count')) { const n = counts.get(el.closest('.chan').dataset.ch); el.textContent = n ? String(n) : ''; }
     $('emptyTitle').textContent = chanLabel(viewVch);
     const others = all.filter((p) => !p.you && p.invoice && p.vch === viewVch);
-    $('emptySay').textContent = inVoice ? (others.length ? `Você e mais ${others.length} no canal` : 'Só você no canal. Chame a galera.')
+    $('emptySay').textContent = inVoice ? (others.length ? `Você e mais ${others.length} no canal` : '')
       : others.length ? `${others.length} ${others.length === 1 ? 'pessoa' : 'pessoas'} no canal` : 'Ninguém no canal ainda';
     myFace();
     $('meAvatar').classList.toggle('speaking', voice.talking);
@@ -1238,7 +1249,7 @@
     setIcon($('topIcon'), v === 'chat' ? 'hash' : 'vol');
   }
   const chatSeen = () => document.visibilityState === 'visible' && !document.documentElement.classList.contains('app-hidden')
-    && ($('room').dataset.view === 'chat' || (wideChat() && !focusOn()));
+    && ($('room').dataset.view === 'chat' || (wideChat() && !focusOn() && !chatOff));
 
   function togglePanel(open) {
     const panel = $('panel');
@@ -1342,10 +1353,8 @@
     } else if (d.t === 'chans' && Array.isArray(d.list)) {
       onChans(d.list);
     } else if (d.t === 'chanok' && typeof d.id === 'string') {
-      if (chat.pendingAdm) { store('admkey', chat.pendingAdm); chat.pendingAdm = ''; }
       if (!d.op && chanOf(d.id)) { if (d.kind === 'text') { openText(d.id); $('chatInput').focus(); } else joinVoice(d.id); }
     } else if (d.t === 'err' && typeof d.text === 'string') {
-      if (/chave/i.test(d.text)) { store('admkey', ''); chat.pendingAdm = ''; }
       toast(d.text.slice(0, 200), 6000);
     } else if (d.t === 'typing' && /^[a-f0-9]{16}$/.test(d.uid || '') && d.uid !== myUid && (d.ch || 'chat') === textCh) {
       typers.set(d.uid, Date.now());
@@ -1543,8 +1552,6 @@
     $('chanKinds').hidden = !!c;
     for (const r of $('chanForm').elements.kind) r.checked = r.value === (c ? c.kind : kind || 'text');
     $('chanName').value = c ? c.name : '';
-    $('chanAdmWrap').hidden = !c || (!!c.uid && c.uid === myUid);
-    $('chanAdm').value = store('admkey') || '';
     $('chanDel').hidden = !c || FIXED_CH.includes(c.id);
     $('chanDel').textContent = 'Apagar canal';
     $('chanOk').textContent = c ? 'Salvar' : 'Criar canal';
@@ -1559,11 +1566,7 @@
   }
   function chanSend(op) {
     if (!chatOpen()) { toast('O chat está reconectando. Tente de novo em instantes.'); return false; }
-    const needAdm = !$('chanAdmWrap').hidden;
-    const adm = needAdm ? $('chanAdm').value.trim() : '';
-    if (needAdm && !adm) { $('chanAdm').focus(); return false; }
-    chat.pendingAdm = adm;
-    chat.ws.send(JSON.stringify({ t: 'chan', op, id: chanEdit ? chanEdit.id : undefined, kind: chanKind(), name: $('chanName').value, adm: adm || undefined }));
+    chat.ws.send(JSON.stringify({ t: 'chan', op, id: chanEdit ? chanEdit.id : undefined, kind: chanKind(), name: $('chanName').value }));
     return true;
   }
 
@@ -2657,7 +2660,6 @@
     if (local) { toast('Escolha a janela do jogo ou uma guia para tirar o Discord.', 5000); share(); }
     else toast('Ao compartilhar, escolha a janela do jogo ou uma guia: o som do Discord não vai junto.', 6000);
   });
-  $('guideBtn').addEventListener('click', () => $('guideDlg').showModal());
   const POPS = { settings: 'settingsBtn', voicePop: 'voiceBtn', statusPop: 'statusBtn' }; // painel -> botão que abre
   $('channels').addEventListener('click', (ev) => {
     const add = ev.target.closest('.chan-add');
@@ -2810,6 +2812,7 @@
   });
   $('focusBtn').addEventListener('click', toggleFocus);
   $('focusTop').addEventListener('click', toggleFocus);
+  $('chatTop').addEventListener('click', toggleChat);
   $('focusScreen').addEventListener('click', () => setFocus('screen'));
   $('focusPeople').addEventListener('click', () => setFocus('people'));
   $('focusExit').addEventListener('click', () => { setFocus(''); $('focusBtn').focus(); });
@@ -2819,6 +2822,13 @@
     if ((voice.mode === 'ptt' && voice.key === 'KeyF') || voice.muteKey === 'KeyF') return; // F já é a tecla de falar/mutar
     ev.preventDefault();
     toggleFocus();
+  });
+  document.addEventListener('keydown', (ev) => { // C retrai/mostra só o chat da direita (no canal de voz, tela larga)
+    if (ev.code !== 'KeyC' || ev.repeat || ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey || pickingKey || typing(ev.target)) return;
+    if ($('room').dataset.view !== 'voice' || focusOn() || !wideChat() || document.querySelector('dialog[open]')) return;
+    if ((voice.mode === 'ptt' && voice.key === 'KeyC') || voice.muteKey === 'KeyC') return; // C já é a tecla de falar/mutar
+    ev.preventDefault();
+    toggleChat();
   });
   window.matchMedia('(min-width: 1200px)').addEventListener('change', () => { if (chatSeen()) readAll(); });
   window.matchMedia('(max-width: 960px)').addEventListener('change', () => togglePanel(!narrow())); // janela cresceu: a lateral volta fixa

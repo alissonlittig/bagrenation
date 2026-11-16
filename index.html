@@ -21,7 +21,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/vt323-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=1363">
+<link rel="stylesheet" href="style.css?v=1378">
 </head>
 <body>
 
@@ -163,6 +163,10 @@
           <svg class="ic" aria-hidden="true"><use href="#i-full"/></svg>
           <span>Retrair laterais</span>
         </button>
+        <button id="chatTop" class="btn btn-quiet" type="button" aria-pressed="false" title="Esconde só o chat da direita (tecla C)" hidden>
+          <svg class="ic" aria-hidden="true"><use href="#i-chat"/></svg>
+          <span id="chatTopLabel">Retrair chat</span>
+        </button>
         <button id="panelBtn" class="btn btn-quiet" type="button" aria-expanded="false" aria-controls="panel">
           <svg class="ic" aria-hidden="true"><use href="#i-people"/></svg>
           <span id="peopleCount">1</span>
@@ -289,7 +293,6 @@
                 <span class="lbl">Sem Discord</span>
                 <span class="switch" aria-hidden="true"></span>
               </button>
-              <button id="guideBtn" class="dock-icon" type="button" aria-label="Como funciona o Sem Discord"><svg class="ic" aria-hidden="true"><use href="#i-help"/></svg></button>
               <span id="discordTip" class="sr-only">Escolher só janela ou guia ao compartilhar, para o som do Discord não ir junto.</span>
             </div>
             <div class="dock-group js-sender">
@@ -416,37 +419,6 @@
   </div>
 </dialog>
 
-<!-- Guia: áudio sem o Discord -->
-<dialog id="guideDlg" class="dlg dlg-wide" aria-labelledby="guideTitle">
-  <div class="dlg-body">
-    <div class="dlg-head">
-      <h2 id="guideTitle">Sem Discord</h2>
-      <button class="icon-btn js-close" type="button" aria-label="Fechar"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
-    </div>
-    <p class="dlg-text">Para o som do Discord não ir junto, compartilhe só janela ou guia.</p>
-    <ul class="guide">
-      <li data-ok="yes">
-        <span class="g-tag">Funciona</span>
-        <div><h3>Guia do navegador</h3><p>Só o som da guia. Chrome e Edge.</p></div>
-      </li>
-      <li data-ok="maybe">
-        <span class="g-tag">Depende do navegador</span>
-        <div><h3>Janela do jogo</h3><p>Se aparecer “Compartilhar áudio” ao escolher a janela, marque. Se não aparecer, vai sem som.</p></div>
-      </li>
-      <li data-ok="no">
-        <span class="g-tag">Leva o Discord</span>
-        <div><h3>Tela inteira</h3><p>Som do computador todo, com o Discord junto. Some do seletor com Sem Discord ligado.</p></div>
-      </li>
-    </ul>
-    <h3 class="guide-sub">Tela inteira com som</h3>
-    <ol class="guide-steps">
-      <li><span>Windows: <strong>Configurações › Sistema › Som › Mixer de volume</strong>.</span></li>
-      <li><span>Em <strong>Discord</strong>, troque o <strong>Dispositivo de saída</strong> para um aparelho diferente do que toca o jogo.</span></li>
-      <li><span>Desligue Sem Discord e compartilhe a tela inteira com áudio do sistema.</span></li>
-    </ol>
-    <p class="dlg-text">Exige duas saídas de áudio. Se o medidor de <strong>Som</strong> mexe quando falam no Discord, a voz está indo junto.</p>
-  </div>
-</dialog>
 
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 
@@ -473,11 +445,6 @@
     <div>
       <label class="field-label" for="chanName">Nome do canal</label>
       <div class="chan-field"><svg class="ic" aria-hidden="true"><use id="chanNameIcon" href="#i-hash"/></svg><input id="chanName" class="field" type="text" maxlength="32" autocomplete="off" spellcheck="false" placeholder="novo-canal"></div>
-    </div>
-    <div id="chanAdmWrap" hidden>
-      <label class="field-label" for="chanAdm">Chave de moderação</label>
-      <input id="chanAdm" class="field field-sm" type="password" autocomplete="off" spellcheck="false">
-      <p class="pop-note">Este canal não foi criado por você: só a moderação muda.</p>
     </div>
     <div class="dlg-actions chan-actions">
       <button id="chanDel" class="btn btn-quiet chan-del" type="button" hidden>Apagar canal</button>
@@ -558,6 +525,6 @@
 </template>
 
 <noscript><p class="noscript">O BAGRENATION precisa de JavaScript para conectar as pessoas da sala.</p></noscript>
-<script src="app.js?v=1363" defer></script>
+<script src="app.js?v=1378" defer></script>
 </body>
 </html>

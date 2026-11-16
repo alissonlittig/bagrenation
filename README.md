@@ -13,12 +13,12 @@ Um servidor fixo, como um servidor do Discord: abriu o BAGRENATION (site ou app)
 3. **Canal de voz**: clique no canal (ou em **Entrar no canal de voz**). O navegador pede o microfone: aceitou, já está falando. Sem microfone (ou negando), você só ouve. Para sair, o botão vermelho no dock ou em **Voz conectada**.
 4. Dentro do canal, **Compartilhar tela** e escolha a guia, a janela ou o monitor. Para enviar som, marque "Compartilhar áudio" no seletor do navegador.
 
-5. **Modo foco** (botão **Retrair laterais** no topo, botão de moldura no dock ou tecla **F**): esconde canais, pessoas online, #chat e barras, e deixa só o canal de voz. **Tela**: a tela compartilhada ocupa tudo (com mais de uma, escolha qual pelo nome ou clicando na miniatura; quem está no canal vira uma faixa de rostos em cima). **Pessoas**: grade grande com quem está no canal, contorno verde em quem fala. **Esc** ou **Sair** volta; mensagem nova no #chat aparece no botão Sair. A escolha fica lembrada.
+5. **Modo foco** (botão **Retrair laterais** no topo, botão de moldura no dock ou tecla **F**): esconde canais, pessoas online, #chat e barras, e deixa só o canal de voz. **Tela**: a tela compartilhada ocupa tudo (com mais de uma, escolha qual pelo nome ou clicando na miniatura; quem está no canal vira uma faixa de rostos em cima). **Pessoas**: grade grande com quem está no canal, contorno verde em quem fala. **Esc** ou **Sair** volta; mensagem nova no #chat aparece no botão Sair. A escolha fica lembrada. **Retrair chat** (botão no topo ou tecla **C**, com a janela larga) esconde só o chat da direita e deixa canais e pessoas; também fica lembrado.
 
 6. **Mensagens**: passe o mouse numa mensagem (ou botão direito; no celular, toque longo) para **reagir** com emoji, **responder** (a citação leva até a mensagem original), **copiar o texto**, **editar** ou **apagar** a sua. Seta para cima no campo vazio edita a sua última. Mensagem editada ganha "(editada)".
 7. **Membros e status**: a lateral mostra **Online**, **Ausente** e **Offline** (quem já entrou um dia continua lá, com "visto por último"). No seu nome, embaixo, escolha **Online** (fica ausente sozinho depois de 10 min parado; no app vale o teclado e o mouse do Windows, então jogando você continua online), **Ausente** ou **Invisível** (aparece offline, mas usa tudo normal). A bolinha de status aparece nos avatares da lista, do canal de voz e do #chat. Embaixo do campo aparece quem está digitando.
 
-8. **Canais**: o **+** ao lado de "Canais de texto" e de "Canais de voz" cria um canal novo. Quem está em cada canal de voz aparece embaixo dele; clicar num canal de voz entra nele (e sai do outro). Canal de texto com mensagem nova fica em negrito, com o número de mensagens. A engrenagem (ou botão direito no canal) renomeia ou apaga: só quem criou o canal, ou com a chave de moderação. O **#chat** e o **Canal de voz** são fixos (dá para renomear, não para apagar).
+8. **Canais**: o **+** ao lado de "Canais de texto" e de "Canais de voz" cria um canal novo. Quem está em cada canal de voz aparece embaixo dele; clicar num canal de voz entra nele (e sai do outro). Canal de texto com mensagem nova fica em negrito, com o número de mensagens. A engrenagem (ou botão direito no canal) renomeia ou apaga; qualquer pessoa pode, e a mudança aparece para todos na hora. O **#chat** e o **Canal de voz** são fixos (dá para renomear, não para apagar).
 9. **Volume por pessoa**: botão direito (no celular, toque longo; ou clique) em quem está no canal de voz, no cartão dela ou na tela que ela compartilha: volume da voz e da tela de 0 a 200% e **Silenciar só para mim**. Fica lembrado por pessoa, só no seu aparelho.
 10. **Qualidade da transmissão** (botão de controles no dock): **720p**, **1080p** ou **Fonte** (sem reduzir) e **30** ou **60 fps**. Padrão 720p · 30 fps. Vale na hora, até no meio da transmissão; se a internet não aguentar, aparece um aviso para baixar.
 
@@ -47,7 +47,7 @@ Código: `desktop/` (o `copy-site.mjs` copia os arquivos do site para dentro do 
 - **Avatares**: 4 bagres em pixel art (clássico, DJ, rei e tóxico) para escolher na entrada e trocar depois; sem escolha, fica a inicial do nome. A escolha fica salva no navegador.
 - Tela inteira, janela, guia ou jogo, com áudio estéreo.
 - **A voz não vaza na tela inteira**: o som do PC que vai junto com a tela leva anime, jogo e vídeo, mas não a voz de quem está no canal (senão quem assiste se escuta de volta). No app para PC o Windows (10 versão 2004 ou mais novo) captura o som de tudo menos o próprio BAGRENATION. No site, o Chrome/Edge recente faz o mesmo (`restrictOwnAudio`); se o navegador não garantir, aparece o aviso para compartilhar pelo app ou escolher a janela/guia do vídeo.
-- **Sem Discord**: com a opção ligada, o seletor só oferece janela e guia, que levam só o próprio som (o som da tela inteira inclui o Discord). Se o navegador não deixar esconder a tela inteira e ela for escolhida, o BAGRENATION corta o áudio e avisa. O botão de ajuda explica cada caso e como rotear o Discord para outra saída no Windows.
+- **Sem Discord**: com a opção ligada, o seletor só oferece janela e guia, que levam só o próprio som (o som da tela inteira inclui o Discord). Se o navegador não deixar esconder a tela inteira e ela for escolhida, o BAGRENATION corta o áudio e avisa.
 - Medidor do áudio que está saindo e destaque verde na tela que está com som tocando. O som da tela e a voz vão em conexões separadas: dá para baixar um sem mexer no outro.
 - Qualidade de 720p/30 até 1440p/60 e prioridade entre fluidez (jogos) e nitidez (texto), trocáveis durante a transmissão.
 - Trocar a tela transmitida sem encerrar.
@@ -135,7 +135,8 @@ pip install playwright && playwright install chromium
 python tests/test_servidor.py                              # servidor fixo + chat permanente
 python tests/test_e2e.py                                   # servidor local
 python tests/test_e2e.py https://alissonlittig.github.io/bagrenation/   # site publicado
-python tests/test_foco.py                                  # modo foco (retrair laterais)
+python tests/test_foco.py                                  # modo foco (retrair laterais) e retrair só o chat
+python tests/test_sync.py [url] [prints] [exe]             # tudo sincroniza para todos em < 2 s (tempo medido)
 python tests/test_membros.py                               # membros, status, digitando, reagir/responder/editar/apagar (3 navegadores)
 python tests/test_canais.py                                # canais, volume por pessoa, qualidade da tela (3 navegadores + celular)
 python tests/test_eco.py <bagrenation.exe de teste>        # tela inteira no app sem a voz do BAGRENATION (análise de frequência)

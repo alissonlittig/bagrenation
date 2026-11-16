@@ -10,7 +10,7 @@
 // chave edita e apaga as próprias mensagens. Presença (online/ausente/offline), "digitando", respostas e reações
 // vão pelo mesmo WebSocket. Mensagens antigas (sem uid) continuam como estavam.
 // Canais (S-1363): vários canais de texto e de voz. #chat (id 'chat') guarda o histórico de antes e "Canal de voz"
-// (id 'voz') é o canal das versões antigas. Quem criou um canal (ou quem tem a ADMIN_KEY) renomeia e apaga.
+// (id 'voz') é o canal das versões antigas. Qualquer membro cria, renomeia e apaga canais (S-1378); os fixos só renomeiam.
 // Mensagens de outros canais só vão para clientes novos (que mandam { t:'v' }): o app antigo as mostraria no #chat.
 
 const ORIGINS = [/^https:\/\/alissonlittig\.github\.io$/, /^https?:\/\/tauri\.localhost$/, /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/];
@@ -22,7 +22,7 @@ const HISTORY = 150;
 const STALE = 150000;                   // conexão identificada sem sinal (ping a cada 25 s) há 150 s = caiu sem avisar
 const EMOJIS = new Set(['👍', '❤️', '😂', '😮', '😢', '😡', '🔥', '🎉', '👀', '💀', '🐟', '🙏', '👏', '🤡', '💯', '✅']);
 const ST = ['on', 'idle', 'off'];       // off = invisível (para os outros, igual a offline)
-const FIXED = { chat: 'text', voz: 'voice' }; // canais de sempre: renomeia (moderação), não apaga
+const FIXED = { chat: 'text', voz: 'voice' }; // canais de sempre: renomeia, não apaga
 const MAX_CHANS = 30;
 const chanName = (v, kind) => { const n = clean(v, 32); return kind === 'text' ? n.toLowerCase().replace(/\s+/g, '-') : n; };
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, max);
@@ -122,13 +122,12 @@ export class Server {
     const c = typeof id === 'string' && this.sql.exec('SELECT kind FROM chans WHERE id = ?', id).toArray()[0];
     return c && c.kind === 'text' ? id : '';
   }
-  chan(ws, att, d, now) { // { t:'chan', op:'add'|'ren'|'del', kind, id, name, adm? }
+  chan(ws, att, d, now) { // { t:'chan', op:'add'|'ren'|'del', kind, id, name }
     const no = (text) => ws.send(JSON.stringify({ t: 'err', text }));
     if (!att.uid) return no('Espere o chat conectar e tente de novo.');
     if (now - (att.ct || 0) < 800) return no('Calma: um canal por vez.');
     att.ct = now;
     ws.serializeAttachment(att);
-    const admin = !!this.env.ADMIN_KEY && typeof d.adm === 'string' && d.adm === this.env.ADMIN_KEY;
     if (d.op === 'add') {
       const kind = d.kind === 'voice' ? 'voice' : 'text';
       const name = chanName(d.name, kind);
@@ -144,7 +143,6 @@ export class Server {
     const c = typeof d.id === 'string' && this.sql.exec('SELECT * FROM chans WHERE id = ?', d.id).toArray()[0];
     if (!c) return no('Esse canal não existe mais.');
     if (d.op === 'del' && FIXED[c.id]) return no('Esse canal é fixo: dá para renomear, não para apagar.');
-    if (c.uid !== att.uid && !admin) return no(d.adm ? 'Chave de moderação errada.' : 'Só quem criou o canal (ou a moderação) pode mudar ele.');
     if (d.op === 'ren') {
       const name = chanName(d.name, c.kind);
       if (!name) return no('Dê um nome ao canal.');

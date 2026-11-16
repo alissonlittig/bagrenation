@@ -66,6 +66,41 @@ def run(base, shots):
         b.locator("#chanVoice").click()
         step("dock inteiro à esquerda do #chat em 1280/1366/1536/1920; botão 'Retrair laterais' no topo entra no foco")
 
+        # 0b. S-1378: "Retrair chat" esconde só o chat da direita (lateral fica), tecla C, lembrado ao recarregar
+        expect(b.locator("#chatTop")).to_be_visible()
+        expect(b.locator("#chatTopLabel")).to_have_text("Retrair chat")
+        w0 = box(b, "#stage")["width"]
+        b.click("#chatTop")
+        expect(b.locator("#chat")).to_be_hidden()
+        expect(b.locator("#panel")).to_be_visible()
+        expect(b.locator("#chatTopLabel")).to_have_text("Mostrar chat")
+        expect(b.locator("#chatTop")).to_have_attribute("aria-pressed", "true")
+        b.wait_for_timeout(300)
+        w1 = box(b, "#stage")["width"]
+        assert w1 > w0 + 250, f"palco não cresceu ao retrair o chat: {w0} -> {w1}"
+        T.shot(b, "79_chat_retraido")
+        b.locator("#chanChat").click()
+        expect(b.locator("#chat")).to_be_visible()  # no canal de texto o chat sempre aparece
+        expect(b.locator("#chatTop")).to_be_hidden()
+        b.locator("#chanVoice").click()
+        expect(b.locator("#chat")).to_be_hidden()
+        b.reload()
+        T.connected(b)
+        T.join_voice(b)
+        expect(b.locator("#chat")).to_be_hidden()  # lembrado
+        b.keyboard.press("c")
+        expect(b.locator("#chat")).to_be_visible()
+        expect(b.locator("#panel")).to_be_visible()
+        b.keyboard.press("c")
+        expect(b.locator("#chat")).to_be_hidden()
+        b.click("#chatTop")
+        expect(b.locator("#chat")).to_be_visible()
+        b.set_viewport_size({"width": 1100, "height": 768})
+        expect(b.locator("#chatTop")).to_be_hidden()  # abaixo de 1200px o chat já não fica à direita
+        b.set_viewport_size({"width": 1366, "height": 768})
+        T.playing(b)
+        step("Retrair chat: só o chat some (lateral fica), palco cresce, tecla C, lembrado ao recarregar, some em tela estreita")
+
         # 1. botão Foco: sem escolha anterior e com tela aberta = foco na tela
         expect(b.locator("#focusBtn")).to_be_visible()
         b.click("#focusBtn")

@@ -740,6 +740,10 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
 @media (min-width: 961px) { #panelBtn { display: none; } }
 
 /* ---------- Modo foco (S-1351): só o canal de voz, focado na tela ou nas pessoas ---------- */
+.room[data-view="voice"][data-chatoff] .chat { display: none; }
+#chatTop .ic { color: var(--cyan); }
+@media (max-width: 1199px) { #chatTop { display: none; } }
+.say:empty { display: none !important; }
 .room[data-focus] .side, .room[data-focus] .chat, .room[data-focus] .topbar, .room[data-focus] .voicebar { display: none; }
 #focusTop .ic { color: var(--yel); }
 #focusBtn[aria-pressed="true"] { --fr: var(--fr-dark-on); color: var(--yel); }
