@@ -21,7 +21,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/vt323-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=1382">
+<link rel="stylesheet" href="style.css?v=1397">
 </head>
 <body>
 
@@ -415,6 +415,14 @@
       <h2 id="avatarTitle">Avatar</h2>
       <button class="icon-btn js-close" type="button" aria-label="Fechar"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
     </div>
+    <div class="av-up"><button id="avUp" class="btn" type="button">Enviar imagem</button><span class="muted">PNG, JPG, WEBP ou GIF, até 5 MB</span></div>
+    <input id="avFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+    <div id="cropBox" class="crop" hidden>
+      <div class="crop-stage"><canvas id="cropCv" width="220" height="220"></canvas><img id="cropGif" alt="" hidden></div>
+      <input id="cropZoom" type="range" min="1" max="4" step="0.01" value="1" aria-label="Zoom">
+      <p id="cropHint" class="muted"></p>
+      <div class="crop-act"><button id="cropNo" class="btn" type="button">Cancelar</button><button id="cropOk" class="btn btn-primary" type="button">Usar esta imagem</button></div>
+    </div>
     <div id="avatarGrid" class="av-grid" role="group" aria-label="Avatares"></div>
   </div>
 </dialog>
@@ -525,6 +533,6 @@
 </template>
 
 <noscript><p class="noscript">O BAGRENATION precisa de JavaScript para conectar as pessoas da sala.</p></noscript>
-<script src="app.js?v=1382" defer></script>
+<script src="app.js?v=1397" defer></script>
 </body>
 </html>

@@ -70,8 +70,9 @@
   // Avatares desenhados em tools/pixel.py (símbolos av-* do index.html). Sem escolha = inicial do nome.
   const AV_SYM = [...document.querySelectorAll('symbol[id^="av-"]')]; // data-g = aba da galeria, data-n = nome
   const AVATARS = AV_SYM.map((el) => el.id.slice(3));
-  const savedAv = store('avatar'); // avatar que não existe mais (galeria só tem bagres) volta para o bagre clássico
-  let myAv = AVATARS.includes(savedAv) ? savedAv : savedAv ? 'bagre' : '';
+  const isUp = (a) => /^u-[a-z2-7]{20}$/.test(a || ''); // imagem enviada pela pessoa (S-1397): u-<id da mídia no Worker>
+  const avOk = (a) => (AVATARS.includes(a) || isUp(a) ? a : a ? 'bagre' : ''); // avatar que não existe mais volta para o bagre clássico
+  let myAv = avOk(store('avatar'));
   // Identidade (S-1357): chave aleatória deste aparelho (só fica aqui); o servidor do chat guarda o hash dela (uid),
   // que é o que os outros veem. Com ela dá para editar e apagar as próprias mensagens. Site e app são aparelhos diferentes.
   let myKey = store('key');
@@ -141,9 +142,13 @@
     let h = 0;
     for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 360;
     el.style.setProperty('--h', String(h));
-    if (!AVATARS.includes(av)) { delete el.dataset.av; el.textContent = [...name.trim()][0] || '?'; return; }
+    if (!AVATARS.includes(av) && !isUp(av)) { delete el.dataset.av; el.textContent = [...name.trim()][0] || '?'; return; }
     if (el.dataset.av === av) return;
     el.dataset.av = av;
+    if (isUp(av)) { // foto própria (PNG/JPG/WEBP/GIF): <img> do Worker, igual para todos
+      el.replaceChildren(Object.assign(document.createElement('img'), { src: `${CHAT}/m/${av.slice(2)}`, alt: '', draggable: false }));
+      return;
+    }
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 16 16');
     svg.setAttribute('aria-hidden', 'true');
@@ -317,7 +322,7 @@
       e.name = clean(d.name) || 'Convidado';
       e.named = true;
       e.sharing = d.sharing === true;
-      e.av = AVATARS.includes(d.av) ? d.av : d.av ? 'bagre' : '';
+      e.av = avOk(d.av);
       e.uid = /^[a-f0-9]{16}$/.test(d.uid || '') ? d.uid : '';
       e.vmuted = d.muted === true;
       e.vdeaf = d.deaf === true;
@@ -1156,7 +1161,7 @@
       av.setAttribute('aria-hidden', 'true');
       if (p.uid) av.dataset.uid = p.uid;
       av.dataset.st = p.st;
-      paintAvatar(av, p.name, AVATARS.includes(p.av) ? p.av : '');
+      paintAvatar(av, p.name, p.av);
       av.classList.toggle('speaking', !!p.talking);
       const who = Object.assign(document.createElement('span'), { className: 'who' });
       who.append(Object.assign(document.createElement('span'), { className: 'nm', textContent: p.you ? `${p.name} (você)` : p.name }));
@@ -1357,7 +1362,7 @@
   }
   const okMsg = (m) => !!m && Number.isInteger(m.id) && typeof m.name === 'string' && typeof m.text === 'string';
   const okMember = (m) => !!m && /^[a-f0-9]{16}$/.test(m.uid || '') && typeof m.name === 'string' && ['on', 'idle', 'off'].includes(m.st)
-    && ((m.av = AVATARS.includes(m.av) ? m.av : m.av ? 'bagre' : ''), true);
+    && ((m.av = avOk(m.av)), true);
   const mine = (m) => (m.uid ? m.uid === myUid : m.name === myName); // antigas (sem uid): pelo nome, como antes
   const canEdit = (m) => !!m && !!m.uid && m.uid === myUid;
   const msgById = (id) => chat.list.find((m) => m.id === id);
@@ -1592,7 +1597,7 @@
     av.className = 'avatar';
     av.setAttribute('aria-hidden', 'true');
     if (m.uid) { av.dataset.uid = m.uid; av.dataset.st = stOf(m.uid); }
-    paintAvatar(av, who.name, AVATARS.includes(who.av) ? who.av : '');
+    paintAvatar(av, who.name, who.av);
     if (m.reply && Number.isInteger(m.reply.id)) li.append(replyEl(m.reply));
     const body = document.createElement('div');
     body.className = 'msg-body';
@@ -1881,10 +1886,10 @@
       box.append(item);
     });
   }
-  function upload(p, bar) { // XHR para ter o progresso do envio
+  function upload(p, bar, path = '/up') { // XHR para ter o progresso do envio
     return new Promise((resolve) => {
       const x = new XMLHttpRequest();
-      x.open('POST', `${CHAT}/up`);
+      x.open('POST', `${CHAT}${path}`);
       x.setRequestHeader('Content-Type', p.file.type);
       x.upload.addEventListener('progress', (ev) => { if (ev.lengthComputable) bar.style.setProperty('--p', `${(ev.loaded / ev.total) * 100}%`); });
       x.addEventListener('load', () => {
@@ -2619,8 +2624,77 @@
       grid.append(b);
     }
   }
+  // ---- Enviar imagem (S-1397): escolhe, enquadra (círculo + zoom) e salva. GIF vai inteiro (animado); o resto vira 256×256.
+  const crop = { img: null, file: null, gif: false, z: 1, x: 0, y: 0 };
+  const CV = 220; // lado da área de recorte na tela
+  const cropBase = () => Math.max(CV / crop.img.width, CV / crop.img.height);
+  function cropDraw() {
+    const g = $('cropCv').getContext('2d'), im = crop.img;
+    g.clearRect(0, 0, CV, CV);
+    if (!im) return;
+    const k = cropBase() * crop.z, w = im.width * k, h = im.height * k;
+    crop.x = Math.min(0, Math.max(CV - w, crop.x)); // a imagem sempre cobre o quadrado
+    crop.y = Math.min(0, Math.max(CV - h, crop.y));
+    g.drawImage(im, crop.x, crop.y, w, h);
+  }
+  function cropOpen(file) {
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) { toast('Use PNG, JPG, WEBP ou GIF.'); return; }
+    if (file.size > 5 * 1024 * 1024) { toast('A imagem passa de 5 MB.'); return; }
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => {
+      Object.assign(crop, { img: im, file, gif: file.type === 'image/gif', z: 1 });
+      $('cropZoom').value = '1';
+      $('cropZoom').disabled = crop.gif;
+      $('cropHint').textContent = crop.gif ? 'GIF animado: vai inteiro, centralizado no círculo.' : 'Arraste para enquadrar e use o zoom.';
+      $('cropCv').hidden = crop.gif;
+      $('cropGif').hidden = !crop.gif;
+      if (crop.gif) $('cropGif').src = url;
+      crop.x = (CV - im.width * cropBase()) / 2; crop.y = (CV - im.height * cropBase()) / 2;
+      cropDraw();
+      $('cropBox').hidden = false;
+    };
+    im.onerror = () => toast('Não consegui abrir essa imagem.');
+    im.src = url;
+  }
+  $('avUp').addEventListener('click', () => $('avFile').click());
+  $('avFile').addEventListener('change', () => { const f = $('avFile').files[0]; $('avFile').value = ''; if (f) cropOpen(f); });
+  $('cropZoom').addEventListener('input', () => { // zoom em torno do centro
+    const b = cropBase(), k0 = b * crop.z, k1 = b * Number($('cropZoom').value);
+    crop.x = CV / 2 - ((CV / 2 - crop.x) / k0) * k1; crop.y = CV / 2 - ((CV / 2 - crop.y) / k0) * k1;
+    crop.z = Number($('cropZoom').value); cropDraw();
+  });
+  let drag = null;
+  $('cropCv').addEventListener('pointerdown', (ev) => { drag = { x: ev.clientX - crop.x, y: ev.clientY - crop.y }; $('cropCv').setPointerCapture(ev.pointerId); });
+  $('cropCv').addEventListener('pointermove', (ev) => { if (drag) { crop.x = ev.clientX - drag.x; crop.y = ev.clientY - drag.y; cropDraw(); } });
+  $('cropCv').addEventListener('pointerup', () => { drag = null; });
+  $('cropNo').addEventListener('click', () => { $('cropBox').hidden = true; crop.img = null; });
+  $('cropOk').addEventListener('click', async () => {
+    $('cropOk').disabled = true;
+    try {
+      let blob = crop.file;
+      if (!crop.gif) {
+        const out = document.createElement('canvas');
+        out.width = out.height = 256;
+        out.getContext('2d').drawImage($('cropCv'), 0, 0, 256, 256);
+        blob = await new Promise((r) => out.toBlob(r, 'image/png'));
+      }
+      const r = await upload({ file: blob }, document.createElement('i'), '/up?av=1');
+      if (!r) return;
+      myAv = `u-${r.id}`;
+      store('avatar', myAv);
+      sendMe();
+      $('cropBox').hidden = true;
+      $('avatarDlg').close();
+      if (local) local.tile.setName();
+      broadcast(hello());
+      myFace();
+      renderPeople();
+      sfx('ok');
+    } finally { $('cropOk').disabled = false; }
+  });
   for (const b of document.querySelectorAll('.js-avatar')) {
-    b.addEventListener('click', () => { renderGallery(); $('avatarDlg').showModal(); });
+    b.addEventListener('click', () => { renderGallery(); $('cropBox').hidden = true; $('avatarDlg').showModal(); });
   }
   $('homeName').addEventListener('input', myFace);
   $('nameForm').addEventListener('submit', (ev) => { // primeira vez: nome e avatar

@@ -20,6 +20,8 @@
 const ORIGINS = [/^https:\/\/alissonlittig\.github\.io$/, /^https?:\/\/tauri\.localhost$/, /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/];
 const MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime']);
 const MAX_FILE = 25 * 1024 * 1024;
+const MAX_AV = 5 * 1024 * 1024;         // avatar enviado (S-1397): só imagem, não conta no teto de 3 GB e nunca expira
+const AV_MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 const CHUNK = 1024 * 1024;              // SQLite do Durable Object aceita até 2 MB por valor
 const MAX_TOTAL = 3 * 1024 ** 3;        // plano grátis = 5 GB; acima de 3 GB os arquivos mais antigos saem
 const HISTORY = 150;
@@ -33,7 +35,7 @@ const MAX_SIG = 32000;                  // oferta/resposta (SDP) cabem folgados;
 const STUN = { urls: 'stun:stun.cloudflare.com:3478' };
 const chanName = (v, kind) => { const n = clean(v, 32); return kind === 'text' ? n.toLowerCase().replace(/\s+/g, '-') : n; };
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, max);
-const avOf = (v) => (/^[a-z0-9-]{0,24}$/.test(v || '') ? v || '' : '');
+const avOf = (v) => (/^[a-z0-9-]{0,24}$/.test(v || '') ? v || '' : ''); // inclui u-<id de 20> (avatar enviado)
 const row = (r) => ({ ...r, media: r.media ? JSON.parse(r.media) : null, reply: r.reply ? JSON.parse(r.reply) : null, reacts: r.reacts ? JSON.parse(r.reacts) : null });
 
 function cors(origin) {
@@ -80,6 +82,7 @@ export class Server {
       this.sql.exec("UPDATE msgs SET ch = 'chat' WHERE ch IS NULL");
     }
     this.sql.exec('CREATE INDEX IF NOT EXISTS msgs_ch ON msgs (ch, id)');
+    if (!this.sql.exec('PRAGMA table_info(media)').toArray().some((c) => c.name === 'av')) this.sql.exec('ALTER TABLE media ADD COLUMN av INTEGER NOT NULL DEFAULT 0'); // S-1397
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong')); // responde sem acordar o objeto
     this.upAt = new Map(); // ip -> últimos envios (limite simples, some quando o objeto hiberna)
     this.shown = new Map(); // uid -> último estado avisado (some ao hibernar: no pior caso repete um aviso igual)
@@ -105,7 +108,7 @@ export class Server {
       server.send(JSON.stringify({ t: 'chans', list: this.chans() }));
       return new Response(null, { status: 101, webSocket: client });
     }
-    if (route === 'up') return this.upload(req, origin);
+    if (route === 'up') return this.upload(req, origin, new URL(req.url).searchParams.get('av') === '1');
     if (route === 'del') return this.del(req);
     return this.media(req, route.slice(2));
   }
@@ -310,7 +313,7 @@ export class Server {
     att.at = now;
     ws.serializeAttachment(att);
     const name = clean(d.name, 24) || 'Visitante';
-    const av = avOf(d.av);
+    const av = this.avOk(d.av);
     const text = clean(d.text, 2000);
     let media = null;
     if (d.media && typeof d.media === 'object' && /^[a-z0-9]{20}$/.test(d.media.id)) {
@@ -333,6 +336,11 @@ export class Server {
       nonce: typeof d.nonce === 'string' ? d.nonce.slice(0, 40) : undefined }, null, ch !== 'chat');
   }
 
+  avOk(v) { // avatar enviado só vale se a imagem existe de verdade (e foi enviada como avatar)
+    const a = avOf(v);
+    return a.startsWith('u-') && !(/^u-[a-z2-7]{20}$/.test(a) && this.sql.exec('SELECT 1 FROM media WHERE id = ? AND av = 1', a.slice(2)).toArray().length) ? '' : a;
+  }
+
   async hello(ws, att, d) { // { t:'me', key, name, av, st }: quem é esta conexão e como quer aparecer
     if (typeof d.key !== 'string' || !/^[a-f0-9]{32,64}$/.test(d.key)) return;
     const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`bagrenation:${d.key}`)));
@@ -343,7 +351,7 @@ export class Server {
     att.st = ST.includes(d.st) ? d.st : 'on';
     ws.serializeAttachment(att);
     this.sql.exec('INSERT INTO members (uid, name, av, seen) VALUES (?, ?, ?, ?) ON CONFLICT(uid) DO UPDATE SET name = excluded.name, av = excluded.av, seen = excluded.seen',
-      uid, clean(d.name, 24) || 'Visitante', avOf(d.av), Date.now());
+      uid, clean(d.name, 24) || 'Visitante', this.avOk(d.av), Date.now());
     if (first) ws.send(JSON.stringify({ t: 'you', uid }));
     this.presence(uid);
     if (first && !(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + 60000);
@@ -391,32 +399,33 @@ export class Server {
   }
   webSocketError(ws) { this.gone(ws, ws.deserializeAttachment() || {}); }
 
-  async upload(req, origin) {
+  async upload(req, origin, av) {
     const ip = req.headers.get('CF-Connecting-IP') || '?';
     const now = Date.now();
     const recent = (this.upAt.get(ip) || []).filter((t) => now - t < 60000);
     if (recent.length >= 20) return json({ error: 'muitos envios, espere um minuto' }, 429, origin);
     const mime = (req.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
-    if (!MIME.has(mime)) return json({ error: 'tipo de arquivo não aceito (imagem, GIF ou vídeo mp4/webm)' }, 415, origin);
-    if (Number(req.headers.get('Content-Length') || 0) > MAX_FILE) return json({ error: 'arquivo maior que 25 MB' }, 413, origin);
+    const max = av ? MAX_AV : MAX_FILE;
+    if (!(av ? AV_MIME : MIME).has(mime)) return json({ error: 'tipo de arquivo não aceito (imagem, GIF ou vídeo mp4/webm)' }, 415, origin);
+    if (Number(req.headers.get('Content-Length') || 0) > max) return json({ error: av ? 'imagem maior que 5 MB' : 'arquivo maior que 25 MB' }, 413, origin);
     const buf = new Uint8Array(await req.arrayBuffer());
     if (!buf.length) return json({ error: 'arquivo vazio' }, 400, origin);
-    if (buf.length > MAX_FILE) return json({ error: 'arquivo maior que 25 MB' }, 413, origin);
+    if (buf.length > max) return json({ error: av ? 'imagem maior que 5 MB' : 'arquivo maior que 25 MB' }, 413, origin);
     recent.push(now);
     this.upAt.set(ip, recent);
     const id = [...crypto.getRandomValues(new Uint8Array(20))].map((b) => 'abcdefghijklmnopqrstuvwxyz234567'[b & 31]).join('');
     this.ctx.storage.transactionSync(() => {
       for (let n = 0, off = 0; off < buf.length; n++, off += CHUNK) this.sql.exec('INSERT INTO chunks (id, n, data) VALUES (?, ?, ?)', id, n, buf.subarray(off, off + CHUNK));
-      this.sql.exec('INSERT INTO media (id, mime, size, ts) VALUES (?, ?, ?, ?)', id, mime, buf.length, now);
+      this.sql.exec('INSERT INTO media (id, mime, size, ts, av) VALUES (?, ?, ?, ?, ?)', id, mime, buf.length, now, av ? 1 : 0);
     });
     this.prune();
     return json({ id, mime, size: buf.length }, 200, origin);
   }
 
   prune() { // passou do teto: apaga os arquivos mais antigos (a mensagem fica, com "arquivo expirou")
-    let total = this.sql.exec('SELECT COALESCE(SUM(size), 0) AS s FROM media').one().s;
+    let total = this.sql.exec('SELECT COALESCE(SUM(size), 0) AS s FROM media WHERE av = 0').one().s;
     while (total > MAX_TOTAL) {
-      const old = this.sql.exec('SELECT id, size FROM media ORDER BY ts LIMIT 1').toArray()[0];
+      const old = this.sql.exec('SELECT id, size FROM media WHERE av = 0 ORDER BY ts LIMIT 1').toArray()[0];
       if (!old) break;
       this.sql.exec('DELETE FROM chunks WHERE id = ?', old.id);
       this.sql.exec('DELETE FROM media WHERE id = ?', old.id);

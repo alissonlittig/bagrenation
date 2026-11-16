@@ -994,3 +994,14 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
 .q-note { margin-top: -6px; }
 .q-warn { padding: 8px 10px; background: #ff335522; box-shadow: inset var(--u) 0 0 var(--red); color: #ffb3c0; font-size: 19px; line-height: 1.1; }
 .q-warn[hidden] { display: none; }
+
+/* Avatar enviado (S-1397): foto própria em círculo; GIF anima */
+.avatar[data-av^="u-"] { border-radius: 50%; overflow: hidden; }
+.avatar > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.av-up { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 12px; }
+.crop { display: grid; justify-items: center; gap: 10px; margin: 0 0 14px; padding: 12px; background: var(--panel-2); }
+.crop-stage { position: relative; width: 220px; height: 220px; }
+.crop-stage canvas, .crop-stage img { width: 220px; height: 220px; object-fit: cover; border-radius: 50%; touch-action: none; cursor: grab; background: var(--panel); }
+.crop input[type=range] { width: 220px; }
+.crop-act { display: flex; gap: 10px; }
+.crop .muted, .av-up .muted { color: var(--muted); font-size: 18px; margin: 0; }
