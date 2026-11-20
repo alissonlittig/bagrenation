@@ -1129,8 +1129,16 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
 .dj-err { color: var(--yel); }
 .dj-all { padding: 2px 0 4px; }
 .dj-all .btn { --u: 2px; min-height: 38px; width: 100%; font-size: 9px; }
-.dock-dj.is-on { color: var(--mag); }
+/* S-1580: o botão do Bagre DJ é o mais usado da barra: 1,4x os vizinhos (54 -> 76 px), magenta; tocando = ciano com brilho e nota pulando */
+.dock .dock-dj { --fr: var(--fr-magenta); width: 76px; height: 76px; color: var(--ink); filter: drop-shadow(0 4px 0 #8c1478); }
+.dock .dock-dj .ic { width: 34px; height: 34px; }
+.dock .dock-dj:hover, .dock .dock-dj[aria-expanded="true"] { --fr: var(--fr-magenta-hi); color: var(--ink); }
+.dock .dock-dj.is-on { --fr: var(--fr-cyan); color: var(--ink); filter: drop-shadow(0 4px 0 #007c86) drop-shadow(0 0 12px rgba(0, 240, 255, .6)); }
+.dock .dock-dj.is-on:hover, .dock .dock-dj.is-on[aria-expanded="true"] { --fr: var(--fr-cyan-hi); }
+.dock .dock-dj:active { transform: translateY(4px); filter: none; }
 .dock-dj.is-on .ic { animation: bob .8s steps(2, jump-none) infinite alternate; }
+@container (max-width: 1100px) { .dock .dock-dj { width: 64px; height: 64px; } .dock .dock-dj .ic { width: 30px; height: 30px; } } /* vizinhos 46 px: 1,4x */
+.dj-cover { z-index: 2; } /* a capa cobre o player: só capa, título e controles na tela */
 .people li.is-bot .nm::after { content: "BOT"; margin-left: 6px; padding: 2px 3px 1px; background: #5865f2; color: #fff; font: 400 7px/1 var(--pix); vertical-align: 3px; }
 .people li.is-bot .sub { color: var(--mag); }
 .vcard.is-bot .avatar { outline: var(--u) dashed var(--mag); outline-offset: 3px; }

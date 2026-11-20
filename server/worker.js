@@ -18,7 +18,8 @@
 // TURN_KEY_API_TOKEN existirem; sem eles só vai STUN.
 // Bagre DJ (S-1566): música do YouTube sincronizada em cada canal de voz. O estado (fila, vídeo, início, pausa) fica aqui
 // e vai para todos; cada pessoa toca o player oficial do YouTube no próprio aparelho (nada de baixar ou retransmitir áudio).
-// Busca por nome e playlists usam a YouTube Data API v3 (secret YT_KEY); sem ela, só link de vídeo (oEmbed, sem chave).
+// Busca por nome: YouTube Data API v3 se houver o secret YT_KEY; sem ela, a busca pública do YouTube (sem chave) (S-1580).
+// Links do Spotify (faixa, álbum, playlist): só título e artista da página pública do embed; a música sai da busca do YouTube.
 
 const ORIGINS = [/^https:\/\/alissonlittig\.github\.io$/, /^https?:\/\/tauri\.localhost$/, /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/];
 const MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime']);
@@ -519,8 +520,15 @@ export class Server {
     const link = Server.parseYt(q);
     const key = !!this.env.YT_KEY;
     try {
+      const sp = Server.parseSp(q);
+      if (sp) return await this.spotify(sp);
+      if (/spotify\.(com|link)/i.test(q)) return { err: 'Cole o link de uma música, álbum ou playlist do Spotify (open.spotify.com/...).' };
       if (link && link.list && !link.v) {
-        if (!key) return { err: 'Para playlist sem a busca do YouTube, o app lista os vídeos pelo player.', needIds: link.list };
+        if (!key) {
+          const p = await Server.ytPublicList(link.list).catch(() => ({ list: [] }));
+          if (p.list.length) return { list: p.list, label: p.title ? `“${clean(p.title, 60)}”` : 'uma playlist' };
+          return { err: 'Para playlist sem a busca do YouTube, o app lista os vídeos pelo player.', needIds: link.list }; // plano B: o player lista
+        }
         const ids = [];
         let page = '';
         for (let n = 0; n < 2; n++) {
@@ -559,11 +567,70 @@ export class Server {
     const k = q.toLowerCase().replace(/\s+/g, ' ').trim();
     const hit = this.ytc.get(k);
     if (hit && Date.now() - hit.at < 3600000) return hit.list;
-    const j = await this.yt('search', { part: 'id', type: 'video', maxResults: '12', q: k, videoEmbeddable: 'true', regionCode: 'BR' });
-    const list = (await this.details((j.items || []).map((x) => x.id && x.id.videoId).filter((v) => YT_ID.test(v || '')))).filter((x) => x.d > 0);
+    let list;
+    if (this.env.YT_KEY) {
+      const j = await this.yt('search', { part: 'id', type: 'video', maxResults: '12', q: k, videoEmbeddable: 'true', regionCode: 'BR' });
+      list = (await this.details((j.items || []).map((x) => x.id && x.id.videoId).filter((v) => YT_ID.test(v || '')))).filter((x) => x.d > 0);
+    } else list = await Server.ytPublic(k);
     if (this.ytc.size > 200) this.ytc.clear();
     this.ytc.set(k, { at: Date.now(), list });
     return list;
+  }
+  static async innertube(path, body) { // a API pública que a própria página do YouTube usa (sem chave)
+    const r = await fetch(`https://www.youtube.com/youtubei/v1/${path}?prettyPrint=false`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ context: { client: { clientName: 'WEB', clientVersion: '2.20251101.00.00', hl: 'pt', gl: 'BR' } }, ...body }),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }
+  static ytItems(j, max) { // vídeos da resposta (formato antigo videoRenderer e o novo lockupViewModel); ao vivo (sem duração) fica de fora
+    const out = [];
+    const secs = (t) => String(t || '').split(':').reduce((a, x) => a * 60 + (Number(x) || 0), 0);
+    const walk = (o) => {
+      if (!o || typeof o !== 'object' || out.length >= max) return;
+      const v = o.videoRenderer, l = o.lockupViewModel;
+      if (v) {
+        const d = secs(v.lengthText && v.lengthText.simpleText);
+        if (YT_ID.test(v.videoId || '') && d > 0) out.push({ id: v.videoId, t: ((v.title && v.title.runs) || []).map((x) => x.text).join(''), a: (((v.ownerText && v.ownerText.runs) || [])[0] || {}).text || '', d });
+        return;
+      }
+      if (l && l.contentType === 'LOCKUP_CONTENT_TYPE_VIDEO') {
+        const m = (l.metadata && l.metadata.lockupMetadataViewModel) || {};
+        const row = ((((m.metadata || {}).contentMetadataViewModel || {}).metadataRows || [])[0] || {}).metadataParts || [];
+        const d = secs((/"text":"(\d+(?::\d+)+)"/.exec(JSON.stringify(l.contentImage || {})) || [])[1]);
+        if (YT_ID.test(l.contentId || '') && d > 0) out.push({ id: l.contentId, t: (m.title && m.title.content) || '', a: ((row[0] || {}).text || {}).content || '', d });
+        return;
+      }
+      for (const k in o) walk(o[k]);
+    };
+    walk(j);
+    return out;
+  }
+  static async ytPublic(q) { return Server.ytItems(await Server.innertube('search', { query: q, params: 'EgIQAQ%3D%3D' }), 12); } // só vídeos
+  static async ytPublicList(list) { // os primeiros 100 vídeos de uma playlist e o nome dela
+    const j = await Server.innertube('browse', { browseId: `VL${list}` });
+    return { list: Server.ytItems(j, 100), title: ((j.metadata || {}).playlistMetadataRenderer || {}).title || '' };
+  }
+  static parseSp(q) { // open.spotify.com/(intl-xx/)track|album|playlist/<id>
+    const m = /^(?:https?:\/\/)?open\.spotify\.com\/(?:intl-[a-z-]+\/)?(track|album|playlist)\/([A-Za-z0-9]{22})/i.exec(q.trim());
+    return m ? { kind: m[1].toLowerCase(), id: m[2] } : null;
+  }
+  async spotify(sp) { // -> { list, label } ou { err }: lê só nome e artista (página pública do embed) e acha cada uma no YouTube
+    const r = await fetch(`https://open.spotify.com/embed/${sp.kind}/${sp.id}`, { headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'pt-BR' } });
+    if (r.status === 404) return { err: 'Esse link do Spotify não existe ou é privado.' };
+    if (!r.ok) throw new Error(`Spotify HTTP ${r.status}`);
+    const m = /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/.exec(await r.text());
+    const e = m && (((((JSON.parse(m[1]).props || {}).pageProps || {}).state || {}).data || {}).entity);
+    if (!e) throw new Error('Spotify: página mudou');
+    const tracks = sp.kind === 'track' ? [{ t: e.name || e.title, a: (e.artists || []).map((x) => x.name).join(', ') }]
+      : (e.trackList || []).filter((x) => x.isPlayable !== false).map((x) => ({ t: x.title, a: x.subtitle }));
+    const want = tracks.filter((x) => x.t).slice(0, 30); // limite de subpedidos do plano grátis
+    const found = await Promise.all(want.map((x) => this.search(`${x.t} ${String(x.a || '').split(',')[0]}`).then((l) => l[0] || null, () => null)));
+    const list = found.filter(Boolean);
+    const name = clean(e.name || e.title, 60);
+    if (!list.length) return { err: 'Não achei essas músicas do Spotify no YouTube.' };
+    return { list, label: sp.kind === 'track' ? '' : `“${name}”${tracks.length > want.length ? ` (as ${want.length} primeiras)` : ''}` };
   }
   async oembedAll(ids) { // playlist sem a Data API: títulos pelo oEmbed (até 40 por vez, limite de subpedidos do plano grátis)
     const one = async (id) => {
@@ -587,7 +654,7 @@ export class Server {
     ws.serializeAttachment(att);
     const q = clean(d.q, 200);
     if (!q) return reply({});
-    if (Server.parseYt(q)) return reply(await this.resolve(q));
+    if (Server.parseYt(q) || Server.parseSp(q)) return reply(await this.resolve(q));
     try { reply({ list: await this.search(q) }); } catch (err) { reply({ err: Server.ytErr(err) }); }
   }
 

@@ -108,6 +108,7 @@
     st: new Map(),            // canal de voz -> { q, i, at, pos, paused, loop, v }
     off: null, rtt: Infinity, // relógio do servidor menos o meu (ms)
     frame: null, ready: false, tk: null, hello: 0, // iframe do player e o último aviso dele
+    aud: null, urls: new Map(), fb: new Set(), pre: '', // app (S-1580): <audio> com o endereço do yt-dlp; fb = vídeos que voltaram ao player oficial
     loaded: '', loadAt: 0, fixAt: 0, endSent: '', durSent: '', badSent: '', sentVol: '', blocked: false, err153: false,
     vol: Number.isFinite(djVol0) && store('djvol') !== null ? Math.min(100, Math.max(0, djVol0)) : 70,
     mute: store('djmute') === '1',
@@ -2608,7 +2609,7 @@
       const tk = dj.tk;
       const at = tk ? (tk.st === 1 ? tk.t + (Date.now() - tk.ts) / 1000 : tk.t) : null;
       return { id: cur && cur.id, k: cur && cur.k, title: cur && cur.t, paused: s ? s.paused : null, target: s && cur ? djPos(s) : null,
-        st: tk ? tk.st : null, at, now: Date.now(), pid: tk ? tk.id : '', pv: tk ? tk.v : null, pm: tk ? tk.m : null, ready: dj.ready, frame: !!dj.frame, blocked: dj.blocked,
+        st: tk ? tk.st : null, at, now: Date.now(), pid: tk ? tk.id : '', pv: tk ? tk.v : null, pm: tk ? tk.m : null, ready: dj.ready, frame: !!dj.frame, aud: !!dj.aud, results: !!dj.res, soundMs: dj.aud ? dj.aud.soundMs : null, fb: [...dj.fb], blocked: dj.blocked,
         q: s ? s.q.map((x) => x.t) : [], i: s ? s.i : -1, loop: s ? s.loop : 'off', off: dj.off, rtt: dj.rtt, vol: dj.vol, mute: dj.mute || voice.deaf, fixes: dj.fixes };
     },
     musSend: (op, extra) => musSend(op, extra || {}),
@@ -2684,8 +2685,62 @@
     return true;
   }
 
-  // player deste aparelho (só existe enquanto estou num canal de voz com música)
-  function djCmd(msg) { if (dj.frame && dj.frame.contentWindow) dj.frame.contentWindow.postMessage({ bp: 1, ...msg }, PLAYER_ORIGIN); }
+  // player deste aparelho (só existe enquanto estou num canal de voz com música). No app (S-1580) é um <audio> escondido:
+  // o app pede ao yt-dlp o endereço do áudio do vídeo (cada PC o seu) e nada de vídeo aparece. Se não der, aquele vídeo
+  // volta ao player oficial (dj.fb) e a música não para. O <audio> responde às mesmas ordens e avisa no mesmo formato (dj.tk).
+  function audUrl(id) { // Promise<endereço>: guardado até perto de vencer (o endereço traz expire=<segundos>)
+    const c = dj.urls.get(id);
+    if (c && (c.p || c.exp - Date.now() > 120000)) return c.p || Promise.resolve(c.url);
+    const p = DESK.core.invoke('dj_audio', { id }).then((url) => {
+      const exp = Number(new URL(url).searchParams.get('expire')) * 1000 || Date.now() + 3600000;
+      dj.urls.set(id, { url, exp });
+      return url;
+    }, (err) => { dj.urls.delete(id); throw err; });
+    dj.urls.set(id, { p });
+    if (dj.urls.size > 60) dj.urls.delete(dj.urls.keys().next().value);
+    return p;
+  }
+  function audMake() {
+    const a = new Audio();
+    a.preload = 'auto';
+    const x = dj.aud = { a, id: '', play: false, retried: '', t0: 0, soundMs: null, timer: 0 };
+    const tell = () => {
+      if (dj.aud !== x) return;
+      const st = !x.id ? -1 : a.ended ? 0 : !a.src ? 3 : a.paused ? (x.play ? 3 : 2) : a.readyState < 3 ? 3 : 1;
+      dj.tk = { st, t: a.currentTime || 0, d: Number.isFinite(a.duration) ? a.duration : 0, id: x.id, ts: Date.now(), v: Math.round(a.volume * 100), m: a.muted };
+    };
+    x.timer = setInterval(tell, 250);
+    for (const ev of ['playing', 'pause', 'ended', 'waiting', 'seeked']) a.addEventListener(ev, tell);
+    a.addEventListener('playing', () => { if (x.soundMs === null && x.t0) x.soundMs = Math.round(performance.now() - x.t0); });
+    a.addEventListener('loadedmetadata', () => { // chegou o áudio: vai para o ponto em que o canal está agora
+      const s = dj.st.get(myVch), cur = djCur(s);
+      if (cur && cur.id === x.id) a.currentTime = djPos(s);
+      if (x.play) a.play().catch(() => {});
+    });
+    a.addEventListener('error', () => { if (a.src && x.id) audFail(x, x.id, true); });
+    dj.ready = true; dj.tk = null; dj.loaded = ''; dj.sentVol = '';
+  }
+  function audFail(x, id, media) { // endereço vencido: pede outro 1 vez; senão este vídeo toca pelo player oficial
+    if (dj.aud !== x || x.id !== id) return;
+    if (media && x.retried !== id) { x.retried = id; dj.urls.delete(id); x.id = ''; dj.loaded = ''; djSync(); return; }
+    console.warn('Bagre DJ: áudio direto falhou, usando o player do YouTube', id);
+    dj.fb.add(id);
+    djSync();
+  }
+  function audRun(d) {
+    const x = dj.aud, a = x.a;
+    if (d.op === 'load') {
+      if (d.id === x.id) { if (a.src) a.currentTime = d.at; x.play = d.play; if (d.play) a.play().catch(() => {}); else a.pause(); return; }
+      x.id = d.id; x.play = d.play; x.t0 = performance.now(); x.soundMs = null;
+      a.pause(); a.removeAttribute('src'); a.load();
+      audUrl(d.id).then((url) => { if (dj.aud === x && x.id === d.id) a.src = url; }, () => audFail(x, d.id, false));
+    } else if (d.op === 'play') { x.play = true; if (a.src) a.play().catch(() => {}); }
+    else if (d.op === 'pause') { x.play = false; a.pause(); }
+    else if (d.op === 'seek') { if (a.src) a.currentTime = Math.max(0, Number(d.at) || 0); }
+    else if (d.op === 'vol') { a.volume = Math.max(0, Math.min(100, d.v)) / 100; a.muted = d.m === true; }
+    else if (d.op === 'stop') { x.id = ''; x.play = false; a.pause(); a.removeAttribute('src'); a.load(); }
+  }
+  function djCmd(msg) { if (dj.aud) { audRun(msg); return; } if (dj.frame && dj.frame.contentWindow) dj.frame.contentWindow.postMessage({ bp: 1, ...msg }, PLAYER_ORIGIN); }
   function djFrame() {
     const f = dj.frame = document.createElement('iframe');
     f.src = PLAYER;
@@ -2699,6 +2754,7 @@
   }
   function djKill() {
     clearInterval(dj.hello);
+    if (dj.aud) { clearInterval(dj.aud.timer); audRun({ op: 'stop' }); dj.aud = null; }
     if (dj.frame) dj.frame.remove();
     dj.frame = null; dj.ready = false; dj.tk = null; dj.loaded = ''; dj.blocked = false;
   }
@@ -2732,7 +2788,8 @@
     const s = dj.st.get(myVch);
     const cur = djCur(s);
     if (!cur) { if (dj.frame && dj.loaded) { djCmd({ op: 'stop' }); dj.loaded = ''; } dj.blocked = false; renderDj(); return; }
-    if (!dj.frame) djFrame();
+    const aud = !!DESK && !dj.fb.has(cur.id);
+    if (aud ? !dj.aud : !dj.frame) { djKill(); if (aud) audMake(); else djFrame(); }
     renderDj();
     if (!dj.ready) return;
     djVolume();
@@ -2761,6 +2818,8 @@
       if (tk.st === 2 || tk.st === 5 || tk.st === -1) { if (late > 1000) { dj.fixAt = Date.now(); djCmd({ op: 'play' }); } }
       else if (tk.st === 1 && Math.abs(est - target) > 1 && late > 2500) { dj.fixAt = Date.now(); dj.fixes++; djCmd({ op: 'seek', at: target + 0.15 }); }
       dj.blocked = tk.st !== 1 && tk.st !== 3 && Date.now() - dj.loadAt > 5000; // navegador barrou o som sem um clique
+      const nx = s.q[s.i + 1];
+      if (dj.aud && tk.st === 1 && nx && dj.pre !== nx.k) { dj.pre = nx.k; audUrl(nx.id).catch(() => {}); } // a próxima já fica pronta
     }
     $('djTap').hidden = !dj.blocked;
   }
@@ -2783,8 +2842,8 @@
     if (!show) return;
     const live = here && !!dj.frame;
     $('djFrame').hidden = !live || !cur;
-    $('djCover').hidden = live || !cur;
-    if (cur && !live && $('djCover').dataset.id !== cur.id) { $('djCover').dataset.id = cur.id; $('djCover').src = thumb(cur.id, true); }
+    $('djCover').hidden = !cur; // a capa fica por cima: nada de vídeo na tela (S-1580)
+    if (cur && $('djCover').dataset.id !== cur.id) { $('djCover').dataset.id = cur.id; $('djCover').src = thumb(cur.id, true); }
     $('djIdle').hidden = !!cur;
     $('djIdleText').textContent = s && s.q.length && !cur ? 'A fila acabou' : 'Nada tocando';
     $('djState').textContent = !cur ? 'Bagre DJ' : s.paused ? 'Pausado' : here ? 'Tocando agora' : `Tocando agora em ${chanLabel(ch)}`;
@@ -2931,7 +2990,11 @@
     $('chatLog').append(li);
     scrollDown();
   }
-  const DJ_HELP = 'Comandos do Bagre DJ: /play <nome ou link> (toca ou põe na fila) · /playnow <nome ou link> · /skip · /back · /pause · /resume · /queue · /np · /shuffle · /loop [fila|uma|off] · /remove <n> · /stop';
+  function djPlay(arg, now, tc) { // nome ou link: a 1ª música achada toca (ou entra na fila); playlist do YouTube vai inteira
+    if (/[?&]list=[A-Za-z0-9_-]{10,64}/.test(arg) && !/[?&]v=|youtu\.be\//.test(arg)) djSearch(arg, { tc, now });
+    else musSend('play', { q: arg, now, tc });
+  }
+  const DJ_HELP = 'Comandos do Bagre DJ: /play <nome ou link do YouTube/Spotify> (toca ou põe na fila) · /playnow <nome ou link> · /skip · /back · /pause · /resume · /queue · /np · /shuffle · /loop [fila|uma|off] · /remove <n> · /stop';
   function djCommand(text) { // devolve true se o texto era um comando do DJ (não vai como mensagem)
     const m = /^\/([a-zA-Zçã]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
     if (!m) return false;
@@ -2945,10 +3008,8 @@
     const cur = djCur(s);
     const tc = textCh;
     if (['play', 'p', 'tocar', 'playnow', 'pn'].includes(cmd)) {
-      if (!arg) { if (cur && s.paused) musSend('resume', { tc }); else djEphemeral('Use /play <nome da música ou link do YouTube>.'); return true; }
-      const now = cmd === 'playnow' || cmd === 'pn';
-      if (/[?&]list=[A-Za-z0-9_-]{10,64}/.test(arg) && !/[?&]v=|youtu\.be\//.test(arg)) djSearch(arg, { tc, now }); // playlist: lista e põe tudo
-      else musSend('play', { q: arg, now, tc });
+      if (!arg) { if (cur && s.paused) musSend('resume', { tc }); else djEphemeral('Use /play <nome da música ou link do YouTube ou Spotify>.'); return true; }
+      djPlay(arg, cmd === 'playnow' || cmd === 'pn', tc);
     } else if (['skip', 's', 'next', 'pular'].includes(cmd)) { if (!cur) djEphemeral('Nada tocando agora.'); else musSend('skip', { tc }); }
     else if (['back', 'prev', 'voltar'].includes(cmd)) musSend('prev', { tc });
     else if (['pause', 'pausar'].includes(cmd)) { if (!cur || s.paused) djEphemeral(cur ? 'Já está pausado. /resume volta a tocar.' : 'Nada tocando agora.'); else musSend('pause', { tc }); }
@@ -2980,7 +3041,16 @@
     if (!$('dj').hidden && !djCur(dj.st.get(viewVch))) $('djQ').focus();
   });
   $('djClose').addEventListener('click', () => { dj.pref = 'closed'; renderDj(); });
-  $('djForm').addEventListener('submit', (ev) => { ev.preventDefault(); if (!djHere()) { toast('Entre neste canal de voz para pedir música.'); return; } djSearch($('djQ').value); });
+  $('djForm').addEventListener('submit', (ev) => { // Enter = toca já (como o /play); "Lista" mostra os resultados para escolher
+    ev.preventDefault();
+    const q = clean($('djQ').value, 300);
+    if (!q) return;
+    if (!djHere()) { toast('Entre neste canal de voz para pedir música.'); return; }
+    if (ev.submitter && ev.submitter.id === 'djList') { djSearch(q); return; }
+    djPlay(q, false);
+    $('djQ').value = '';
+    toast(`Procurando: ${q.slice(0, 60)}`);
+  });
   $('djResX').addEventListener('click', closeDjRes);
   $('djPlay').addEventListener('click', () => { const s = dj.st.get(myVch); if (djCur(s)) musSend(s.paused ? 'resume' : 'pause'); });
   $('djNext').addEventListener('click', () => musSend('skip'));

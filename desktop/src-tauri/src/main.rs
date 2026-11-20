@@ -3,6 +3,7 @@
 // ícone na bandeja, abrir com o Windows, aviso de quem entra e atualização pelo GitHub Releases.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod djaudio;
 mod sysaudio;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
@@ -367,7 +368,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![set_keys, fullscreen, tray_state, notify, autostart, quit_now, is_visible, idle_secs, sysaudio::sys_audio_start, sysaudio::sys_audio_stop])
+        .invoke_handler(tauri::generate_handler![set_keys, fullscreen, tray_state, notify, autostart, quit_now, is_visible, idle_secs, sysaudio::sys_audio_start, sysaudio::sys_audio_stop, djaudio::dj_audio])
         .setup(|app| {
             build_tray(app)?;
             hook_thread(app.handle().clone());

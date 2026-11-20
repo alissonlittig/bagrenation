@@ -21,7 +21,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/vt323-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=1566">
+<link rel="stylesheet" href="style.css?v=1580">
 </head>
 <body>
 
@@ -234,7 +234,7 @@
           </div>
         </main>
 
-        <!-- Bagre DJ (S-1566): música do YouTube sincronizada no canal de voz. Cada pessoa toca o player oficial no próprio aparelho. -->
+        <!-- Bagre DJ (S-1566/S-1580): música sincronizada no canal de voz; nome ou link toca direto, só a capa aparece. -->
         <section id="dj" class="dj" aria-labelledby="djName" hidden>
           <div class="dj-player">
             <div id="djFrame" class="dj-frame"></div>
@@ -276,8 +276,9 @@
           </div>
           <div class="dj-side">
             <form id="djForm" class="dj-search" role="search">
-              <input id="djQ" class="field field-sm" type="search" maxlength="300" autocomplete="off" spellcheck="false" placeholder="Buscar música ou colar link do YouTube" aria-label="Buscar música ou colar link do YouTube">
-              <button id="djGo" class="btn btn-cyan" type="submit">Buscar</button>
+              <input id="djQ" class="field field-sm" type="search" maxlength="300" autocomplete="off" spellcheck="false" placeholder="Nome da música ou link (YouTube, Spotify)" aria-label="Nome da música ou link do YouTube ou Spotify. Enter toca">
+              <button id="djGo" class="btn btn-cyan" type="submit">Tocar</button>
+              <button id="djList" class="btn" type="submit" title="Ver os resultados e escolher">Lista</button>
             </form>
             <div id="djResWrap" class="dj-res-wrap" hidden>
               <p class="dj-sec"><span id="djResHead">Resultados</span><button id="djResX" class="linkish" type="button">fechar</button></p>
@@ -388,7 +389,7 @@
               </div>
             </div>
             <span class="dock-sep" aria-hidden="true"></span>
-            <button id="djBtn" class="dock-icon dock-dj" type="button" aria-expanded="false" aria-controls="dj" aria-label="Bagre DJ: música do YouTube no canal" title="Bagre DJ: música no canal"><svg class="ic" aria-hidden="true"><use href="#i-note"/></svg></button>
+            <button id="djBtn" class="dock-icon dock-dj" type="button" aria-expanded="false" aria-controls="dj" aria-label="Bagre DJ: tocar música no canal" title="Bagre DJ: tocar música no canal"><svg class="ic" aria-hidden="true"><use href="#i-note"/></svg></button>
             <button id="focusBtn" class="dock-icon" type="button" aria-pressed="false" aria-label="Modo foco: só o canal de voz (F)" title="Retrair laterais e chat (F)"><svg class="ic" aria-hidden="true"><use href="#i-full"/></svg></button>
             <button id="leaveBtn" class="dock-icon dock-leave" type="button" aria-label="Sair do canal de voz"><svg class="ic" aria-hidden="true"><use href="#i-leave"/></svg></button>
           </div>
@@ -625,6 +626,6 @@
 </template>
 
 <noscript><p class="noscript">O BAGRENATION precisa de JavaScript para conectar as pessoas da sala.</p></noscript>
-<script src="app.js?v=1566" defer></script>
+<script src="app.js?v=1580" defer></script>
 </body>
 </html>

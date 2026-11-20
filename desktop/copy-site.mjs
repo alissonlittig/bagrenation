@@ -11,6 +11,7 @@ for (const f of ['index.html', 'app.js', 'signal.js', 'style.css', 'favicon.svg'
 // No app a página fala com o Tauri por fetch em ipc.localhost: libera só isso na CSP da cópia (o site fica igual).
 const html = new URL('index.html', dist);
 const page = readFileSync(html, 'utf8');
-const csp = page.replace("connect-src 'self'", "connect-src 'self' ipc: https://ipc.localhost");
-if (csp === page) throw new Error('copy-site: connect-src não encontrado na CSP do index.html');
+// Bagre DJ no app (S-1580): o <audio> toca o endereço que o yt-dlp devolve (googlevideo.com); o site não precisa disso.
+const csp = page.replace("connect-src 'self'", "connect-src 'self' ipc: https://ipc.localhost").replace("media-src 'self'", "media-src 'self' https://*.googlevideo.com");
+if (!csp.includes('ipc.localhost') || !csp.includes('googlevideo')) throw new Error('copy-site: connect-src ou media-src não encontrado na CSP do index.html');
 writeFileSync(html, csp);

@@ -1,4 +1,4 @@
-"""S-1566: Bagre DJ, música do YouTube sincronizada no canal de voz (3 navegadores, um deles celular).
+"""S-1566/S-1580: Bagre DJ, música do YouTube sincronizada no canal de voz (3 navegadores, um deles celular).
 
 Prova: /play <link> no chat toca para todos do canal (o DJ responde no chat e aparece na lista do canal com BOT);
 Ana, Bruno e Cris tocam o mesmo trecho (diferença < 2 s entre os players); Cris entra no meio e cai no ponto certo;
@@ -6,6 +6,8 @@ desvio forçado de 12 s volta sozinho; pausa, volta, pular e /skip valem para to
 busca do painel, reordenar, tirar, embaralhar, repetir); a fila continua depois de recarregar a página; vídeo que não
 toca embutido é pulado sozinho com aviso no chat; volume e mudo da música são só de quem mexe; "som da sala desligado"
 cala a música; fim da fila tira o DJ da lista; playlist por link entra inteira na fila; voz e chat seguem funcionando. Navegadores com --mute-audio (sem som).
+S-1580: nome no painel + Enter toca na hora (sem escolher em lista), /play <nome>, links do Spotify (faixa e playlist)
+viram a mesma música do YouTube; só a capa aparece (o player fica coberto).
 Usa um servidor de teste (?servidor=teste-dj-...), então não aparece no BAGRENATION de verdade.
 Uso:  python tests/test_musica.py [url_base] [pasta_prints]
 """
@@ -113,6 +115,8 @@ def run(base, shots):
         expect(b.locator("#djTitle")).to_contain_text("Big Buck Bunny")
         expect(b.locator("#people li.is-bot")).to_contain_text("Bagre DJ")
         expect(b.locator("#voiceGrid .vcard.is-bot")).to_have_count(1)
+        top = b.evaluate("() => { const r = document.querySelector('#djFrame').getBoundingClientRect(); const e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return e && e.id; }")
+        assert top == "djCover", f"o vídeo aparece na tela (no meio do player está {top})"
         a.wait_for_timeout(2500)
         g, _ = synced([a, b], label="Ana x Bruno")
         T.shot(b, "dj_01_tocando_bruno") if T.SHOTS else None
@@ -157,7 +161,7 @@ def run(base, shots):
 
         # 5. fila pelo painel: colar link, Buscar, + Fila; aparece igual para todos
         a.fill("#djQ", ZOO)
-        a.click("#djGo")
+        a.click("#djList")
         expect(a.locator("#djResults .dj-item")).to_have_count(1, timeout=15000)
         expect(a.locator("#djResults .dj-item")).to_contain_text("Me at the zoo")
         a.locator("#djResults .dj-item button[aria-label^='Adicionar']").click()
@@ -182,7 +186,7 @@ def run(base, shots):
         qa = dj(a)["q"]
         assert qa == dj(b)["q"] == dj(c)["q"], (qa, dj(b)["q"], dj(c)["q"])
         assert qa[1:] == ["Faixa C", "Me at the zoo"], qa
-        step("fila pelo painel (colar link, Buscar, + Fila) e pela API: igual para os 3; reordenar e tirar refletem para todos")
+        step("fila pelo painel (colar link, Lista, + Fila) e pela API: igual para os 3; reordenar e tirar refletem para todos")
 
         # 6. embaralhar e repetir (mudam para todos)
         a.click("#djShuffle")
@@ -273,13 +277,43 @@ def run(base, shots):
         T.hears(b, "Ana")
         step("/queue e /ajuda respondem só para quem pediu; texto com / que não é comando vai normal; voz segue (Bruno ouve a Ana)")
 
-        # 12. playlist por link no chat (sem a Data API: o player lista os vídeos e o servidor pega os títulos)
+        # 12. S-1580: nome -> toca (painel + Enter e /play <nome>), Spotify (faixa e playlist)
+        a.fill("#djQ", "me at the zoo jawed")
+        t0 = time.time()
+        a.press("#djQ", "Enter")
+        expect(a.locator("#djQ")).to_have_value("")
+        a.wait_for_function("() => BAGRENATION.dj().id", timeout=20000)
+        vid = dj(a)["id"]
+        for pg in (a, b, c):
+            playing(pg, vid)
+        took = time.time() - t0
+        c.wait_for_timeout(2000)
+        g, _ = synced([a, b, c], label="nome no painel")
+        assert dj(a)["results"] is False, "abriu a lista em vez de tocar"
+        step(f"nome no painel + Enter: a 1ª música achada ({dj(a)['title']}) toca para os 3 em {took:.1f} s, sem escolher em lista (diferença {g:.2f} s)")
+        say(b, "/play rick astley never gonna give you up")
+        last_dj(a, "Na fila (#1)")
+        say(c, "/play https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT")
+        last_dj(a, "Na fila (#2)")
+        d = dj(b)
+        assert len(d["q"]) - d["i"] - 1 == 2 and all("rick" in t.lower() or "never" in t.lower() for t in d["q"][d["i"] + 1:]), d["q"]
+        step(f"/play <nome> com música tocando entra na fila; link de faixa do Spotify vira a mesma música no YouTube ({d['q'][-1]})")
+        say(a, "/play https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M")
+        last_dj(b, "músicas de", timeout=45000)
+        d = dj(b)
+        assert len(d["q"]) - d["i"] - 1 > 10, d["q"]
+        step(f"/play <playlist do Spotify>: {len(d['q']) - d['i'] - 3} músicas achadas no YouTube entram na fila para todos")
+        say(a, "/stop")
+        for pg in (a, b, c):
+            pg.wait_for_function("() => BAGRENATION.dj().id === null")
+
+        # 13. playlist por link no chat (sem a Data API: o player lista os vídeos e o servidor pega os títulos)
         say(a, f"/play {PLAYLIST}")
         last_dj(b, "músicas", timeout=45000)
         d = dj(a)
         assert len(d["q"]) >= 2, d["q"]
         playing(b, d["id"])
-        step(f"/play <link de playlist>: {len(d['q'])} vídeos da playlist na fila, o primeiro toca para todos")
+        step(f"/play <link de playlist do YouTube>: {len(d['q'])} vídeos da playlist na fila, o primeiro toca para todos")
         say(a, "/stop")
         for pg in (a, b, c):
             pg.wait_for_function("() => BAGRENATION.dj().id === null")
