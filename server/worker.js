@@ -495,6 +495,8 @@ export class Server {
     const tried = cur && cur.k === k ? (Array.isArray(cur.x) ? cur.x : [cur.id]) : [];
     if (!tried.length || tried.length > 5) return null;
     try {
+      const o = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${cur.id}`)}`);
+      if (o.status === 400 || o.status === 404) return null; // o vídeo nem existe: pula, não adianta procurar outra versão
       const q = cur.t.replace(/[([][^)\]]*[)\]]/g, ' ');
       const v = (await this.search(tried.length % 2 ? cur.t : `${q} lyrics`)).find((x) => !tried.includes(x.id)); // alterna: outros envios da música e a versão com letra
       return v ? { k, v, tried: [...tried, v.id] } : null;

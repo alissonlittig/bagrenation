@@ -119,11 +119,16 @@ assert.match((await nokey.resolve('https://spotify.link/abc')).err, /open\.spoti
 {
   const st = { q: [{ k: 'k1', id: 'aaaaaaaaaaa', t: 'linkin park', d: 100 }], i: 0 };
   const me2 = Object.assign(Object.create(Server.prototype), { env: {}, ytc: new Map(), mget: () => st });
+  const f0 = globalThis.fetch;
+  globalThis.fetch = async (u, o) => (new URL(u).pathname === '/oembed' ? new Response('{}', { status: String(u).includes('zzzzzzzzzzz') ? 404 : 200 }) : f0(u, o));
   const alt = await me2.altOf('voz', 'k1');
   assert.equal(alt.v.id, 'ddddddddddd', 'pula o id que já falhou'); assert.deepEqual(alt.tried, ['aaaaaaaaaaa', 'ddddddddddd']);
   assert.equal(await me2.altOf('voz', 'outra'), null, 'aviso de outra música não troca nada');
   st.q[0].x = ['a', 'b', 'c', 'd', 'e', 'f'];
   assert.equal(await me2.altOf('voz', 'k1'), null, 'depois de 5 trocas, pula');
+  st.q[0] = { k: 'k2', id: 'zzzzzzzzzzz', t: 'não existe', d: 0 };
+  assert.equal(await me2.altOf('voz', 'k2'), null, 'vídeo que não existe: pula sem procurar');
+  globalThis.fetch = f0;
 }
 
 // fila: avançar, repetir uma, repetir a fila, guardar só 30 tocadas

@@ -248,7 +248,7 @@ def run(base, shots):
         last_dj(b, "Pulei para a próxima", timeout=30000)
         for pg in (a, b, c):
             pg.wait_for_function("t => BAGRENATION.dj().title === t", arg=after)
-        step(f"/skip da Cris pula para todos; vídeo que não toca é pulado sozinho, o DJ avisa no chat e segue para {after}")
+        step(f"/skip da Cris pula para todos; vídeo que não existe é pulado sozinho (sem procurar outra versão), o DJ avisa no chat e segue para {after}")
 
         # 10. Me at the zoo (19 s) acaba sozinho e a fila anda; no fim da fila o DJ sai da lista
         a.evaluate("() => BAGRENATION.musSend('add', { items: [{ id: 'jNQXAC9IVRw', t: 'Me at the zoo (fim)', a: 'jawed', d: 19 }], now: true })")
