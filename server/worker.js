@@ -411,7 +411,7 @@ export class Server {
       items = r.list; label = r.label || '';
     } else if (d.op === 'add') items = Array.isArray(d.items) ? d.items.slice(0, 100) : [];
     let alt = null;
-    if (d.op === 'bad' && (d.code === 101 || d.code === 150)) alt = await this.altOf(d.ch, d.k); // S-1580: outra versão que toque no site
+    if (d.op === 'bad' && (d.code === 101 || d.code === 150)) alt = await this.altOf(d.ch, d.k); // S-1580: outra versão que toque no site (até 5)
     const s = this.mget(d.ch); // lido depois do await: nada se perde entre dois pedidos ao mesmo tempo
     const t = Date.now();
     const cur = s.q[s.i];
@@ -490,12 +490,13 @@ export class Server {
     this.mset(d.ch, s);
   }
 
-  async altOf(ch, k) { // música atual não toca embutida (o dono bloqueou fora do YouTube): acha outra versão dela, até 3 tentativas
+  async altOf(ch, k) { // música atual não toca embutida (o dono bloqueou fora do YouTube): acha outra versão dela, até 5 tentativas
     const cur = ((s) => s.q[s.i])(this.mget(ch));
     const tried = cur && cur.k === k ? (Array.isArray(cur.x) ? cur.x : [cur.id]) : [];
-    if (!tried.length || tried.length > 3) return null;
+    if (!tried.length || tried.length > 5) return null;
     try {
-      const v = (await this.search(cur.t)).find((x) => !tried.includes(x.id));
+      const q = cur.t.replace(/[([][^)\]]*[)\]]/g, ' ');
+      const v = (await this.search(tried.length % 2 ? cur.t : `${q} lyrics`)).find((x) => !tried.includes(x.id)); // alterna: outros envios da música e a versão com letra
       return v ? { k, v, tried: [...tried, v.id] } : null;
     } catch { return null; }
   }
