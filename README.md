@@ -52,7 +52,7 @@ Código: `desktop/` (o `copy-site.mjs` copia os arquivos do site para dentro do 
 - Qualidade de 720p/30 até 1440p/60 e prioridade entre fluidez (jogos) e nitidez (texto), trocáveis durante a transmissão.
 - Trocar a tela transmitida sem encerrar.
 - Volume e mudo separados para cada transmissão; quem transmite pode silenciar o próprio áudio para todos.
-- Tela cheia, janela flutuante (picture-in-picture) e modo destaque.
+- **Tela cheia como no YouTube**: botão no canto da tela, duplo clique no vídeo ou **F** com o mouse em cima dela. Some tudo em volta (lateral, canais, #chat, membros, topo e, no app, a barra do Windows) e fica só a transmissão no preto, na proporção certa. Nome, volume, mudo e sair aparecem ao mexer o mouse e somem junto com o cursor depois de 2,5 s parado. **Esc**, **F**, duplo clique ou o botão saem e tudo volta como estava. No celular, a tela deitada gira junto. Também: janela flutuante (picture-in-picture) e modo destaque.
 - Números reais de cada transmissão: resolução, quadros por segundo, taxa e latência; quem transmite vê quantos estão assistindo e se o limite é a rede ou o processador.
 - Indicador de conexão e reconexão automática.
 - **#chat permanente**: texto (links clicáveis), imagem, GIF e vídeo com prévia; mensagens seguidas da mesma pessoa agrupadas; imagem amplia no clique; vídeo toca no próprio chat; "Carregar mensagens antigas" para trás das últimas 150.

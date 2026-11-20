@@ -807,12 +807,8 @@
     el.addEventListener('click', (ev) => { // modo foco na tela: clicar na miniatura troca a tela grande
       if (focusOn() === 'screen' && !el.classList.contains('focused') && !ev.target.closest('button, input')) pickTile(el);
     });
-    q('.tile-video').addEventListener('dblclick', () => q('.js-full').click());
-    q('.js-full').addEventListener('click', () => {
-      if (document.fullscreenElement) document.exitFullscreen();
-      else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
-      else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen(); // iPhone
-    });
+    q('.tile-video').addEventListener('dblclick', (ev) => { if (!ev.target.closest('button, input')) toggleFull(el); });
+    q('.js-full').addEventListener('click', () => toggleFull(el));
     if (document.pictureInPictureEnabled) {
       q('.js-pip').addEventListener('click', () => {
         if (document.pictureInPictureElement === video) document.exitPictureInPicture();
@@ -853,6 +849,45 @@
       },
     };
   }
+
+  // ---------- tela cheia imersiva (S-1564): só a transmissão, como no YouTube; controles e cursor somem parados ----------
+  let fsTimer = 0;
+  function toggleFull(el) {
+    const video = el.querySelector('video');
+    if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+    if (el.requestFullscreen) {
+      el.requestFullscreen({ navigationUI: 'hide' }).then(() => { // celular: tela deitada gira junto (onde o navegador deixa)
+        if (video.videoWidth > video.videoHeight && screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+      }).catch(() => {});
+    } else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen(); // iPhone: tela cheia nativa do vídeo
+  }
+  function fsWake() {
+    const t = document.fullscreenElement;
+    if (!t || !t.classList.contains('tile')) return;
+    t.classList.remove('fs-idle');
+    clearTimeout(fsTimer);
+    fsTimer = setTimeout(() => { if (t.querySelector('.tile-bar:hover')) fsWake(); else t.classList.add('fs-idle'); }, 2500);
+  }
+  document.addEventListener('fullscreenchange', () => {
+    const t = document.fullscreenElement;
+    for (const x of document.querySelectorAll('.tile')) {
+      const on = x === t;
+      x.classList.toggle('is-full', on);
+      if (!on) x.classList.remove('fs-idle');
+      const b = x.querySelector('.js-full');
+      setIcon(b.querySelector('use'), on ? 'full-exit' : 'full');
+      b.setAttribute('aria-label', on ? 'Sair da tela cheia (Esc)' : `Tela cheia: ${x.querySelector('.tile-name').textContent}`);
+      b.title = b.getAttribute('aria-label');
+    }
+    clearTimeout(fsTimer);
+    if (t) fsWake();
+    else if (screen.orientation && screen.orientation.unlock) try { screen.orientation.unlock(); } catch { /* sem trava */ }
+    if (DESK) DESK.core.invoke('fullscreen', { on: !!t }).catch(() => {}); // app: a janela inteira em tela cheia (cobre a barra do Windows)
+  });
+  for (const t of ['pointermove', 'pointerdown', 'keydown', 'wheel']) document.addEventListener(t, fsWake, { passive: true, capture: true });
+  document.addEventListener('keydown', (ev) => { // Esc sai mesmo onde o navegador/WebView não tira sozinho
+    if (ev.key === 'Escape' && document.fullscreenElement && document.fullscreenElement.classList.contains('tile')) document.exitFullscreen().catch(() => {});
+  });
 
   function layout() {
     const stage = $('stage');
@@ -2987,7 +3022,8 @@
     if (!inVoice || $('room').dataset.view !== 'voice' || document.querySelector('dialog[open]')) return;
     if ((voice.mode === 'ptt' && voice.key === 'KeyF') || voice.muteKey === 'KeyF') return; // F já é a tecla de falar/mutar
     ev.preventDefault();
-    toggleFocus();
+    const over = document.fullscreenElement || $('stage').querySelector('.tile:hover'); // mouse em cima de uma tela: F = tela cheia dela
+    if (over && over.classList.contains('tile')) toggleFull(over); else toggleFocus();
   });
   document.addEventListener('keydown', (ev) => { // C retrai/mostra só o chat da direita (no canal de voz, tela larga)
     if (ev.code !== 'KeyC' || ev.repeat || ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey || pickingKey || typing(ev.target)) return;

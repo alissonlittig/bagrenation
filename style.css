@@ -409,6 +409,16 @@ button { -webkit-tap-highlight-color: transparent; }
 .tile-stats { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ok); font-size: 20px; line-height: 1; font-variant-numeric: tabular-nums; text-align: center; text-transform: uppercase; }
 .tile-actions { display: flex; margin-left: auto; }
 :fullscreen.tile { border: 0; }
+/* Tela cheia imersiva (S-1564): só a transmissão no preto; nome em cima e volume/sair embaixo, em degradê, somem com o cursor após 2,5 s parado */
+.tile.is-full { border: 0; box-shadow: none; background: #000; }
+.tile.is-full .tile-top, .tile.is-full .tile-bar { transition: opacity .25s ease; }
+.tile.is-full .tile-top { padding: 18px 22px 40px; background: linear-gradient(#000b, #0000); }
+.tile.is-full .tile-bar { display: flex !important; opacity: 1; gap: 8px; padding: 40px 18px 14px; background: linear-gradient(#0000, #000c); border-top: 0; }
+.tile.is-full .tile-stats, .tile.is-full .js-unwatch, .tile.is-full .js-focus, .tile.is-full .js-pip, .tile.is-full .js-preview, .tile.is-full .pill-live { display: none; }
+.tile.is-full .vol input { width: 140px; }
+.tile.is-full.fs-idle .tile-top, .tile.is-full.fs-idle .tile-bar { opacity: 0; pointer-events: none; }
+.tile.is-full.fs-idle, .tile.is-full.fs-idle * { cursor: none; }
+@media (prefers-reduced-motion: reduce) { .tile.is-full .tile-top, .tile.is-full .tile-bar { transition: none; } }
 
 input[type="range"] { -webkit-appearance: none; appearance: none; width: 96px; height: 28px; margin: 0; background: transparent; cursor: pointer; }
 input[type="range"]::-webkit-slider-runnable-track { height: 6px; background: linear-gradient(to right, var(--cyan) var(--fill, 100%), #ffffff40 var(--fill, 100%)); }

@@ -221,6 +221,15 @@ fn autostart(app: AppHandle, on: Option<bool>) -> Result<bool, String> {
     a.is_enabled().map_err(|e| e.to_string())
 }
 
+// Tela cheia de uma transmissão (S-1564): o WebView2 só enche a área da página; aqui a janela vira tela cheia
+// de verdade (sem borda e por cima da barra do Windows) e volta ao tamanho de antes ao sair.
+#[tauri::command]
+fn fullscreen(app: AppHandle, on: bool) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_fullscreen(on);
+    }
+}
+
 #[tauri::command]
 fn quit_now(app: AppHandle) {
     app.exit(0);
@@ -358,7 +367,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![set_keys, tray_state, notify, autostart, quit_now, is_visible, idle_secs, sysaudio::sys_audio_start, sysaudio::sys_audio_stop])
+        .invoke_handler(tauri::generate_handler![set_keys, fullscreen, tray_state, notify, autostart, quit_now, is_visible, idle_secs, sysaudio::sys_audio_start, sysaudio::sys_audio_stop])
         .setup(|app| {
             build_tray(app)?;
             hook_thread(app.handle().clone());
