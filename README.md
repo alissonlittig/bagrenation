@@ -145,6 +145,7 @@ python tests/test_canais.py                                # canais, volume por 
 python tests/test_eco.py <bagrenation.exe de teste>        # tela inteira no app sem a voz do BAGRENATION (análise de frequência)
 python tests/test_musica.py [url] [prints]                 # Bagre DJ: 3 navegadores (1 celular), sincronia < 2 s, fila, comandos, playlist
 python tests/test_eco_musica.py <bagrenation.exe de teste> # música toca no app e não vaza na tela nem na voz
+node tests/test_dj_busca.mjs                               # busca/playlist da YouTube Data API simulada (sem chave, sem rede) e regras da fila
 ONLY=voz python tests/test_e2e.py                           # só o cenário de voz
 ```
 
