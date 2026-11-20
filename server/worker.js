@@ -410,6 +410,8 @@ export class Server {
       if (r.err) { if (tc) this.djSay(tc, `${by}: ${r.err}`); else no(r.err); return; }
       items = r.list; label = r.label || '';
     } else if (d.op === 'add') items = Array.isArray(d.items) ? d.items.slice(0, 100) : [];
+    let alt = null;
+    if (d.op === 'bad' && (d.code === 101 || d.code === 150)) alt = await this.altOf(d.ch, d.k); // S-1580: outra versão que toque no site
     const s = this.mget(d.ch); // lido depois do await: nada se perde entre dois pedidos ao mesmo tempo
     const t = Date.now();
     const cur = s.q[s.i];
@@ -473,11 +475,29 @@ export class Server {
       Server.advance(s, t, false);
     } else if (d.op === 'bad') { // não toca fora do YouTube (dono bloqueou) ou foi removido: pula e avisa no chat
       if (!cur || cur.k !== d.k || ![2, 100, 101, 150].includes(d.code)) return;
+      const nx = alt && alt.k === cur.k && this.item(alt.v, cur.by);
+      if (nx) { // troca pela outra versão no mesmo lugar (chave nova: avisos atrasados da versão bloqueada não valem mais)
+        nx.x = alt.tried;
+        s.q[s.i] = nx;
+        Server.start(s, s.i, t);
+        this.mset(d.ch, s);
+        return;
+      }
       s.q.splice(s.i, 1);
       if (s.i < s.q.length) Server.start(s, s.i, t); else Server.idle(s);
       this.djSay(s.tc || 'chat', d.code === 100 || d.code === 2 ? `${cur.t} não existe mais no YouTube. Pulei para a próxima.` : `${cur.t} não pode tocar fora do YouTube (o dono bloqueou). Pulei para a próxima.`);
     } else return;
     this.mset(d.ch, s);
+  }
+
+  async altOf(ch, k) { // música atual não toca embutida (o dono bloqueou fora do YouTube): acha outra versão dela, até 3 tentativas
+    const cur = ((s) => s.q[s.i])(this.mget(ch));
+    const tried = cur && cur.k === k ? (Array.isArray(cur.x) ? cur.x : [cur.id]) : [];
+    if (!tried.length || tried.length > 3) return null;
+    try {
+      const v = (await this.search(cur.t)).find((x) => !tried.includes(x.id));
+      return v ? { k, v, tried: [...tried, v.id] } : null;
+    } catch { return null; }
   }
 
   // YouTube: busca (Data API, se tiver chave) e links (vídeo sem chave, pelo oEmbed; playlist só com chave)

@@ -115,6 +115,17 @@ assert.ok(asked.includes('a x') && asked.includes('c w'));
 assert.match((await nokey.resolve('https://open.spotify.com/album/0000000000000000000000')).err, /não existe/);
 assert.match((await nokey.resolve('https://spotify.link/abc')).err, /open\.spotify\.com/);
 
+// S-1580: versão bloqueada fora do YouTube -> outra versão da mesma música (até 3 tentativas, sem repetir id)
+{
+  const st = { q: [{ k: 'k1', id: 'aaaaaaaaaaa', t: 'linkin park', d: 100 }], i: 0 };
+  const me2 = Object.assign(Object.create(Server.prototype), { env: {}, ytc: new Map(), mget: () => st });
+  const alt = await me2.altOf('voz', 'k1');
+  assert.equal(alt.v.id, 'ddddddddddd', 'pula o id que já falhou'); assert.deepEqual(alt.tried, ['aaaaaaaaaaa', 'ddddddddddd']);
+  assert.equal(await me2.altOf('voz', 'outra'), null, 'aviso de outra música não troca nada');
+  st.q[0].x = ['a', 'b', 'c', 'd'];
+  assert.equal(await me2.altOf('voz', 'k1'), null, 'depois de 3 trocas, pula');
+}
+
 // fila: avançar, repetir uma, repetir a fila, guardar só 30 tocadas
 const s = { q: Array.from({ length: 40 }, (_, i) => ({ k: `k${i}`, id: 'aaaaaaaaaaa', t: `m${i}`, d: 100 })), i: 0, at: 0, pos: 0, paused: false, loop: 'off' };
 Server.advance(s, 1000, false);

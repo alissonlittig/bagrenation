@@ -1,5 +1,7 @@
-"""S-1566: a música do Bagre DJ toca no app de verdade (player do site dentro do app, sem erro 153) e NÃO vaza para a
-tela compartilhada nem para a voz.
+"""S-1566/S-1580: a música do Bagre DJ toca no app de verdade e NÃO vaza para a tela compartilhada nem para a voz.
+S-1580: no app é só áudio (yt-dlp baixado no 1º uso, <audio> escondido): o Felipe digita o NOME no painel e dá Enter, a
+música toca sem nenhum iframe do YouTube no app (tempo até o som medido); depois a Cris (site, celular) entra no meio e
+cai no mesmo trecho, link do YouTube e do Spotify (faixa e playlist) entram na fila, pular e pausar valem para os 3.
 
 Cena: o app (Felipe, desktop oculto do Windows) e um Chromium (Martins) no mesmo canal de voz de um servidor de teste.
 Felipe põe música (/play) e compartilha a TELA INTEIRA; um processo à parte toca 1500 Hz ("som do PC").
@@ -95,10 +97,19 @@ def main():
             E.wait(b, """async () => { const s = await BAGRENATION.voiceStats(); return s.length === 1 && s[0].packetsPerSecond > 20; }""", 45000, 1000)
             print("ok: app (Felipe) e site (Martins) no canal de voz", flush=True)
 
-            # 1. música no app: /play no chat do app, player do site dentro do app
-            a.fill("#chatInput", f"/play {BUNNY}")
-            a.press("#chatInput", "Enter")
-            E.wait(a, "(() => { const d = BAGRENATION.dj(); return d.pid === 'aqz-KE-bpKQ' && d.st === 1 && d.at > 2; })()", 60000, 500)
+            # 1. música no app: o NOME no painel + Enter, só áudio (nenhum iframe do YouTube no app)
+            a.click("#djBtn")
+            a.fill("#djQ", "big buck bunny blender")
+            t_enter = time.time()
+            a.press("#djQ", "Enter")
+            E.wait(a, "(() => { const d = BAGRENATION.dj(); return d.id && d.pid === d.id && d.st === 1; })()", 120000, 200)  # 1º uso inclui baixar o yt-dlp
+            t_som = time.time() - t_enter
+            d = a.evaluate("() => BAGRENATION.dj()")
+            iframes = a.evaluate("() => [...document.querySelectorAll('iframe')].map((f) => f.src)")
+            assert d["aud"] and not d["frame"] and not any("youtube" in f or "player.html" in f for f in iframes), (d, iframes)
+            print(f"   app: nome + Enter -> {d['title']} ({d['id']}) toca só em áudio; som em {t_som:.1f} s do Enter (áudio {d['soundMs']} ms depois da ordem); iframes no app: {iframes}", flush=True)
+            a.click("#djClose")
+            E.wait(a, "(() => { const d = BAGRENATION.dj(); return d.st === 1 && d.at > 2; })()", 60000, 500)
             a.evaluate("() => BAGRENATION.musSend('seek', { pos: 95 })")  # trecho com música e efeitos fortes
             E.wait(a, "(() => { const d = BAGRENATION.dj(); return d.st === 1 && d.at > 96; })()", 30000, 500)
             E.wait(b, "(() => { const d = BAGRENATION.dj(); return d.st === 1 && d.at > 96; })()", 30000, 500)
@@ -115,7 +126,7 @@ def main():
             E.wait(a, "BAGRENATION.dj().st === 2", 15000, 300)
             time.sleep(1)
             peak_off = session_peak(tree)
-            print(f"   app: player do YouTube tocando ({t0:.1f} s -> {t1:.1f} s), igual ao Martins (diferença {dif:.2f} s); pico da sessão de áudio do app com música {peak_on:.3f}, pausada {peak_off:.3f}", flush=True)
+            print(f"   app: música tocando ({t0:.1f} s -> {t1:.1f} s), igual ao Martins (diferença {dif:.2f} s); pico da sessão de áudio do app com música {peak_on:.3f}, pausada {peak_off:.3f}", flush=True)
             assert peak_on > 0.01 and peak_on > peak_off * 3, f"não deu para ver a música saindo do app (pico {peak_on:.3f} / {peak_off:.3f})"
             a.evaluate("() => BAGRENATION.musSend('resume')")
             E.wait(a, "BAGRENATION.dj().st === 1", 15000, 300)
@@ -151,6 +162,56 @@ def main():
             assert voz_on - voz_off < 4, f"VAZOU a música na voz: {voz_on:.1f} dB tocando contra {voz_off:.1f} dB pausada"
             print(f"ECO MUSICA OK: a música toca no app (sem erro 153) e não entra na tela nem na voz (diferença {tela_on - tela_off:+.1f} dB / {voz_on - voz_off:+.1f} dB); erros de console: {errors}", flush=True)
             a.click("#shareBtn")
+
+            # 3. Cris (site, celular) entra no meio; link do YouTube e do Spotify; pular e pausar para os 3
+            a.evaluate("() => BAGRENATION.musSend('resume')")
+            E.wait(a, "BAGRENATION.dj().st === 1", 15000, 300)
+            c = br.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True).new_page()
+            c.on("console", lambda m: m.type == "error" and not any(x in (m.location or {}).get("url", "") for x in ("youtube", "google", "ytimg", "doubleclick", "gstatic")) and errors.append(f"[cris] {m.text}"))
+            c.goto(f"{base}?servidor={E.SRV}")
+            c.fill("#homeName", "Cris")
+            c.click("#nameForm [type=submit]")
+            E.connected(c)
+            if not c.locator("#chanVoice").is_visible():  # celular: os canais ficam na gaveta
+                c.click("#panelBtn")
+            c.click("#chanVoice")
+            E.wait(c, "(() => { const d = BAGRENATION.dj(); return d.id && d.pid === d.id && d.st === 1; })()", 45000, 300)
+            time.sleep(3)
+            pos = lambda pg: pg.evaluate("() => { const d = BAGRENATION.dj(); return d.at + (Date.now() - d.now) / 1000; }")
+            ps = [pos(x) for x in (a, b, c)]
+            print(f"   Cris (site, celular) entra no meio em {ps[2]:.1f} s; Felipe(app) {ps[0]:.1f} · Martins {ps[1]:.1f} · Cris {ps[2]:.1f} (diferença {max(ps) - min(ps):.2f} s)", flush=True)
+            assert max(ps) - min(ps) < 2 and ps[2] > 20, ps
+            say = lambda pg, t: (pg.fill("#chatInput", t), pg.press("#chatInput", "Enter"))
+            say(b, "/play https://youtu.be/jNQXAC9IVRw")
+            say(b, "/play https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT")
+            E.wait(a, "BAGRENATION.dj().q.length >= 3", 30000, 300)
+            say(b, "/play https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M")
+            E.wait(a, "BAGRENATION.dj().q.length >= 13", 45000, 500)
+            q = a.evaluate("() => BAGRENATION.dj().q")
+            assert q == b.evaluate("() => BAGRENATION.dj().q") == c.evaluate("() => BAGRENATION.dj().q")
+            print(f"   fila igual para os 3 depois de link do YouTube, faixa e playlist do Spotify: {len(q)} itens ({q[1]} · {q[2]} · ...)", flush=True)
+            a.evaluate("() => BAGRENATION.musSend('skip')")
+            t_skip = time.time()
+            for pg in (a, b, c):
+                E.wait(pg, "(() => { const d = BAGRENATION.dj(); return d.id === 'jNQXAC9IVRw' && d.pid === d.id && d.st === 1; })()", 60000, 200)
+            print(f"   pular: os 3 tocam o link do YouTube (app em áudio {a.evaluate('() => BAGRENATION.dj().aud')}, som do app {a.evaluate('() => BAGRENATION.dj().soundMs')} ms; 3 juntos {time.time() - t_skip:.1f} s depois)", flush=True)
+            E.wait(a, "BAGRENATION.dj().id !== 'jNQXAC9IVRw'", 40000, 500)  # 19 s: acaba sozinho e vai para o Spotify
+            for pg in (a, b, c):
+                E.wait(pg, "(() => { const d = BAGRENATION.dj(); return d.id && d.pid === d.id && d.st === 1; })()", 60000, 300)
+            d = a.evaluate("() => BAGRENATION.dj()")
+            print(f"   fim do vídeo: a fila anda para a faixa do Spotify ({d['title']}), app em áudio {d['aud']}, som do app {d['soundMs']} ms (já buscado antes)", flush=True)
+            c.evaluate("() => BAGRENATION.musSend('pause')")
+            for pg in (a, b, c):
+                E.wait(pg, "(() => { const d = BAGRENATION.dj(); return d.paused && d.st === 2; })()", 15000, 300)
+            print("   Cris pausa: para nos 3 (app incluído)", flush=True)
+            if E.SHOTS:
+                c.evaluate("() => BAGRENATION.musSend('resume')")
+                a.click("#djBtn")
+                time.sleep(3)
+                a.screenshot(path=str(E.SHOTS / "app_dj_audio_painel.png"))
+                c.screenshot(path=str(E.SHOTS / "app_dj_cris_celular.png"))
+            assert not errors, errors
+            print("APP DJ OK: nome -> toca só áudio no app, 3 clientes juntos, Cris no meio, YouTube + Spotify, pular, pausar, sem erro de console", flush=True)
             a.evaluate("() => BAGRENATION.musSend('stop')")
             time.sleep(1)
             br.close()
