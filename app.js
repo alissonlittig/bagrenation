@@ -100,6 +100,21 @@
     keyDown: false, loudAt: 0, talking: false, db: -100, testing: false,
   };
 
+  // Bagre DJ (S-1566): estado da música de cada canal de voz (vem do servidor do chat) e o player deste aparelho
+  const PLAYER = `${DESK ? 'https://alissonlittig.github.io/bagrenation/' : ''}player.html?v=1566`;
+  const PLAYER_ORIGIN = new URL(PLAYER, location.href).origin;
+  const djVol0 = Number(store('djvol'));
+  const dj = {
+    st: new Map(),            // canal de voz -> { q, i, at, pos, paused, loop, v }
+    off: null, rtt: Infinity, // relógio do servidor menos o meu (ms)
+    frame: null, ready: false, tk: null, hello: 0, // iframe do player e o último aviso dele
+    loaded: '', loadAt: 0, fixAt: 0, endSent: '', durSent: '', badSent: '', sentVol: '', blocked: false, err153: false,
+    vol: Number.isFinite(djVol0) && store('djvol') !== null ? Math.min(100, Math.max(0, djVol0)) : 70,
+    mute: store('djmute') === '1',
+    pref: 'auto',             // painel: 'auto' (aparece quando toca) · 'open' · 'closed' (só nesta sessão)
+    n: 0, res: null, auto: null, qKey: '', eph: 0, fixes: 0,
+  };
+
   // ---------- utilidades ----------
   // A sinalização (signal.js) só é carregada quando vai ser usada (Press Start ou link de sala), não junto com a página.
   let peerLib = null;
@@ -139,6 +154,7 @@
   const setIcon = (use, name) => use.setAttribute('href', `#i-${name}`);
   const narrow = () => window.matchMedia('(max-width: 960px)').matches;
   function paintAvatar(el, name, av) { // sem avatar escolhido: inicial com cor fixa por nome
+    if (av === 'dj') av = 'bagre-dj'; // o Bagre DJ (bot de música)
     let h = 0;
     for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 360;
     el.style.setProperty('--h', String(h));
@@ -1051,6 +1067,10 @@
         tip: linked && on ? e.vinfo : '',
       });
     }
+    for (const [ch, s] of dj.st) { // o Bagre DJ aparece no canal enquanto tem música, como um bot do Discord
+      const c = djCur(s);
+      if (c && chanOf(ch)) all.push({ id: `dj-${ch}`, name: 'Bagre DJ', av: 'dj', bot: true, invoice: true, vch: ch, sub: `${s.paused ? 'pausado' : 'tocando'}: ${c.t}`, tip: c.t, sharing: false, stopped: false, talking: false, muted: false, deaf: false, off: false });
+    }
     // cada canal de voz tem a sua lista embaixo dele; o palco mostra o canal de voz aberto (viewVch)
     const lists = new Map([...document.querySelectorAll('ul.people-voice[data-ch]')].map((ul) => [ul.dataset.ch, ul]));
     const where = new Map(all.filter((p) => p.invoice).map((p) => [p.id, p.vch]));
@@ -1086,7 +1106,7 @@
         grid.append(card);
       }
       const label = p.you ? `${p.name} (você)` : p.name;
-      const mine = p.you || withMe(p.e);
+      const mine = p.you || p.bot || withMe(p.e);
       const els = [];
       if (li) {
         li.querySelector('.nm').textContent = label;
@@ -1115,7 +1135,8 @@
         els.push(card);
       }
       for (const el of els) {
-        el.querySelector('.avatar').dataset.st = p.you ? myStatus() : stOf(p.e.uid) || 'on';
+        el.querySelector('.avatar').dataset.st = p.you ? myStatus() : p.bot ? 'on' : stOf(p.e.uid) || 'on';
+        el.classList.toggle('is-bot', !!p.bot);
         paintAvatar(el.querySelector('.avatar'), p.name, p.av);
         el.querySelector('.avatar').classList.toggle('speaking', p.talking);
         el.classList.toggle('is-live', p.sharing);
@@ -1126,9 +1147,10 @@
       }
     }
     renderMembers();
+    renderDj();
     for (const el of document.querySelectorAll('.chan[data-ch] .chan-count')) { const n = counts.get(el.closest('.chan').dataset.ch); el.textContent = n ? String(n) : ''; }
     $('emptyTitle').textContent = chanLabel(viewVch);
-    const others = all.filter((p) => !p.you && p.invoice && p.vch === viewVch);
+    const others = all.filter((p) => !p.you && !p.bot && p.invoice && p.vch === viewVch);
     $('emptySay').textContent = inVoice ? (others.length ? `Você e mais ${others.length} no canal` : '')
       : others.length ? `${others.length} ${others.length === 1 ? 'pessoa' : 'pessoas'} no canal` : 'Ninguém no canal ainda';
     myFace();
@@ -1144,7 +1166,7 @@
     $('micFixBtn').hidden = !!voice.track || !voice.err;
     for (const id of ['voiceBar', 'dockWrap', 'vconn']) $(id).hidden = !inVoice;
     if (inVoice) $('vconnGo').textContent = chanLabel(myVch);
-    $('focusFaces').replaceChildren(...all.filter((p) => p.invoice && inVoice && p.vch === myVch).map((p) => { // faixa de rostos do modo foco na tela
+    $('focusFaces').replaceChildren(...all.filter((p) => p.invoice && !p.bot && inVoice && p.vch === myVch).map((p) => { // faixa de rostos do modo foco na tela
       const li = Object.assign(document.createElement('li'), { title: p.you ? `${p.name} (você)` : p.name });
       li.dataset.id = p.id;
       const av = Object.assign(document.createElement('span'), { className: 'avatar' });
@@ -1283,6 +1305,7 @@
     }
     $('roomTitle').textContent = v === 'chat' ? chanLabel(textCh) : chanLabel(viewVch);
     setIcon($('topIcon'), v === 'chat' ? 'hash' : 'vol');
+    renderDj();
   }
   const chatSeen = () => document.visibilityState === 'visible' && !document.documentElement.classList.contains('app-hidden')
     && ($('room').dataset.view === 'chat' || (wideChat() && !focusOn() && !chatOff));
@@ -1308,6 +1331,7 @@
       ws.send(JSON.stringify({ t: 'v' })); // entendo canais: o servidor manda também as mensagens dos outros canais
       if (textCh !== 'chat') { chat.loading = true; ws.send(JSON.stringify({ t: 'hist', ch: textCh })); }
       chatState(); sendMe();
+      djClock(ws);
     });
     ws.addEventListener('message', (ev) => {
       let d;
@@ -1390,6 +1414,8 @@
       onChans(d.list);
     } else if (d.t === 'chanok' && typeof d.id === 'string') {
       if (!d.op && chanOf(d.id)) { if (d.kind === 'text') { openText(d.id); $('chatInput').focus(); } else joinVoice(d.id); }
+    } else if (d.t === 'mus' || d.t === 'clk' || d.t === 'ytres' || d.t === 'musok') {
+      onDj(d);
     } else if (d.t === 'err' && typeof d.text === 'string') {
       toast(d.text.slice(0, 200), 6000);
     } else if (d.t === 'typing' && /^[a-f0-9]{16}$/.test(d.uid || '') && d.uid !== myUid && (d.ch || 'chat') === textCh) {
@@ -1643,7 +1669,9 @@
     const nm = Object.assign(document.createElement('b'), { className: 'msg-name', textContent: who.name });
     const t = Object.assign(document.createElement('time'), { textContent: when(m.ts), dateTime: new Date(m.ts).toISOString() });
     t.title = new Date(m.ts).toLocaleString('pt-BR');
-    head.append(nm, t);
+    head.append(nm);
+    if (m.uid === 'dj') { li.classList.add('is-bot'); head.append(Object.assign(document.createElement('span'), { className: 'bot-tag', textContent: 'BOT' })); }
+    head.append(t);
     body.append(head);
     const edited = () => {
       const e = Object.assign(document.createElement('span'), { className: 'msg-edited', textContent: '(editada)' });
@@ -1949,6 +1977,7 @@
     const text = clean($('chatInput').value, 2000);
     if (sending || (!text && !chat.pending.length)) return;
     if (!chatOpen()) { toast('O chat está reconectando. Tente de novo em instantes.'); return; }
+    if (!chat.pending.length && djCommand(text)) { $('chatInput').value = ''; return; } // /play, /skip... (Bagre DJ)
     const files = chat.pending.splice(0);
     let reply = replyTo;
     cancelReply();
@@ -2572,8 +2601,397 @@
       const s = e.out.peerConnection.getSenders().find((x) => x.track && x.track.kind === 'video');
       return { name: e.name, enc: s ? s.getParameters().encodings[0] : null, settings: local ? local.stream.getVideoTracks()[0].getSettings() : null };
     }),
+    // S-1566: Bagre DJ — estado do canal em que estou e o que o player deste aparelho está tocando
+    dj: () => {
+      const s = dj.st.get(myVch);
+      const cur = djCur(s);
+      const tk = dj.tk;
+      const at = tk ? (tk.st === 1 ? tk.t + (Date.now() - tk.ts) / 1000 : tk.t) : null;
+      return { id: cur && cur.id, k: cur && cur.k, title: cur && cur.t, paused: s ? s.paused : null, target: s && cur ? djPos(s) : null,
+        st: tk ? tk.st : null, at, now: Date.now(), pid: tk ? tk.id : '', pv: tk ? tk.v : null, pm: tk ? tk.m : null, ready: dj.ready, frame: !!dj.frame, blocked: dj.blocked,
+        q: s ? s.q.map((x) => x.t) : [], i: s ? s.i : -1, loop: s ? s.loop : 'off', off: dj.off, rtt: dj.rtt, vol: dj.vol, mute: dj.mute || voice.deaf, fixes: dj.fixes };
+    },
+    musSend: (op, extra) => musSend(op, extra || {}),
     band: (limited, avail) => { if (local) checkBand(limited, avail, target(local.stream.getVideoTracks()[0])); return { n: band.n, warned: band.warned }; },
   };
+
+  // ---------- Bagre DJ (S-1566): música do YouTube sincronizada no canal de voz, como um bot de música do Discord ----------
+  // O estado de cada canal (fila, vídeo, quando começou, pausa) fica no servidor do chat e chega a todos. Cada pessoa no
+  // canal toca o player oficial do YouTube no próprio aparelho (player.html do site num iframe: o app não manda o Referer
+  // que o YouTube exige) e o tempo é acertado pelo relógio do servidor: desvio maior que 1 s volta para o ponto certo.
+  // O som do player é só deste aparelho: não passa pelo microfone e a captura de tela deixa de fora o som do próprio
+  // BAGRENATION (restrictOwnAudio no site; process loopback sem o app no PC).
+  const djCur = (s) => (s && s.i >= 0 && s.i < s.q.length ? s.q[s.i] : null);
+  const srvNow = () => Date.now() + (dj.off || 0);
+  const djPos = (s) => (s.paused ? s.pos : Math.max(0, (srvNow() - s.at) / 1000));
+  const mmss = (t) => { t = Math.max(0, Math.floor(t || 0)); const h = Math.floor(t / 3600); const m = Math.floor((t % 3600) / 60); return `${h ? `${h}:${two(m)}` : m}:${two(t % 60)}`; };
+  const thumb = (id, hq) => `https://i.ytimg.com/vi/${id}/${hq ? 'hqdefault' : 'mqdefault'}.jpg`;
+  const djHere = () => inVoice && myVch === viewVch;
+  function djClean(s) { // estado vindo do servidor: só o que a tela usa, com tipos conferidos
+    if (!s || typeof s !== 'object' || !Array.isArray(s.q)) return null;
+    const q = s.q.filter((x) => x && /^[A-Za-z0-9_-]{11}$/.test(x.id) && typeof x.k === 'string').map((x) => ({
+      k: x.k.slice(0, 16), id: x.id, t: String(x.t || 'Vídeo do YouTube').slice(0, 140), a: String(x.a || '').slice(0, 60), d: Number(x.d) > 0 ? Number(x.d) : 0, by: String(x.by || '').slice(0, 24),
+    }));
+    return { q, i: Number.isInteger(s.i) ? s.i : -1, at: Number(s.at) || 0, pos: Number(s.pos) || 0, paused: s.paused === true, loop: ['off', 'all', 'one'].includes(s.loop) ? s.loop : 'off', v: Number(s.v) || 0 };
+  }
+  function djClock(ws) { // 5 medidas do relógio do servidor; vale a de menor ida e volta
+    dj.rtt = Infinity;
+    for (let n = 0; n < 5; n++) setTimeout(() => { if (chat.ws === ws && chatOpen()) ws.send(JSON.stringify({ t: 'clk', c: Date.now() })); }, n * 350);
+  }
+  setInterval(() => { if (chatOpen()) djClock(chat.ws); }, 300000);
+  function onDj(d) {
+    if (d.t === 'clk') {
+      const now = Date.now();
+      const rtt = now - Number(d.c);
+      if (Number.isFinite(rtt) && rtt >= 0 && rtt < dj.rtt && Number.isFinite(d.s)) { dj.rtt = rtt; dj.off = d.s - (Number(d.c) + rtt / 2); }
+    } else if (d.t === 'mus' && typeof d.ch === 'string') {
+      const s = djClean(d.s);
+      if (!s) return;
+      const old = dj.st.get(d.ch);
+      if (old && old.v > s.v && s.v) return; // chegou fora de ordem
+      if (dj.off === null && Number.isFinite(d.now)) dj.off = d.now - Date.now(); // antes da primeira medida
+      dj.st.set(d.ch, s);
+      renderPeople();
+      djSync();
+    } else if (d.t === 'ytres' && d.n === dj.n) {
+      const n = d.n;
+      if (typeof d.needIds === 'string' && d.needIds) { // playlist sem a Data API no servidor: o player lista os vídeos, o servidor dá os títulos
+        djProbe(d.needIds).then((ids) => {
+          if (n !== dj.n) return;
+          if (ids.length && chatOpen()) chat.ws.send(JSON.stringify({ t: 'yt', ids, n }));
+          else onDj({ t: 'ytres', n, list: [], err: 'Não consegui ler essa playlist (privada, vazia ou mix automático).' });
+        });
+        return;
+      }
+      dj.res = { list: Array.isArray(d.list) ? d.list.filter((x) => x && /^[A-Za-z0-9_-]{11}$/.test(x.id)).slice(0, 100) : [], err: String(d.err || ''), label: String(d.label || ''), q: dj.res ? dj.res.q : '' };
+      $('djGo').disabled = false;
+      if (dj.auto && dj.auto.n === n) { // /play <link de playlist>: tudo direto para a fila
+        const a = dj.auto;
+        dj.auto = null;
+        if (dj.res.list.length) musSend('add', { items: dj.res.list, tc: a.tc, now: a.now });
+        else djEphemeral(dj.res.err || 'Nada encontrado nessa playlist.');
+        dj.res = null;
+      }
+      renderDjRes();
+    } else if (d.t === 'musok' && typeof d.title === 'string') {
+      toast(d.n > 1 ? `${d.n} músicas na fila` : d.now ? `Tocando agora: ${d.title}` : `Na fila: ${d.title}`);
+    }
+  }
+  function musSend(op, extra = {}) {
+    if (!inVoice) { toast('Entre num canal de voz para usar o Bagre DJ.'); return false; }
+    if (!chatOpen()) { toast('O chat está reconectando. Tente de novo em instantes.'); return false; }
+    chat.ws.send(JSON.stringify({ t: 'mus', ch: myVch, op, ...extra }));
+    return true;
+  }
+
+  // player deste aparelho (só existe enquanto estou num canal de voz com música)
+  function djCmd(msg) { if (dj.frame && dj.frame.contentWindow) dj.frame.contentWindow.postMessage({ bp: 1, ...msg }, PLAYER_ORIGIN); }
+  function djFrame() {
+    const f = dj.frame = document.createElement('iframe');
+    f.src = PLAYER;
+    f.title = 'Player do YouTube do Bagre DJ';
+    f.allow = 'autoplay; encrypted-media; picture-in-picture';
+    f.referrerPolicy = 'strict-origin-when-cross-origin';
+    dj.ready = false; dj.tk = null; dj.loaded = ''; dj.sentVol = '';
+    clearInterval(dj.hello);
+    dj.hello = setInterval(() => { if (dj.frame !== f || dj.ready) clearInterval(dj.hello); else djCmd({ op: 'hello' }); }, 400);
+    $('djFrame').replaceChildren(f);
+  }
+  function djKill() {
+    clearInterval(dj.hello);
+    if (dj.frame) dj.frame.remove();
+    dj.frame = null; dj.ready = false; dj.tk = null; dj.loaded = ''; dj.blocked = false;
+  }
+  window.addEventListener('message', (ev) => {
+    if (!dj.frame || ev.source !== dj.frame.contentWindow || ev.origin !== PLAYER_ORIGIN) return;
+    const d = ev.data;
+    if (!d || d.bp !== 1) return;
+    if (d.ev === 'ready') { dj.ready = true; dj.loaded = ''; dj.sentVol = ''; djSync(); }
+    else if (d.ev === 'tick') { dj.tk = { st: Number(d.st), t: Number(d.t) || 0, d: Number(d.d) || 0, id: String(d.id || ''), ts: Date.now(), v: Number(d.v), m: d.m === true }; }
+    else if (d.ev === 'error') {
+      const s = dj.st.get(myVch);
+      const cur = djCur(s);
+      const code = Number(d.code);
+      if (!cur || d.id !== cur.id) return;
+      if ([2, 100, 101, 150].includes(code)) {
+        if (dj.badSent === cur.k) return;
+        dj.badSent = cur.k;
+        musSend('bad', { k: cur.k, code });
+      } else if (code === 153 && !dj.err153) { dj.err153 = true; toast('O YouTube recusou o player aqui (erro 153). Avise no #chat.', 8000); }
+    }
+  });
+  function djVolume() {
+    const m = dj.mute || voice.deaf; // som da sala desligado também cala a música (como no Discord)
+    const key = `${dj.vol}|${m}`;
+    if (key === dj.sentVol) return;
+    dj.sentVol = key;
+    djCmd({ op: 'vol', v: dj.vol, m });
+  }
+  function djSync() {
+    if (!inVoice) { if (dj.frame) djKill(); renderDj(); return; }
+    const s = dj.st.get(myVch);
+    const cur = djCur(s);
+    if (!cur) { if (dj.frame && dj.loaded) { djCmd({ op: 'stop' }); dj.loaded = ''; } dj.blocked = false; renderDj(); return; }
+    if (!dj.frame) djFrame();
+    renderDj();
+    if (!dj.ready) return;
+    djVolume();
+    const key = `${cur.k}:${s.at}:${s.paused}`;
+    const target = djPos(s);
+    if (cur.d && !s.paused && target > cur.d + 4 && dj.endSent !== cur.k + s.at) { dj.endSent = cur.k + s.at; musSend('ended', { k: cur.k }); return; } // passou do fim sem ninguém ouvindo
+    if (dj.loaded !== key) { // música nova, pausa, volta ou pulo de posição: manda o player para o ponto certo
+      dj.loaded = key; dj.loadAt = Date.now(); dj.fixAt = Date.now();
+      djCmd({ op: 'load', id: cur.id, at: target, play: !s.paused });
+      return;
+    }
+    const tk = dj.tk;
+    if (!tk || tk.id !== cur.id) return;
+    if (!cur.d && tk.d > 0 && dj.durSent !== cur.k) { dj.durSent = cur.k; musSend('dur', { k: cur.k, d: tk.d }); }
+    if (tk.st === 0) { // acabou aqui: avisa (o servidor só aceita perto do fim e conta um aviso só)
+      if (!s.paused && dj.endSent !== cur.k + s.at) { dj.endSent = cur.k + s.at; musSend('ended', { k: cur.k }); }
+      return;
+    }
+    const est = tk.st === 1 ? tk.t + (Date.now() - tk.ts) / 1000 : tk.t;
+    const late = Date.now() - dj.fixAt;
+    if (s.paused) {
+      if (tk.st === 1 || tk.st === 3) djCmd({ op: 'pause' });
+      else if (Math.abs(est - target) > 1 && late > 1500) { dj.fixAt = Date.now(); djCmd({ op: 'seek', at: target }); }
+      dj.blocked = false;
+    } else {
+      if (tk.st === 2 || tk.st === 5 || tk.st === -1) { if (late > 1000) { dj.fixAt = Date.now(); djCmd({ op: 'play' }); } }
+      else if (tk.st === 1 && Math.abs(est - target) > 1 && late > 2500) { dj.fixAt = Date.now(); dj.fixes++; djCmd({ op: 'seek', at: target + 0.15 }); }
+      dj.blocked = tk.st !== 1 && tk.st !== 3 && Date.now() - dj.loadAt > 5000; // navegador barrou o som sem um clique
+    }
+    $('djTap').hidden = !dj.blocked;
+  }
+  setInterval(() => { if (room) { djSync(); djProgress(); } }, 500);
+
+  // painel do Bagre DJ
+  function renderDj() {
+    const ch = viewVch;
+    const s = dj.st.get(ch);
+    const cur = djCur(s);
+    const here = djHere();
+    const upcoming = s ? s.q.slice(Math.max(0, s.i + 1)) : [];
+    const show = $('room').dataset.view === 'voice' && (dj.pref === 'open' || (dj.pref === 'auto' && (!!cur || upcoming.length > 0)));
+    $('dj').hidden = !show;
+    $('djBtn').setAttribute('aria-expanded', String(show));
+    $('djBtn').classList.toggle('is-on', !!djCur(dj.st.get(myVch)));
+    $('dj').classList.toggle('is-here', here);
+    $('dj').classList.toggle('is-playing', !!cur && !s.paused);
+    paintAvatar(document.querySelector('#dj .dj-av'), 'Bagre DJ', 'dj');
+    if (!show) return;
+    const live = here && !!dj.frame;
+    $('djFrame').hidden = !live || !cur;
+    $('djCover').hidden = live || !cur;
+    if (cur && !live && $('djCover').dataset.id !== cur.id) { $('djCover').dataset.id = cur.id; $('djCover').src = thumb(cur.id, true); }
+    $('djIdle').hidden = !!cur;
+    $('djIdleText').textContent = s && s.q.length && !cur ? 'A fila acabou' : 'Nada tocando';
+    $('djState').textContent = !cur ? 'Bagre DJ' : s.paused ? 'Pausado' : here ? 'Tocando agora' : `Tocando agora em ${chanLabel(ch)}`;
+    $('djTitle').textContent = cur ? cur.t : 'Peça uma música';
+    $('djTitle').title = cur ? cur.t : '';
+    $('djBy').textContent = cur ? [cur.a, cur.by && `pedido por ${cur.by}`].filter(Boolean).join(' · ') : here ? 'Busque aqui do lado ou mande /play <nome ou link> no chat.' : '';
+    setIcon($('djPlayIcon'), cur && s.paused ? 'play' : 'pause');
+    $('djPlay').setAttribute('aria-label', cur && s.paused ? 'Tocar' : 'Pausar');
+    $('djPlay').title = $('djPlay').getAttribute('aria-label');
+    for (const id of ['djPlay', 'djNext', 'djStop', 'djSeek']) $(id).disabled = !here || !cur;
+    $('djPrev').disabled = !here || !s || (!cur && s.i <= 0);
+    $('djShuffle').disabled = !here || upcoming.length < 2;
+    $('djStop').disabled = !here || !s || !s.q.length;
+    $('djLoop').disabled = !here;
+    const loop = s ? s.loop : 'off';
+    const ln = { off: 'Repetir: desligado', all: 'Repetir: a fila', one: 'Repetir: esta música' }[loop];
+    $('djLoop').setAttribute('aria-pressed', String(loop !== 'off'));
+    $('djLoop').setAttribute('aria-label', ln); $('djLoop').title = ln;
+    $('djLoopOne').hidden = loop !== 'one';
+    const m = dj.mute || voice.deaf;
+    setIcon($('djMuteIcon'), m ? 'mute' : 'vol');
+    $('djMute').setAttribute('aria-pressed', String(dj.mute));
+    $('djMute').setAttribute('aria-label', dj.mute ? 'Música muda para você. Reativar' : voice.deaf ? 'Som da sala desligado' : 'Mutar só a música');
+    if (document.activeElement !== $('djVol')) $('djVol').value = String(dj.vol);
+    $('djVol').style.setProperty('--fill', `${dj.vol}%`);
+    $('djVolOut').textContent = m ? 'mudo' : `${dj.vol}%`;
+    const note = !inVoice ? 'Entre no canal de voz para ouvir e controlar a música.' : !here ? `Você está em ${chanLabel(myVch)}. Entre neste canal para ouvir.` : '';
+    $('djNote').hidden = !note;
+    $('djNote').textContent = note;
+    $('djTap').hidden = !here || !dj.blocked;
+    $('djForm').classList.toggle('is-off', !here);
+    $('djCount').textContent = upcoming.length ? String(upcoming.length) : '';
+    const qKey = `${ch}|${s ? s.v : 0}|${here}`;
+    if (qKey !== dj.qKey) { dj.qKey = qKey; renderDjQueue(s, upcoming, here); }
+    djProgress();
+  }
+  function djRow(x, n, here, acts) { // linha de música: capa, título, canal/duração e botões
+    const li = document.createElement('li');
+    li.className = 'dj-item';
+    if (x.k) li.dataset.k = x.k;
+    if (n) li.append(Object.assign(document.createElement('span'), { className: 'dj-n', textContent: String(n) }));
+    li.append(Object.assign(document.createElement('img'), { className: 'dj-thumb', src: thumb(x.id), alt: '', loading: 'lazy', width: 64, height: 36 }));
+    const info = Object.assign(document.createElement('span'), { className: 'dj-info' });
+    info.append(Object.assign(document.createElement('span'), { className: 'dj-t', textContent: x.t, title: x.t }),
+      Object.assign(document.createElement('span'), { className: 'dj-a', textContent: [x.d ? mmss(x.d) : '', x.a, x.by && `por ${x.by}`].filter(Boolean).join(' · ') }));
+    li.append(info);
+    const box = Object.assign(document.createElement('span'), { className: 'dj-acts' });
+    for (const [icon, label, fn, extra] of acts) {
+      const b = Object.assign(document.createElement('button'), { type: 'button', className: `icon-btn ${extra || ''}`.trim(), title: label, disabled: !here });
+      b.setAttribute('aria-label', `${label}: ${x.t}`);
+      b.innerHTML = icon.startsWith('<') ? icon : `<svg class="ic" aria-hidden="true"><use href="#i-${icon}"/></svg>`;
+      b.addEventListener('click', fn);
+      box.append(b);
+    }
+    li.append(box);
+    return li;
+  }
+  const UP = '<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 3h2v1H7zM6 4h4v1H6zM5 5h6v1H5zM4 6h8v1H4zM7 7h2v6H7z"/></svg>';
+  const DOWN = '<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M7 3h2v6H7zM4 9h8v1H4zM5 10h6v1H5zM6 11h4v1H6zM7 12h2v1H7z"/></svg>';
+  function renderDjQueue(s, upcoming, here) {
+    const base = s ? Math.max(0, s.i + 1) : 0;
+    $('djQueue').replaceChildren(...upcoming.map((x, n) => djRow(x, n + 1, here, [
+      [UP, 'Subir na fila', () => musSend('mv', { k: x.k, to: base + n - 1 }), n === 0 ? 'is-dim' : ''],
+      [DOWN, 'Descer na fila', () => musSend('mv', { k: x.k, to: base + n + 1 }), n === upcoming.length - 1 ? 'is-dim' : ''],
+      ['play', 'Tocar agora', () => musSend('jump', { k: x.k })],
+      ['close', 'Tirar da fila', () => musSend('rm', { k: x.k })],
+    ])));
+    if (!upcoming.length) $('djQueue').append(Object.assign(document.createElement('li'), { className: 'dj-empty', textContent: 'A fila está vazia.' }));
+  }
+  function renderDjRes() {
+    const r = dj.res;
+    $('djResWrap').hidden = !r;
+    if (!r) return;
+    const here = djHere();
+    $('djResHead').textContent = r.loading ? 'Buscando…' : r.err ? 'Busca' : r.label ? `Playlist ${r.label} · ${r.list.length}` : `Resultados para “${r.q.slice(0, 40)}”`;
+    const rows = [];
+    if (r.err && !r.loading) rows.push(Object.assign(document.createElement('li'), { className: 'dj-empty dj-err', textContent: r.err }));
+    else if (!r.loading && !r.list.length) rows.push(Object.assign(document.createElement('li'), { className: 'dj-empty', textContent: 'Nada encontrado.' }));
+    if (r.list.length > 1 && r.label) {
+      const li = Object.assign(document.createElement('li'), { className: 'dj-all' });
+      const b = Object.assign(document.createElement('button'), { type: 'button', className: 'btn btn-primary', textContent: `Pôr as ${r.list.length} na fila`, disabled: !here });
+      b.addEventListener('click', () => { if (musSend('add', { items: r.list })) closeDjRes(); });
+      li.append(b);
+      rows.push(li);
+    }
+    for (const x of r.list.slice(0, r.label ? 100 : 12)) {
+      rows.push(djRow(x, 0, here, [
+        ['play', 'Tocar agora', () => { if (musSend('add', { items: [x], now: true })) closeDjRes(); }, 'dj-go'],
+        ['plus', 'Adicionar à fila', () => musSend('add', { items: [x] })],
+      ]));
+    }
+    $('djResults').replaceChildren(...rows);
+  }
+  function closeDjRes() { dj.res = null; dj.n++; renderDjRes(); }
+  function djProbe(list) { // iframe à parte (fora da tela, sem tocar) que só lê os ids de uma playlist
+    return new Promise((resolve) => {
+      const f = Object.assign(document.createElement('iframe'), { src: PLAYER, title: 'Lendo a playlist', className: 'dj-probe', tabIndex: -1 });
+      f.setAttribute('aria-hidden', 'true');
+      let done = false;
+      const fin = (ids) => { if (done) return; done = true; clearInterval(h); clearTimeout(to); window.removeEventListener('message', on); f.remove(); resolve(ids); };
+      const on = (ev) => {
+        if (ev.source !== f.contentWindow || ev.origin !== PLAYER_ORIGIN || !ev.data || ev.data.bp !== 1) return;
+        if (ev.data.ev === 'ready') { clearInterval(h); f.contentWindow.postMessage({ bp: 1, op: 'list', list }, PLAYER_ORIGIN); }
+        else if (ev.data.ev === 'list' && ev.data.list === list) fin(Array.isArray(ev.data.ids) ? ev.data.ids.filter((v) => /^[A-Za-z0-9_-]{11}$/.test(v)) : []);
+      };
+      window.addEventListener('message', on);
+      const h = setInterval(() => { if (f.contentWindow) f.contentWindow.postMessage({ bp: 1, op: 'hello' }, PLAYER_ORIGIN); }, 400);
+      const to = setTimeout(() => fin([]), 20000);
+      document.body.append(f);
+    });
+  }
+  function djSearch(q, auto) {
+    q = clean(q, 300);
+    if (!q) return;
+    if (!chatOpen()) { toast('O chat está reconectando. Tente de novo em instantes.'); return; }
+    dj.n++;
+    dj.auto = auto ? { ...auto, n: dj.n } : null;
+    dj.res = { list: [], err: '', label: '', q, loading: true };
+    $('djGo').disabled = true;
+    setTimeout(() => { $('djGo').disabled = false; }, 4000);
+    chat.ws.send(JSON.stringify({ t: 'yt', q, n: dj.n }));
+    renderDjRes();
+  }
+  function djProgress() {
+    const s = dj.st.get(viewVch);
+    const cur = djCur(s);
+    if ($('dj').hidden) return;
+    const t = cur ? Math.min(djPos(s), cur.d || Infinity) : 0;
+    const d = cur ? cur.d || (dj.tk && dj.tk.id === cur.id ? dj.tk.d : 0) : 0;
+    $('djCurT').textContent = mmss(t);
+    $('djDurT').textContent = d ? mmss(d) : cur ? '--:--' : '0:00';
+    const seek = $('djSeek');
+    if (!seek.matches(':active') && document.activeElement !== seek) {
+      seek.max = String(Math.max(1, Math.round(d)));
+      seek.value = String(Math.round(t));
+    }
+    seek.style.setProperty('--fill', `${d ? Math.min(100, (t / d) * 100) : 0}%`);
+  }
+  function djEphemeral(text) { // resposta do Bagre DJ que só eu vejo (como as respostas "só você vê" do Discord)
+    const m = { id: -(++dj.eph), ts: Date.now(), name: 'Bagre DJ', av: 'dj', uid: 'dj', text };
+    const li = msgEl(m, null);
+    li.classList.add('ephem');
+    li.querySelector('.msg-body').append(Object.assign(document.createElement('p'), { className: 'ephem-note', textContent: 'Só você vê esta mensagem' }));
+    $('chatLog').append(li);
+    scrollDown();
+  }
+  const DJ_HELP = 'Comandos do Bagre DJ: /play <nome ou link> (toca ou põe na fila) · /playnow <nome ou link> · /skip · /back · /pause · /resume · /queue · /np · /shuffle · /loop [fila|uma|off] · /remove <n> · /stop';
+  function djCommand(text) { // devolve true se o texto era um comando do DJ (não vai como mensagem)
+    const m = /^\/([a-zA-Zçã]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+    if (!m) return false;
+    const cmd = m[1].toLowerCase();
+    const arg = (m[2] || '').trim();
+    const CMDS = ['play', 'p', 'tocar', 'playnow', 'pn', 'skip', 's', 'next', 'pular', 'back', 'prev', 'voltar', 'pause', 'pausar', 'resume', 'r', 'continuar', 'queue', 'q', 'fila', 'np', 'tocando', 'shuffle', 'embaralhar', 'loop', 'repetir', 'remove', 'rm', 'tirar', 'stop', 'parar', 'dj', 'help', 'ajuda'];
+    if (!CMDS.includes(cmd)) return false;
+    if (['dj', 'help', 'ajuda'].includes(cmd)) { djEphemeral(DJ_HELP); return true; }
+    if (!inVoice) { djEphemeral('Entre num canal de voz primeiro: eu toco no canal em que você está.'); return true; }
+    const s = dj.st.get(myVch);
+    const cur = djCur(s);
+    const tc = textCh;
+    if (['play', 'p', 'tocar', 'playnow', 'pn'].includes(cmd)) {
+      if (!arg) { if (cur && s.paused) musSend('resume', { tc }); else djEphemeral('Use /play <nome da música ou link do YouTube>.'); return true; }
+      const now = cmd === 'playnow' || cmd === 'pn';
+      if (/[?&]list=[A-Za-z0-9_-]{10,64}/.test(arg) && !/[?&]v=|youtu\.be\//.test(arg)) djSearch(arg, { tc, now }); // playlist: lista e põe tudo
+      else musSend('play', { q: arg, now, tc });
+    } else if (['skip', 's', 'next', 'pular'].includes(cmd)) { if (!cur) djEphemeral('Nada tocando agora.'); else musSend('skip', { tc }); }
+    else if (['back', 'prev', 'voltar'].includes(cmd)) musSend('prev', { tc });
+    else if (['pause', 'pausar'].includes(cmd)) { if (!cur || s.paused) djEphemeral(cur ? 'Já está pausado. /resume volta a tocar.' : 'Nada tocando agora.'); else musSend('pause', { tc }); }
+    else if (['resume', 'r', 'continuar'].includes(cmd)) { if (!cur || !s.paused) djEphemeral(cur ? 'Já está tocando.' : 'Nada tocando agora.'); else musSend('resume', { tc }); }
+    else if (['queue', 'q', 'fila'].includes(cmd)) {
+      const up = s ? s.q.slice(Math.max(0, s.i + 1)) : [];
+      dj.pref = 'open';
+      renderDj();
+      djEphemeral(`${cur ? `Tocando: ${cur.t} (${mmss(djPos(s))}${cur.d ? ` de ${mmss(cur.d)}` : ''})` : 'Nada tocando.'}\n${up.length ? up.slice(0, 10).map((x, n) => `${n + 1}. ${x.t}${x.d ? ` (${mmss(x.d)})` : ''}`).join('\n') + (up.length > 10 ? `\n… e mais ${up.length - 10}` : '') : 'A fila está vazia.'}`);
+    } else if (['np', 'tocando'].includes(cmd)) djEphemeral(cur ? `Tocando agora: ${cur.t} · ${mmss(djPos(s))}${cur.d ? ` de ${mmss(cur.d)}` : ''}${cur.by ? ` · pedido por ${cur.by}` : ''}` : 'Nada tocando agora.');
+    else if (['shuffle', 'embaralhar'].includes(cmd)) musSend('shuffle', { tc });
+    else if (['loop', 'repetir'].includes(cmd)) {
+      const a = arg.toLowerCase();
+      const mode = /^(fila|all|queue|tudo)$/.test(a) ? 'all' : /^(uma|one|musica|música|track|1)$/.test(a) ? 'one' : /^(off|nao|não|desligar|0)$/.test(a) ? 'off' : { off: 'all', all: 'one', one: 'off' }[s ? s.loop : 'off'];
+      musSend('loop', { mode });
+      djEphemeral({ off: 'Repetir desligado.', all: 'Repetindo a fila.', one: 'Repetindo esta música.' }[mode]);
+    } else if (['remove', 'rm', 'tirar'].includes(cmd)) {
+      const n = Number(arg);
+      const up = s ? s.q.slice(Math.max(0, s.i + 1)) : [];
+      if (!Number.isInteger(n) || n < 1 || n > up.length) djEphemeral(`Use /remove <número na fila, de 1 a ${up.length || 1}>.`);
+      else { musSend('rm', { k: up[n - 1].k }); djEphemeral(`Tirei da fila: ${up[n - 1].t}`); }
+    } else if (['stop', 'parar'].includes(cmd)) musSend('stop', { tc });
+    return true;
+  }
+  // eventos do painel
+  $('djBtn').addEventListener('click', () => {
+    dj.pref = $('dj').hidden ? 'open' : 'closed';
+    renderDj();
+    if (!$('dj').hidden && !djCur(dj.st.get(viewVch))) $('djQ').focus();
+  });
+  $('djClose').addEventListener('click', () => { dj.pref = 'closed'; renderDj(); });
+  $('djForm').addEventListener('submit', (ev) => { ev.preventDefault(); if (!djHere()) { toast('Entre neste canal de voz para pedir música.'); return; } djSearch($('djQ').value); });
+  $('djResX').addEventListener('click', closeDjRes);
+  $('djPlay').addEventListener('click', () => { const s = dj.st.get(myVch); if (djCur(s)) musSend(s.paused ? 'resume' : 'pause'); });
+  $('djNext').addEventListener('click', () => musSend('skip'));
+  $('djPrev').addEventListener('click', () => musSend('prev'));
+  $('djStop').addEventListener('click', () => musSend('stop'));
+  $('djShuffle').addEventListener('click', () => musSend('shuffle'));
+  $('djLoop').addEventListener('click', () => { const s = dj.st.get(myVch); musSend('loop', { mode: { off: 'all', all: 'one', one: 'off' }[s ? s.loop : 'off'] }); });
+  $('djSeek').addEventListener('change', () => { musSend('seek', { pos: Number($('djSeek').value) }); $('djSeek').blur(); });
+  $('djVol').addEventListener('input', () => { dj.vol = Number($('djVol').value); store('djvol', String(dj.vol)); if (dj.vol > 0 && dj.mute) { dj.mute = false; store('djmute', '0'); } djVolume(); renderDj(); });
+  $('djMute').addEventListener('click', () => { dj.mute = !dj.mute; store('djmute', dj.mute ? '1' : '0'); djVolume(); renderDj(); });
+  $('djTap').addEventListener('click', () => { dj.loaded = ''; dj.blocked = false; djSync(); djCmd({ op: 'play' }); });
 
   // ---------- manutenção periódica ----------
   setInterval(() => {

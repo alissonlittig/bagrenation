@@ -16,6 +16,9 @@
 // (oferta, resposta e candidatos ICE passam por aqui; voz e tela continuam de navegador para navegador).
 // Substitui o servidor público 0.peerjs.com. TURN do Cloudflare Realtime só entra se os secrets TURN_KEY_ID e
 // TURN_KEY_API_TOKEN existirem; sem eles só vai STUN.
+// Bagre DJ (S-1566): música do YouTube sincronizada em cada canal de voz. O estado (fila, vídeo, início, pausa) fica aqui
+// e vai para todos; cada pessoa toca o player oficial do YouTube no próprio aparelho (nada de baixar ou retransmitir áudio).
+// Busca por nome e playlists usam a YouTube Data API v3 (secret YT_KEY); sem ela, só link de vídeo (oEmbed, sem chave).
 
 const ORIGINS = [/^https:\/\/alissonlittig\.github\.io$/, /^https?:\/\/tauri\.localhost$/, /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/];
 const MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime']);
@@ -33,10 +36,15 @@ const MAX_CHANS = 30;
 const RTC_ID = /^[a-z0-9-]{3,80}$/;
 const MAX_SIG = 32000;                  // oferta/resposta (SDP) cabem folgados; acima disso não é sinalização
 const STUN = { urls: 'stun:stun.cloudflare.com:3478' };
+const YT_ID = /^[A-Za-z0-9_-]{11}$/;
+const MAX_Q = 200;                      // itens na fila de um canal (tocadas + próximas)
+const KEEP_PLAYED = 30;                 // tocadas que ficam para o "voltar"
+const LOOPS = ['off', 'all', 'one'];
+const DJ = { name: 'Bagre DJ', av: 'dj', uid: 'dj' };
 const chanName = (v, kind) => { const n = clean(v, 32); return kind === 'text' ? n.toLowerCase().replace(/\s+/g, '-') : n; };
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, max);
 const bioClean = (s) => clean(String(s ?? '').replace(/\r/g, '').replace(/\n{3,}/g, '\n\n'), 190); // bio pública (S-1412): até 190 caracteres, quebra de linha ok
-const avOf = (v) => (/^[a-z0-9-]{0,24}$/.test(v || '') ? v || '' : ''); // inclui u-<id de 20> (avatar enviado)
+const avOf = (v) => (/^[a-z0-9-]{0,24}$/.test(v || '') && v !== 'dj' ? v || '' : ''); // inclui u-<id de 20> (avatar enviado); 'dj' é só do bot
 const row = (r) => ({ ...r, media: r.media ? JSON.parse(r.media) : null, reply: r.reply ? JSON.parse(r.reply) : null, reacts: r.reacts ? JSON.parse(r.reacts) : null });
 
 function cors(origin) {
@@ -72,6 +80,7 @@ export class Server {
       CREATE TABLE IF NOT EXISTS chunks (id TEXT NOT NULL, n INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (id, n));
       CREATE TABLE IF NOT EXISTS members (uid TEXT PRIMARY KEY, name TEXT NOT NULL, av TEXT NOT NULL, seen INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS chans (id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, uid TEXT, pos INTEGER NOT NULL, ts INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS music (ch TEXT PRIMARY KEY, s TEXT NOT NULL);
       INSERT OR IGNORE INTO chans (id, kind, name, uid, pos, ts) VALUES ('chat', 'text', 'chat', NULL, 0, 0), ('voz', 'voice', 'Canal de voz', NULL, 0, 0);`);
     // migração S-1357: só acrescenta colunas (nada é apagado); mensagens antigas ficam com uid vazio
     const cols = new Set(this.sql.exec('PRAGMA table_info(msgs)').toArray().map((c) => c.name));
@@ -93,6 +102,7 @@ export class Server {
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong')); // responde sem acordar o objeto
     this.upAt = new Map(); // ip -> últimos envios (limite simples, some quando o objeto hiberna)
     this.shown = new Map(); // uid -> último estado avisado (some ao hibernar: no pior caso repete um aviso igual)
+    this.ytc = new Map();   // busca -> { at, list } (economiza cota da Data API; some ao hibernar)
   }
 
   async fetch(req) {
@@ -113,6 +123,8 @@ export class Server {
       server.send(JSON.stringify({ t: 'hist', list: this.history() }));
       server.send(JSON.stringify({ t: 'members', list: this.members() }));
       server.send(JSON.stringify({ t: 'chans', list: this.chans() }));
+      const now = Date.now();
+      for (const r of this.sql.exec('SELECT ch, s FROM music').toArray()) server.send(JSON.stringify({ t: 'mus', ch: r.ch, s: JSON.parse(r.s), now }));
       return new Response(null, { status: 101, webSocket: client });
     }
     if (route === 'up') return this.upload(req, origin, new URL(req.url).searchParams.get('av') === '1');
@@ -181,6 +193,7 @@ export class Server {
         }
         this.sql.exec('DELETE FROM msgs WHERE ch = ?', c.id);
         this.sql.exec('DELETE FROM chans WHERE id = ?', c.id);
+        this.sql.exec('DELETE FROM music WHERE ch = ?', c.id);
       });
     } else return;
     ws.send(JSON.stringify({ t: 'chanok', id: c.id, kind: c.kind, op: d.op }));
@@ -296,6 +309,7 @@ export class Server {
       if (ch) ws.send(JSON.stringify({ t: 'old', ch, list: this.history(d.before, ch) }));
       return;
     }
+    if (d.t === 'clk' && Number.isFinite(d.c)) { ws.send(JSON.stringify({ t: 'clk', c: d.c, s: Date.now() })); return; } // acerto de relógio (música)
     if (d.t === 'hist') { const ch = this.textChan(d.ch); if (ch) ws.send(JSON.stringify({ t: 'hist', ch, list: this.history(null, ch) })); return; }
     const att = ws.deserializeAttachment() || { at: 0 };
     const now = Date.now();
@@ -312,6 +326,8 @@ export class Server {
       return;
     }
     if (d.t === 'react') return this.react(ws, att, d, now);
+    if (d.t === 'mus') return this.mus(ws, att, d, now);
+    if (d.t === 'yt') return this.ytSearch(ws, att, d, now);
     if (d.t === 'edit' || d.t === 'del') return this.change(ws, att, d, now);
     if (d.t !== 'msg') return;
     const ch = this.textChan(d.ch);
@@ -341,6 +357,238 @@ export class Server {
       now, name, av, text, media ? JSON.stringify(media) : null, uid, reply ? JSON.stringify(reply) : null, ch).one().id;
     this.broadcast({ t: 'msg', m: { id, ts: now, name, av, text, media, uid, reply, edited: null, reacts: null, ch },
       nonce: typeof d.nonce === 'string' ? d.nonce.slice(0, 40) : undefined }, null, ch !== 'chat');
+  }
+
+  // ---------- Bagre DJ (S-1566) ----------
+  voiceChan(id) { return typeof id === 'string' && this.sql.exec("SELECT 1 FROM chans WHERE id = ? AND kind = 'voice'", id).toArray().length > 0; }
+  mget(ch) {
+    const r = this.sql.exec('SELECT s FROM music WHERE ch = ?', ch).toArray()[0];
+    return r ? JSON.parse(r.s) : { q: [], i: -1, at: 0, pos: 0, paused: false, loop: 'off', tc: 'chat', v: 0 };
+  }
+  mset(ch, s) {
+    s.v = (s.v || 0) + 1;
+    this.sql.exec('INSERT INTO music (ch, s) VALUES (?, ?) ON CONFLICT(ch) DO UPDATE SET s = excluded.s', ch, JSON.stringify(s));
+    this.broadcast({ t: 'mus', ch, s, now: Date.now() }, null, true);
+  }
+  static posOf(s, now) { return s.paused ? s.pos : Math.max(0, (now - s.at) / 1000); }
+  static start(s, i, now, pos = 0) { s.i = i; s.paused = false; s.pos = 0; s.at = now - pos * 1000; }
+  static idle(s) { s.i = s.q.length; s.paused = false; s.pos = 0; s.at = 0; }
+  static advance(s, now, manual) { // fim da música (ou pular): repetir uma, próxima, ou volta ao começo da fila
+    if (!manual && s.loop === 'one' && s.q[s.i]) return Server.start(s, s.i, now);
+    let n = s.i + 1;
+    if (n >= s.q.length && s.loop === 'all' && s.q.length) n = 0;
+    if (n >= s.q.length) Server.idle(s); else Server.start(s, n, now);
+    const drop = s.i - KEEP_PLAYED; // tocadas antigas saem (fica o suficiente para voltar)
+    if (drop > 0) { s.q.splice(0, drop); s.i -= drop; }
+  }
+  item(x, by) { // item da fila vindo do cliente ou da API: só id válido; a capa sai do id (não confia em URL de fora)
+    if (!x || !YT_ID.test(x.id)) return null;
+    const d = Number.isFinite(x.d) && x.d > 0 && x.d < 86400 ? Math.round(x.d) : 0;
+    const k = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => 'abcdefghijklmnopqrstuvwxyz234567'[b & 31]).join('');
+    return { k, id: x.id, t: clean(x.t, 140) || 'Vídeo do YouTube', a: clean(x.a, 60), d, by: clean(by, 24) };
+  }
+  djSay(ch, text) { // mensagem do Bagre DJ no canal de texto (fica no histórico, como a de um bot do Discord)
+    const c = this.textChan(ch) || 'chat';
+    const now = Date.now();
+    const t = clean(text, 2000);
+    const id = this.sql.exec('INSERT INTO msgs (ts, name, av, text, media, uid, reply, ch) VALUES (?, ?, ?, ?, NULL, ?, NULL, ?) RETURNING id', now, DJ.name, DJ.av, t, DJ.uid, c).one().id;
+    this.broadcast({ t: 'msg', m: { id, ts: now, name: DJ.name, av: DJ.av, text: t, media: null, uid: DJ.uid, reply: null, edited: null, reacts: null, ch: c } }, null, c !== 'chat');
+  }
+  async mus(ws, att, d, now) { // { t:'mus', ch, op, tc?, ... }: qualquer membro identificado controla o DJ do canal
+    const no = (text) => ws.send(JSON.stringify({ t: 'err', text }));
+    if (!att.uid) return no('Espere o chat conectar e tente de novo.');
+    if (!this.voiceChan(d.ch)) return no('Esse canal de voz não existe mais.');
+    if (now - (att.mw || 0) > 2000) { att.mw = now; att.mn = 0; } // até 12 ordens a cada 2 s por conexão (clicar rápido em "+ Fila" passa)
+    if (++att.mn > 12) { ws.serializeAttachment(att); return no('Calma: muitas ordens de música seguidas.'); }
+    ws.serializeAttachment(att);
+    const by = (this.sql.exec('SELECT name FROM members WHERE uid = ?', att.uid).toArray()[0] || {}).name || 'Alguém';
+    const tc = typeof d.tc === 'string' ? this.textChan(d.tc) : ''; // veio de um comando no chat: o DJ responde lá
+    let items = null, label = '';
+    if (d.op === 'play') { // texto (busca) ou link (vídeo/playlist): resolve antes de mexer no estado
+      const r = await this.resolve(clean(d.q, 300));
+      if (r.err) { if (tc) this.djSay(tc, `${by}: ${r.err}`); else no(r.err); return; }
+      items = r.list; label = r.label || '';
+    } else if (d.op === 'add') items = Array.isArray(d.items) ? d.items.slice(0, 100) : [];
+    const s = this.mget(d.ch); // lido depois do await: nada se perde entre dois pedidos ao mesmo tempo
+    const t = Date.now();
+    const cur = s.q[s.i];
+    const idx = (k) => s.q.findIndex((x) => x.k === k);
+    if (tc) s.tc = tc;
+    if (items) {
+      const add = items.map((x) => this.item(x, by)).filter(Boolean).slice(0, Math.max(0, MAX_Q - s.q.length));
+      if (!add.length) return no(s.q.length >= MAX_Q ? `A fila já tem ${MAX_Q} músicas.` : 'Nada para tocar.');
+      const now1 = d.now === true || !cur;
+      if (cur && d.now === true) { s.q.splice(s.i + 1, 0, ...add); Server.start(s, s.i + 1, t); }
+      else if (!cur) { const at = s.q.length; s.q.push(...add); Server.start(s, at, t); }
+      else s.q.push(...add);
+      const one = add[0];
+      if (tc) {
+        this.djSay(tc, add.length > 1 ? `${by} pôs ${add.length} músicas${label ? ` de ${label}` : ''} na fila.${now1 ? ` Tocando agora: ${one.t}` : ''}`
+          : now1 ? `Tocando agora: ${one.t} (pedido por ${by})` : `Na fila (#${s.q.length - 1 - s.i}): ${one.t} (pedido por ${by})`);
+      }
+      ws.send(JSON.stringify({ t: 'musok', op: 'add', n: add.length, now: now1, title: one.t }));
+    } else if (d.op === 'skip') { if (!cur) return no('Nada tocando agora.'); Server.advance(s, t, true); if (tc) this.djSay(tc, `${by} pulou ${cur.t}.`); }
+    else if (d.op === 'prev') {
+      if (cur && Server.posOf(s, t) > 5) Server.start(s, s.i, t);
+      else if (s.i > 0) Server.start(s, Math.min(s.i, s.q.length) - 1, t);
+      else if (cur) Server.start(s, s.i, t);
+      else return;
+    } else if (d.op === 'pause') { if (!cur || s.paused) return; s.pos = Server.posOf(s, t); s.paused = true; if (tc) this.djSay(tc, `${by} pausou a música.`); }
+    else if (d.op === 'resume') { if (!cur || !s.paused) return; s.at = t - s.pos * 1000; s.paused = false; if (tc) this.djSay(tc, `${by} voltou a tocar ${cur.t}.`); }
+    else if (d.op === 'seek') {
+      if (!cur || !Number.isFinite(d.pos)) return;
+      const p = Math.max(0, Math.min(d.pos, cur.d || 86400));
+      if (s.paused) s.pos = p; else s.at = t - p * 1000;
+    } else if (d.op === 'stop') {
+      if (!s.q.length) return no('A fila já está vazia.');
+      s.q = []; s.i = -1; s.paused = false; s.at = 0; s.pos = 0;
+      if (tc) this.djSay(tc, `${by} parou a música e limpou a fila.`);
+    } else if (d.op === 'rm') {
+      const i = idx(d.k);
+      if (i < 0) return;
+      s.q.splice(i, 1);
+      if (i < s.i) s.i--;
+      else if (i === s.i) { if (s.i < s.q.length) Server.start(s, s.i, t); else Server.idle(s); }
+    } else if (d.op === 'mv') { // reordenar só o que ainda vai tocar
+      const i = idx(d.k);
+      if (i <= s.i || !Number.isInteger(d.to)) return;
+      const [x] = s.q.splice(i, 1);
+      s.q.splice(Math.max(s.i + 1, Math.min(d.to, s.q.length)), 0, x);
+    } else if (d.op === 'jump') { const i = idx(d.k); if (i < 0) return; Server.start(s, i, t); }
+    else if (d.op === 'shuffle') {
+      const rest = s.q.splice(Math.max(0, s.i + 1));
+      for (let i = rest.length - 1; i > 0; i--) { const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1); [rest[i], rest[j]] = [rest[j], rest[i]]; }
+      s.q.push(...rest);
+      if (rest.length < 2) return no('Precisa de 2 músicas na fila para embaralhar.');
+      if (tc) this.djSay(tc, `${by} embaralhou a fila.`);
+    } else if (d.op === 'loop') { if (!LOOPS.includes(d.mode)) return; s.loop = d.mode; }
+    else if (d.op === 'dur') { // duração que o player descobriu (link sem a Data API)
+      const i = idx(d.k);
+      if (i < 0 || s.q[i].d || !Number.isFinite(d.d) || d.d <= 0 || d.d > 86400) return;
+      s.q[i].d = Math.round(d.d);
+    } else if (d.op === 'ended') { // fim no player de alguém: só vale para a música atual e perto do fim (vários avisam, conta um)
+      if (!cur || cur.k !== d.k || s.paused) return;
+      if (cur.d && Server.posOf(s, t) < cur.d - 8) return;
+      Server.advance(s, t, false);
+    } else if (d.op === 'bad') { // não toca fora do YouTube (dono bloqueou) ou foi removido: pula e avisa no chat
+      if (!cur || cur.k !== d.k || ![2, 100, 101, 150].includes(d.code)) return;
+      s.q.splice(s.i, 1);
+      if (s.i < s.q.length) Server.start(s, s.i, t); else Server.idle(s);
+      this.djSay(s.tc || 'chat', d.code === 100 || d.code === 2 ? `${cur.t} não existe mais no YouTube. Pulei para a próxima.` : `${cur.t} não pode tocar fora do YouTube (o dono bloqueou). Pulei para a próxima.`);
+    } else return;
+    this.mset(d.ch, s);
+  }
+
+  // YouTube: busca (Data API, se tiver chave) e links (vídeo sem chave, pelo oEmbed; playlist só com chave)
+  static parseYt(q) {
+    if (!/youtu/i.test(q)) return null;
+    let u;
+    try { u = new URL(/^https?:\/\//i.test(q) ? q : `https://${q}`); } catch { return null; }
+    const h = u.hostname.replace(/^(www|m|music)\./, '');
+    if (!/^(youtube\.com|youtu\.be|youtube-nocookie\.com)$/.test(h)) return null;
+    let v = u.searchParams.get('v') || '';
+    if (h === 'youtu.be') v = u.pathname.slice(1, 12);
+    const m = u.pathname.match(/^\/(shorts|embed|live|v)\/([A-Za-z0-9_-]{11})/);
+    if (m) v = m[2];
+    const list = u.searchParams.get('list') || '';
+    return { v: YT_ID.test(v) ? v : '', list: /^[A-Za-z0-9_-]{10,64}$/.test(list) && !list.startsWith('RD') ? list : '' }; // RD = mix automático (não é lista de verdade)
+  }
+  static isoDur(s) { const m = /^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(s || ''); return m ? (+m[1] || 0) * 86400 + (+m[2] || 0) * 3600 + (+m[3] || 0) * 60 + (+m[4] || 0) : 0; }
+  async yt(path, params) {
+    if (!this.env.YT_KEY) throw new Error('nokey');
+    const u = new URL(`https://www.googleapis.com/youtube/v3/${path}`);
+    for (const [k, v] of Object.entries({ ...params, key: this.env.YT_KEY })) u.searchParams.set(k, v);
+    const r = await fetch(u);
+    if (!r.ok) { console.warn('YouTube API', path, r.status, (await r.text()).slice(0, 300)); throw new Error(r.status === 403 ? 'cota' : `HTTP ${r.status}`); }
+    return r.json();
+  }
+  async details(ids) { // título, canal, duração e se toca embutido (1 unidade da cota a cada 50 vídeos)
+    const out = [];
+    for (let i = 0; i < ids.length; i += 50) {
+      const j = await this.yt('videos', { part: 'snippet,contentDetails,status', id: ids.slice(i, i + 50).join(','), maxResults: '50' });
+      for (const v of j.items || []) {
+        if (!v.snippet || (v.status && v.status.embeddable === false) || v.snippet.liveBroadcastContent === 'upcoming') continue;
+        out.push({ id: v.id, t: v.snippet.title, a: v.snippet.channelTitle, d: Server.isoDur(v.contentDetails && v.contentDetails.duration) });
+      }
+    }
+    const pos = new Map(ids.map((id, n) => [id, n]));
+    return out.sort((a, b) => pos.get(a.id) - pos.get(b.id));
+  }
+  async resolve(q) { // -> { list, label } ou { err }
+    if (!q) return { err: 'Diga o nome da música ou cole um link do YouTube.' };
+    const link = Server.parseYt(q);
+    const key = !!this.env.YT_KEY;
+    try {
+      if (link && link.list && !link.v) {
+        if (!key) return { err: 'Para playlist sem a busca do YouTube, o app lista os vídeos pelo player.', needIds: link.list };
+        const ids = [];
+        let page = '';
+        for (let n = 0; n < 2; n++) {
+          const j = await this.yt('playlistItems', { part: 'contentDetails', playlistId: link.list, maxResults: '50', ...(page ? { pageToken: page } : {}) });
+          ids.push(...(j.items || []).map((x) => x.contentDetails && x.contentDetails.videoId).filter((v) => YT_ID.test(v || '')));
+          page = j.nextPageToken || '';
+          if (!page) break;
+        }
+        let title = '';
+        try { const p = ((await this.yt('playlists', { part: 'snippet', id: link.list })).items || [])[0]; title = p ? p.snippet.title : ''; } catch { /* sem o nome: segue */ }
+        const list = await this.details(ids);
+        return list.length ? { list, label: title ? `“${clean(title, 60)}”` : 'uma playlist' } : { err: 'Essa playlist está vazia, é privada ou nada nela toca fora do YouTube.' };
+      }
+      if (link && link.v) {
+        if (key) { const list = await this.details([link.v]); return list.length ? { list } : { err: 'Esse vídeo não existe ou não pode tocar fora do YouTube.' }; }
+        const r = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${link.v}`)}`);
+        if (r.status === 401 || r.status === 403) return { err: 'Esse vídeo não pode tocar fora do YouTube (o dono bloqueou).' };
+        if (!r.ok) return { err: 'Esse vídeo não existe ou é privado.' };
+        const j = await r.json();
+        return { list: [{ id: link.v, t: j.title, a: j.author_name, d: 0 }] };
+      }
+      if (link) return { err: 'Não achei um vídeo nesse link do YouTube.' };
+      const list = await this.search(q);
+      return list.length ? { list: list.slice(0, 1) } : { err: `Nada encontrado para “${q.slice(0, 60)}”.` };
+    } catch (err) {
+      return { err: Server.ytErr(err) };
+    }
+  }
+  static ytErr(err) {
+    if (err.message === 'nokey') return 'A busca por nome está desligada no servidor. Cole o link do YouTube.';
+    if (err.message === 'cota') return 'A busca do YouTube bateu o limite do dia. Cole o link do vídeo.';
+    console.warn('YouTube', String(err));
+    return 'O YouTube não respondeu. Tente de novo.';
+  }
+  async search(q) {
+    const k = q.toLowerCase().replace(/\s+/g, ' ').trim();
+    const hit = this.ytc.get(k);
+    if (hit && Date.now() - hit.at < 3600000) return hit.list;
+    const j = await this.yt('search', { part: 'id', type: 'video', maxResults: '12', q: k, videoEmbeddable: 'true', regionCode: 'BR' });
+    const list = (await this.details((j.items || []).map((x) => x.id && x.id.videoId).filter((v) => YT_ID.test(v || '')))).filter((x) => x.d > 0);
+    if (this.ytc.size > 200) this.ytc.clear();
+    this.ytc.set(k, { at: Date.now(), list });
+    return list;
+  }
+  async oembedAll(ids) { // playlist sem a Data API: títulos pelo oEmbed (até 40 por vez, limite de subpedidos do plano grátis)
+    const one = async (id) => {
+      const r = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${id}`)}`);
+      if (!r.ok) return null; // 401/403 = não toca embutido; 404 = removido ou privado
+      const j = await r.json();
+      return { id, t: j.title, a: j.author_name, d: 0 };
+    };
+    return (await Promise.all(ids.slice(0, 40).map((id) => one(id).catch(() => null)))).filter(Boolean);
+  }
+  async ytSearch(ws, att, d, now) { // { t:'yt', q, n } ou { t:'yt', ids, n } -> { t:'ytres', n, list, err, needIds }
+    if (!att.uid || (typeof d.q !== 'string' && !Array.isArray(d.ids))) return;
+    const reply = (r) => ws.send(JSON.stringify({ t: 'ytres', n: d.n, list: r.list || [], label: r.label || '', err: r.err || '', needIds: r.needIds || '' }));
+    if (Array.isArray(d.ids)) {
+      const ids = [...new Set(d.ids.filter((v) => typeof v === 'string' && YT_ID.test(v)))];
+      const list = await this.oembedAll(ids);
+      return reply(list.length ? { list, label: `uma playlist${ids.length > 40 ? ' (os 40 primeiros)' : ''}` } : { err: 'Nada nessa playlist toca fora do YouTube.' });
+    }
+    if (now - (att.yt || 0) < 500) return reply({ err: 'Calma: uma busca por vez.' });
+    att.yt = now;
+    ws.serializeAttachment(att);
+    const q = clean(d.q, 200);
+    if (!q) return reply({});
+    if (Server.parseYt(q)) return reply(await this.resolve(q));
+    try { reply({ list: await this.search(q) }); } catch (err) { reply({ err: Server.ytErr(err) }); }
   }
 
   avOk(v) { // avatar enviado só vale se a imagem existe de verdade (e foi enviada como avatar)

@@ -53,6 +53,7 @@ Código: `desktop/` (o `copy-site.mjs` copia os arquivos do site para dentro do 
 - Trocar a tela transmitida sem encerrar.
 - Volume e mudo separados para cada transmissão; quem transmite pode silenciar o próprio áudio para todos.
 - **Tela cheia como no YouTube**: botão no canto da tela, duplo clique no vídeo ou **F** com o mouse em cima dela. Some tudo em volta (lateral, canais, #chat, membros, topo e, no app, a barra do Windows) e fica só a transmissão no preto, na proporção certa. Nome, volume, mudo e sair aparecem ao mexer o mouse e somem junto com o cursor depois de 2,5 s parado. **Esc**, **F**, duplo clique ou o botão saem e tudo volta como estava. No celular, a tela deitada gira junto. Também: janela flutuante (picture-in-picture) e modo destaque.
+- **Bagre DJ (música no canal de voz)**: `/play <link do YouTube>` no chat (ou o botão de nota na barra) e todo mundo do canal ouve a mesma música, no mesmo ponto, como um bot de música do Discord. O bot aparece no canal enquanto toca. Fila para todos (tocar agora, pôr na fila, subir, descer, tirar, pular, voltar, pausar, repetir fila ou uma, embaralhar), playlist por link, `/skip`, `/pause`, `/resume`, `/queue`, `/np`, `/shuffle`, `/loop`, `/remove`, `/stop`, `/ajuda`. Volume e mudo da música só seus. Quem entra no meio cai no trecho certo e desvio de mais de 1 s acerta sozinho. Cada um toca o **player oficial do YouTube** no próprio aparelho (nada é baixado nem retransmitido), então a música não entra no microfone nem na tela compartilhada. Busca por nome usa a YouTube Data API (secret `YT_KEY` do Worker); sem ela, vale link de vídeo ou de playlist.
 - Números reais de cada transmissão: resolução, quadros por segundo, taxa e latência; quem transmite vê quantos estão assistindo e se o limite é a rede ou o processador.
 - Indicador de conexão e reconexão automática.
 - **#chat permanente**: texto (links clicáveis), imagem, GIF e vídeo com prévia; mensagens seguidas da mesma pessoa agrupadas; imagem amplia no clique; vídeo toca no próprio chat; "Carregar mensagens antigas" para trás das últimas 150.
@@ -120,6 +121,7 @@ O site é estático: `index.html`, `style.css`, `app.js`, `signal.js` (sinaliza�
 - **Quem tem o link entra.** Não há senha nem conta: qualquer um que abrir o site entra no servidor, lê o #chat e aparece online. Nome é só um apelido (dá para usar o de outra pessoa). Para algo sigiloso, não use o BAGRENATION.
 - **Apagar.** Cada um apaga e edita só as próprias mensagens (as anteriores à versão 1.2.0 não têm autor guardado e ficam como estão). Apagar a de outra pessoa só pela chave de moderação (`POST /s/bagrenation/del?id=N` com `Authorization: Bearer <ADMIN_KEY>`). GIF é arquivo `.gif` (não há busca de GIFs, que exigiria chave de um serviço de terceiros).
 - **Sem Discord** não separa aplicativos dentro do som do sistema (nenhum navegador permite isso). Ele funciona escolhendo uma fonte sem o Discord: guia (Chrome/Edge) ou janela (Chrome/Edge recentes, que oferecem o áudio só da janela).
+- **Bagre DJ.** Só toca o que o YouTube deixa tocar embutido (o resto é pulado com aviso). Anúncios do YouTube podem aparecer para cada um e atrasar uns segundos (o acerto de tempo corrige depois). No celular o navegador pode pedir um toque para começar com som (botão "Tocar a música aqui"). No app o player vem de `player.html` do site (o YouTube recusa player sem Referer, erro 153).
 - **Sinalização no Worker.** Se o Worker da Cloudflare cair, ninguém novo entra na voz; as transmissões abertas continuam. Sem TURN, redes com NAT simétrico dos dois lados (CGNAT, rede corporativa) podem não conectar.
 
 ## Rodar e testar
@@ -141,6 +143,8 @@ python tests/test_sinal.py [url] [prints] [--relay]       # 3 clientes, voz e te
 python tests/test_membros.py                               # membros, status, digitando, reagir/responder/editar/apagar (3 navegadores)
 python tests/test_canais.py                                # canais, volume por pessoa, qualidade da tela (3 navegadores + celular)
 python tests/test_eco.py <bagrenation.exe de teste>        # tela inteira no app sem a voz do BAGRENATION (análise de frequência)
+python tests/test_musica.py [url] [prints]                 # Bagre DJ: 3 navegadores (1 celular), sincronia < 2 s, fila, comandos, playlist
+python tests/test_eco_musica.py <bagrenation.exe de teste> # música toca no app e não vaza na tela nem na voz
 ONLY=voz python tests/test_e2e.py                           # só o cenário de voz
 ```
 

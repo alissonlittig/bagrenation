@@ -7,7 +7,7 @@
 <meta name="description" content="Servidor de voz, chat e tela compartilhada dos bagres.">
 <meta name="theme-color" content="#07040f">
 <meta name="color-scheme" content="dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob: https://bagrenation-chat.alissondelittig.workers.dev; media-src 'self' blob: mediastream: https://bagrenation-chat.alissondelittig.workers.dev; connect-src 'self' https://bagrenation-chat.alissondelittig.workers.dev wss://bagrenation-chat.alissondelittig.workers.dev; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob: https://bagrenation-chat.alissondelittig.workers.dev https://i.ytimg.com; frame-src 'self' https://alissonlittig.github.io; media-src 'self' blob: mediastream: https://bagrenation-chat.alissondelittig.workers.dev; connect-src 'self' https://bagrenation-chat.alissondelittig.workers.dev wss://bagrenation-chat.alissondelittig.workers.dev; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="referrer" content="no-referrer">
 <meta property="og:site_name" content="BAGRENATION">
 <meta property="og:title" content="BAGRENATION">
@@ -21,7 +21,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/vt323-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=1564">
+<link rel="stylesheet" href="style.css?v=1566">
 </head>
 <body>
 
@@ -36,7 +36,6 @@
   <symbol id="i-check" viewBox="0 0 16 16"><path d="M14 2h1v1h-1zM13 3h2v1h-2zM12 4h2v1h-2zM11 5h2v1h-2zM1 6h1v1h-1zM10 6h2v1h-2zM1 7h2v1h-2zM9 7h2v1h-2zM2 8h2v1h-2zM8 8h2v1h-2zM3 9h2v1h-2zM7 9h2v1h-2zM4 10h4v1h-4zM5 11h2v1h-2z"/></symbol>
   <symbol id="i-people" viewBox="0 0 16 16"><path d="M4 1h3v1h-3zM3 2h5v1h-5zM11 2h2v1h-2zM3 3h5v1h-5zM10 3h4v1h-4zM3 4h5v1h-5zM10 4h4v1h-4zM4 5h3v1h-3zM11 5h2v1h-2zM2 7h7v1h-7zM10 7h4v1h-4zM1 8h9v1h-9zM11 8h4v1h-4zM1 9h9v1h-9zM11 9h4v1h-4zM1 10h9v1h-9zM11 10h4v1h-4z"/></symbol>
   <symbol id="i-full" viewBox="0 0 16 16"><path d="M1 1h5v1h-5zM10 1h5v1h-5zM1 2h1v1h-1zM14 2h1v1h-1zM1 3h1v1h-1zM14 3h1v1h-1zM1 4h1v1h-1zM14 4h1v1h-1zM1 5h1v1h-1zM14 5h1v1h-1zM1 10h1v1h-1zM14 10h1v1h-1zM1 11h1v1h-1zM14 11h1v1h-1zM1 12h1v1h-1zM14 12h1v1h-1zM1 13h1v1h-1zM14 13h1v1h-1zM1 14h5v1h-5zM10 14h5v1h-5z"/></symbol>
-  <symbol id="i-full-exit" viewBox="0 0 16 16"><path d="M5 1h1v5h-1zM1 5h4v1h-4zM10 1h1v5h-1zM11 5h4v1h-4zM1 10h5v1h-5zM5 11h1v4h-1zM10 10h5v1h-5zM10 11h1v4h-1z"/></symbol>
   <symbol id="i-pip" viewBox="0 0 16 16"><path d="M1 1h14v1h-14zM1 2h1v1h-1zM14 2h1v1h-1zM1 3h1v1h-1zM14 3h1v1h-1zM1 4h1v1h-1zM14 4h1v1h-1zM1 5h1v1h-1zM14 5h1v1h-1zM1 6h1v1h-1zM7 6h6v1h-6zM14 6h1v1h-1zM1 7h1v1h-1zM7 7h6v1h-6zM14 7h1v1h-1zM1 8h1v1h-1zM7 8h6v1h-6zM14 8h1v1h-1zM1 9h1v1h-1zM7 9h6v1h-6zM14 9h1v1h-1zM1 10h1v1h-1zM14 10h1v1h-1zM1 11h14v1h-14z"/></symbol>
   <symbol id="i-focus" viewBox="0 0 16 16"><path d="M1 1h14v1h-14zM1 2h1v1h-1zM14 2h1v1h-1zM1 3h1v1h-1zM14 3h1v1h-1zM1 4h1v1h-1zM14 4h1v1h-1zM1 5h1v1h-1zM14 5h1v1h-1zM1 6h1v1h-1zM14 6h1v1h-1zM1 7h1v1h-1zM14 7h1v1h-1zM1 8h14v1h-14zM1 10h3v1h-3zM6 10h4v1h-4zM12 10h3v1h-3zM1 11h3v1h-3zM6 11h4v1h-4zM12 11h3v1h-3z"/></symbol>
   <symbol id="i-leave" viewBox="0 0 16 16"><path d="M4 3h8v1h-8zM2 4h12v1h-12zM1 5h3v1h-3zM6 5h4v1h-4zM12 5h3v1h-3zM1 6h2v1h-2zM7 6h2v1h-2zM13 6h2v1h-2zM1 7h2v1h-2zM13 7h2v1h-2zM1 8h4v1h-4zM11 8h4v1h-4zM1 9h4v1h-4zM11 9h4v1h-4z"/></symbol>
@@ -63,6 +62,13 @@
   <symbol id="i-pencil" viewBox="0 0 16 16"><path d="M11 1h2v1h-2zM10 2h4v1h-4zM9 3h2v1h-2zM12 3h2v1h-2zM8 4h2v1h-2zM11 4h2v1h-2zM7 5h2v1h-2zM10 5h2v1h-2zM6 6h2v1h-2zM9 6h2v1h-2zM5 7h2v1h-2zM8 7h2v1h-2zM4 8h2v1h-2zM7 8h2v1h-2zM3 9h1v1h-1zM5 9h3v1h-3zM3 10h1v1h-1zM6 10h1v1h-1zM2 11h4v1h-4z"/></symbol>
   <symbol id="i-hash" viewBox="0 0 16 16"><path d="M4 1h2v1h-2zM10 1h2v1h-2zM4 2h2v1h-2zM10 2h2v1h-2zM2 3h12v1h-12zM2 4h12v1h-12zM3 5h2v1h-2zM9 5h2v1h-2zM3 6h2v1h-2zM9 6h2v1h-2zM3 7h2v1h-2zM9 7h2v1h-2zM2 8h12v1h-12zM2 9h12v1h-12zM2 10h2v1h-2zM8 10h2v1h-2zM2 11h2v1h-2zM8 11h2v1h-2zM2 12h2v1h-2zM8 12h2v1h-2z"/></symbol>
   <symbol id="i-image" viewBox="0 0 16 16"><path d="M1 1h14v1h-14zM1 2h1v1h-1zM14 2h1v1h-1zM1 3h1v1h-1zM4 3h2v1h-2zM14 3h1v1h-1zM1 4h1v1h-1zM4 4h2v1h-2zM14 4h1v1h-1zM1 5h1v1h-1zM11 5h1v1h-1zM14 5h1v1h-1zM1 6h1v1h-1zM10 6h3v1h-3zM14 6h1v1h-1zM1 7h1v1h-1zM5 7h1v1h-1zM9 7h4v1h-4zM14 7h1v1h-1zM1 8h1v1h-1zM4 8h3v1h-3zM8 8h5v1h-5zM14 8h1v1h-1zM1 9h1v1h-1zM3 9h10v1h-10zM14 9h1v1h-1zM1 10h1v1h-1zM14 10h1v1h-1zM1 11h14v1h-14z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 16 16"><path d="M4 1h2v1h-2zM4 2h4v1h-4zM4 3h6v1h-6zM4 4h8v1h-8zM4 5h10v1h-10zM4 6h12v1h-12zM4 7h12v1h-12zM4 8h10v1h-10zM4 9h8v1h-8zM4 10h6v1h-6zM4 11h4v1h-4zM4 12h2v1h-2z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 16 16"><path d="M3 1h4v1h-4zM9 1h4v1h-4zM3 2h4v1h-4zM9 2h4v1h-4zM3 3h4v1h-4zM9 3h4v1h-4zM3 4h4v1h-4zM9 4h4v1h-4zM3 5h4v1h-4zM9 5h4v1h-4zM3 6h4v1h-4zM9 6h4v1h-4zM3 7h4v1h-4zM9 7h4v1h-4zM3 8h4v1h-4zM9 8h4v1h-4zM3 9h4v1h-4zM9 9h4v1h-4zM3 10h4v1h-4zM9 10h4v1h-4zM3 11h4v1h-4zM9 11h4v1h-4zM3 12h4v1h-4zM9 12h4v1h-4z"/></symbol>
+  <symbol id="i-next" viewBox="0 0 16 16"><path d="M2 1h2v1h-2zM11 1h2v1h-2zM2 2h4v1h-4zM11 2h2v1h-2zM2 3h6v1h-6zM11 3h2v1h-2zM2 4h8v1h-8zM11 4h2v1h-2zM2 5h10v1h-10zM2 6h11v1h-11zM2 7h11v1h-11zM2 8h10v1h-10zM2 9h8v1h-8zM11 9h2v1h-2zM2 10h6v1h-6zM11 10h2v1h-2zM2 11h4v1h-4zM11 11h2v1h-2zM2 12h2v1h-2zM11 12h2v1h-2z"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 16 16"><path d="M3 1h2v1h-2zM12 1h2v1h-2zM3 2h2v1h-2zM10 2h4v1h-4zM3 3h2v1h-2zM8 3h6v1h-6zM3 4h2v1h-2zM6 4h8v1h-8zM4 5h10v1h-10zM3 6h11v1h-11zM3 7h11v1h-11zM4 8h10v1h-10zM3 9h2v1h-2zM6 9h8v1h-8zM3 10h2v1h-2zM8 10h6v1h-6zM3 11h2v1h-2zM10 11h4v1h-4zM3 12h2v1h-2zM12 12h2v1h-2z"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 16 16"><path d="M11 1h1v1h-1zM2 2h3v1h-3zM11 2h2v1h-2zM5 3h1v1h-1zM9 3h5v1h-5zM6 4h1v1h-1zM8 4h1v1h-1zM11 4h2v1h-2zM7 5h1v1h-1zM11 5h1v1h-1zM6 6h1v1h-1zM8 6h1v1h-1zM5 7h1v1h-1zM9 7h1v1h-1zM12 7h1v1h-1zM2 8h3v1h-3zM10 8h4v1h-4zM12 9h1v1h-1z"/></symbol>
+  <symbol id="i-loop" viewBox="0 0 16 16"><path d="M10 1h1v1h-1zM3 2h8v1h-8zM2 3h1v1h-1zM10 3h1v1h-1zM2 4h1v1h-1zM2 5h1v1h-1zM12 5h1v1h-1zM2 6h1v1h-1zM12 6h1v1h-1zM2 7h1v1h-1zM12 7h1v1h-1zM5 8h1v1h-1zM12 8h1v1h-1zM5 9h1v1h-1zM13 9h1v1h-1zM5 10h9v1h-9zM5 11h1v1h-1z"/></symbol>
+  <symbol id="i-note" viewBox="0 0 16 16"><path d="M7 1h8v1h-8zM7 2h8v1h-8zM7 3h2v1h-2zM13 3h2v1h-2zM7 4h2v1h-2zM13 4h2v1h-2zM7 5h2v1h-2zM13 5h2v1h-2zM7 6h2v1h-2zM13 6h2v1h-2zM7 7h2v1h-2zM13 7h2v1h-2zM4 8h4v1h-4zM11 8h4v1h-4zM3 9h5v1h-5zM10 9h5v1h-5zM3 10h5v1h-5zM10 10h5v1h-5zM4 11h3v1h-3zM11 11h3v1h-3z"/></symbol>
   <symbol id="mark" viewBox="0 0 16 16"><path fill="#07040f" d="M4 2h8v1h-8zM2 3h2v1h-2zM12 3h2v1h-2zM1 4h1v1h-1zM14 4h1v1h-1zM1 5h1v1h-1zM6 5h7v1h-7zM14 5h1v1h-1zM1 6h1v1h-1zM5 6h1v1h-1zM13 6h2v1h-2zM1 7h1v1h-1zM5 7h1v1h-1zM13 7h2v1h-2zM1 8h1v1h-1zM6 8h7v1h-7zM14 8h1v1h-1zM1 9h1v1h-1zM14 9h1v1h-1zM1 10h1v1h-1zM8 10h6v1h-6zM2 11h6v1h-6zM13 11h1v1h-1zM7 12h6v1h-6z"/><path fill="#13b5c9" d="M4 3h8v1h-8zM2 4h2v1h-2zM6 4h8v1h-8zM2 5h4v1h-4zM13 5h1v1h-1zM2 6h3v1h-3zM2 7h3v1h-3zM2 8h4v1h-4zM13 8h1v1h-1zM6 9h8v1h-8z"/><path fill="#7ef4ff" d="M4 4h2v1h-2z"/><path fill="#d8fbff" d="M2 9h4v1h-4zM2 10h6v1h-6zM8 11h5v1h-5z"/><path fill="#ffe600" d="M6 6h4v1h-4zM12 6h1v1h-1zM6 7h7v1h-7z"/><path fill="#fffbd0" d="M10 6h2v1h-2z"/><path fill="#ffe600" d="M14 10h1v1h-1zM14 11h1v1h-1zM13 12h1v1h-1zM9 13h1v1h-1zM12 13h1v1h-1zM8 14h1v1h-1zM12 14h1v1h-1z"/></symbol>
   <symbol id="av-bagre" data-g="Bagres" viewBox="0 0 16 16"><path fill="#ff2bd6" d="M0 0h16v16H0z"/><path fill="#07040f" d="M4 2h8v1h-8zM2 3h2v1h-2zM12 3h2v1h-2zM1 4h1v1h-1zM14 4h1v1h-1zM1 5h1v1h-1zM6 5h7v1h-7zM14 5h1v1h-1zM1 6h1v1h-1zM5 6h1v1h-1zM13 6h2v1h-2zM1 7h1v1h-1zM5 7h1v1h-1zM13 7h2v1h-2zM1 8h1v1h-1zM6 8h7v1h-7zM14 8h1v1h-1zM1 9h1v1h-1zM14 9h1v1h-1zM1 10h1v1h-1zM8 10h6v1h-6zM2 11h6v1h-6zM13 11h1v1h-1zM7 12h6v1h-6z"/><path fill="#13b5c9" d="M4 3h8v1h-8zM2 4h2v1h-2zM6 4h8v1h-8zM2 5h4v1h-4zM13 5h1v1h-1zM2 6h3v1h-3zM2 7h3v1h-3zM2 8h4v1h-4zM13 8h1v1h-1zM6 9h8v1h-8z"/><path fill="#7ef4ff" d="M4 4h2v1h-2z"/><path fill="#d8fbff" d="M2 9h4v1h-4zM2 10h6v1h-6zM8 11h5v1h-5z"/><path fill="#ffe600" d="M6 6h4v1h-4zM12 6h1v1h-1zM6 7h7v1h-7z"/><path fill="#fffbd0" d="M10 6h2v1h-2z"/><path fill="#ffe600" d="M14 10h1v1h-1zM14 11h1v1h-1zM13 12h1v1h-1zM9 13h1v1h-1zM12 13h1v1h-1zM8 14h1v1h-1zM12 14h1v1h-1z"/></symbol>
   <symbol id="av-bagre-dj" data-g="Bagres" viewBox="0 0 16 16"><path fill="#00f0ff" d="M0 0h16v16H0z"/><path fill="#07040f" d="M3 1h10v1h-10zM2 2h1v1h-1zM13 2h1v1h-1zM1 3h1v1h-1zM3 3h1v1h-1zM12 3h2v1h-2zM0 4h1v1h-1zM3 4h1v1h-1zM14 4h1v1h-1zM0 5h1v1h-1zM3 5h1v1h-1zM6 5h7v1h-7zM14 5h1v1h-1zM0 6h1v1h-1zM3 6h1v1h-1zM5 6h1v1h-1zM13 6h2v1h-2zM0 7h1v1h-1zM3 7h1v1h-1zM5 7h1v1h-1zM13 7h2v1h-2zM1 8h2v1h-2zM6 8h7v1h-7zM14 8h1v1h-1zM1 9h1v1h-1zM14 9h1v1h-1zM1 10h1v1h-1zM8 10h6v1h-6zM2 11h6v1h-6zM13 11h1v1h-1zM7 12h6v1h-6z"/><path fill="#ff2bd6" d="M4 3h8v1h-8zM6 4h8v1h-8zM4 5h2v1h-2zM13 5h1v1h-1zM4 6h1v1h-1zM4 7h1v1h-1zM3 8h3v1h-3zM13 8h1v1h-1zM6 9h8v1h-8z"/><path fill="#00f0ff" d="M10 6h2v1h-2z"/><path fill="#2a2160" d="M6 6h4v1h-4zM12 6h1v1h-1zM6 7h7v1h-7z"/><path fill="#f4f0ff" d="M4 4h2v1h-2zM2 9h4v1h-4zM2 10h6v1h-6zM14 10h1v1h-1zM8 11h5v1h-5zM14 11h1v1h-1zM13 12h1v1h-1zM9 13h1v1h-1zM12 13h1v1h-1zM8 14h1v1h-1zM12 14h1v1h-1z"/><path fill="#a9a2d6" d="M1 5h1v1h-1zM1 6h1v1h-1z"/><path fill="#4a4470" d="M3 2h10v1h-10zM2 3h1v1h-1zM1 4h2v1h-2zM2 5h1v1h-1zM2 6h1v1h-1zM1 7h2v1h-2z"/></symbol>
@@ -228,6 +234,60 @@
           </div>
         </main>
 
+        <!-- Bagre DJ (S-1566): música do YouTube sincronizada no canal de voz. Cada pessoa toca o player oficial no próprio aparelho. -->
+        <section id="dj" class="dj" aria-labelledby="djName" hidden>
+          <div class="dj-player">
+            <div id="djFrame" class="dj-frame"></div>
+            <img id="djCover" class="dj-cover" alt="" hidden>
+            <p id="djIdle" class="dj-idle"><svg class="ic" aria-hidden="true"><use href="#i-note"/></svg><span id="djIdleText">Nada tocando</span></p>
+            <button id="djTap" class="btn btn-primary dj-tap" type="button" hidden><svg class="ic" aria-hidden="true"><use href="#i-play"/></svg>Tocar a música aqui</button>
+          </div>
+          <div class="dj-now">
+            <div class="dj-head">
+              <span class="avatar dj-av" aria-hidden="true"></span>
+              <h2 id="djName" class="dj-name">Bagre DJ <span class="bot-tag">BOT</span></h2>
+              <button id="djClose" class="icon-btn dj-close" type="button" aria-label="Fechar o Bagre DJ (a música continua)" title="Fechar (a música continua)"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
+            </div>
+            <p class="dj-np-label" id="djState">Tocando agora</p>
+            <p id="djTitle" class="dj-np-title">Peça uma música</p>
+            <p id="djBy" class="dj-np-by"></p>
+            <div class="dj-prog">
+              <span id="djCurT" class="dj-time">0:00</span>
+              <input id="djSeek" type="range" min="0" max="1" step="1" value="0" aria-label="Posição da música">
+              <span id="djDurT" class="dj-time">0:00</span>
+            </div>
+            <div class="dj-bar">
+            <div class="dj-ctl" role="toolbar" aria-label="Controles da música">
+              <button id="djShuffle" class="icon-btn" type="button" aria-label="Embaralhar a fila" title="Embaralhar a fila"><svg class="ic" aria-hidden="true"><use href="#i-shuffle"/></svg></button>
+              <button id="djPrev" class="icon-btn" type="button" aria-label="Voltar" title="Voltar"><svg class="ic" aria-hidden="true"><use href="#i-prev"/></svg></button>
+              <button id="djPlay" class="icon-btn dj-play" type="button" aria-label="Pausar" title="Pausar"><svg class="ic" aria-hidden="true"><use id="djPlayIcon" href="#i-pause"/></svg></button>
+              <button id="djNext" class="icon-btn" type="button" aria-label="Pular" title="Pular"><svg class="ic" aria-hidden="true"><use href="#i-next"/></svg></button>
+              <button id="djLoop" class="icon-btn dj-loop" type="button" aria-pressed="false" aria-label="Repetir: desligado" title="Repetir: desligado"><svg class="ic" aria-hidden="true"><use href="#i-loop"/></svg><span id="djLoopOne" class="dj-one" hidden>1</span></button>
+              <button id="djStop" class="icon-btn" type="button" aria-label="Parar e limpar a fila" title="Parar e limpar a fila"><svg class="ic" aria-hidden="true"><use href="#i-stop"/></svg></button>
+            </div>
+            <div class="dj-vol">
+              <button id="djMute" class="icon-btn" type="button" aria-pressed="false" aria-label="Mutar só a música" title="Mutar só a música (só para você)"><svg class="ic" aria-hidden="true"><use id="djMuteIcon" href="#i-vol"/></svg></button>
+              <input id="djVol" type="range" min="0" max="100" step="1" value="70" aria-label="Volume da música (só para você)">
+              <span id="djVolOut" class="dj-time">70%</span>
+              <span class="dj-only">só para você</span>
+            </div>
+            </div>
+            <p id="djNote" class="dj-note" hidden></p>
+          </div>
+          <div class="dj-side">
+            <form id="djForm" class="dj-search" role="search">
+              <input id="djQ" class="field field-sm" type="search" maxlength="300" autocomplete="off" spellcheck="false" placeholder="Buscar música ou colar link do YouTube" aria-label="Buscar música ou colar link do YouTube">
+              <button id="djGo" class="btn btn-cyan" type="submit">Buscar</button>
+            </form>
+            <div id="djResWrap" class="dj-res-wrap" hidden>
+              <p class="dj-sec"><span id="djResHead">Resultados</span><button id="djResX" class="linkish" type="button">fechar</button></p>
+              <ul id="djResults" class="dj-list" aria-label="Resultados da busca"></ul>
+            </div>
+            <p class="dj-sec"><span>Fila <b id="djCount"></b></span><span class="dj-hint">/play no chat também funciona</span></p>
+            <ol id="djQueue" class="dj-list dj-queue" aria-label="Fila de músicas"></ol>
+          </div>
+        </section>
+
         <footer class="dock-wrap" id="dockWrap" hidden>
           <div class="dock" role="toolbar" aria-label="Controles de voz e da transmissão">
             <button id="micBtn" class="dock-icon dock-voice" type="button" aria-pressed="false" aria-label="Silenciar microfone"><svg class="ic" aria-hidden="true"><use id="micIcon" href="#i-mic"/></svg></button>
@@ -328,6 +388,7 @@
               </div>
             </div>
             <span class="dock-sep" aria-hidden="true"></span>
+            <button id="djBtn" class="dock-icon dock-dj" type="button" aria-expanded="false" aria-controls="dj" aria-label="Bagre DJ: música do YouTube no canal" title="Bagre DJ: música no canal"><svg class="ic" aria-hidden="true"><use href="#i-note"/></svg></button>
             <button id="focusBtn" class="dock-icon" type="button" aria-pressed="false" aria-label="Modo foco: só o canal de voz (F)" title="Retrair laterais e chat (F)"><svg class="ic" aria-hidden="true"><use href="#i-full"/></svg></button>
             <button id="leaveBtn" class="dock-icon dock-leave" type="button" aria-label="Sair do canal de voz"><svg class="ic" aria-hidden="true"><use href="#i-leave"/></svg></button>
           </div>
@@ -564,6 +625,6 @@
 </template>
 
 <noscript><p class="noscript">O BAGRENATION precisa de JavaScript para conectar as pessoas da sala.</p></noscript>
-<script src="app.js?v=1564" defer></script>
+<script src="app.js?v=1566" defer></script>
 </body>
 </html>
