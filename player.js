@@ -1,7 +1,7 @@
 /* Bagre DJ (S-1566): player oficial do YouTube (IFrame Player API) controlado pelo BAGRENATION por postMessage.
  * Só toca o vídeo embutido, do jeito que o YouTube permite: nada de baixar ou separar o áudio.
- * Ordens (do app/site):  { bp: 1, op: 'load', id, at, play } · 'play' · 'pause' · { op: 'seek', at } · { op: 'vol', v, m } · 'stop'
- * Avisos (para o app):   { bp: 1, ev: 'ready' } · { ev: 'tick', st, t, d, id, ts } (a cada 250 ms e a cada mudança) · { ev: 'error', code, id }
+ * Ordens (do app/site):  { bp: 1, op: 'load', id, at, play } · 'play' · 'pause' · { op: 'seek', at } · { op: 'vol', v, m } · 'stop' · { op: 'list', list }
+ * Avisos (para o app):   { bp: 1, ev: 'ready' } · { ev: 'tick', st, t, d, id, ts } (a cada 250 ms e a cada mudança) · { ev: 'error', code, id } · { ev: 'list', list, ids }
  */
 (() => {
   'use strict';
@@ -37,6 +37,14 @@
     else if (d.op === 'seek') yt.seekTo(Math.max(0, Number(d.at) || 0), true);
     else if (d.op === 'vol') { vol = { v: Math.max(0, Math.min(100, Math.round(Number(d.v)))) || 0, m: d.m === true }; applyVol(); }
     else if (d.op === 'stop') { vid = ''; yt.stopVideo(); }
+    else if (d.op === 'list' && /^[A-Za-z0-9_-]{10,64}$/.test(d.list)) { // só lista os vídeos de uma playlist (iframe à parte, sem tocar)
+      yt.cuePlaylist({ listType: 'playlist', list: d.list });
+      const t0 = Date.now();
+      const poll = setInterval(() => {
+        const ids = (yt.getPlaylist && yt.getPlaylist()) || [];
+        if (ids.length || Date.now() - t0 > 10000) { clearInterval(poll); tell({ ev: 'list', list: d.list, ids: ids.slice(0, 200) }); }
+      }, 300);
+    }
     tick();
   }
 
