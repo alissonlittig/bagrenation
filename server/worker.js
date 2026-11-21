@@ -20,6 +20,9 @@
 // e vai para todos; cada pessoa toca o player oficial do YouTube no próprio aparelho (nada de baixar ou retransmitir áudio).
 // Busca por nome: YouTube Data API v3 se houver o secret YT_KEY; sem ela, a busca pública do YouTube (sem chave) (S-1580).
 // Links do Spotify (faixa, álbum, playlist): só título e artista da página pública do embed; a música sai da busca do YouTube.
+// S-0032: playlist/álbum do Spotify até 100 faixas (o embed mostra até 100): as 6 primeiras tocam logo e o resto entra na fila
+// aos poucos, 20 por vez, pelo alarme do objeto (cada chamada do plano grátis tem só 50 subpedidos). Aceita spotify.link,
+// spotify:playlist:, /intl-xx/, /embed/ e /user/<x>/playlist/.
 
 const ORIGINS = [/^https:\/\/alissonlittig\.github\.io$/, /^https?:\/\/tauri\.localhost$/, /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/];
 const MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime']);
@@ -41,6 +44,10 @@ const YT_ID = /^[A-Za-z0-9_-]{11}$/;
 const MAX_Q = 200;                      // itens na fila de um canal (tocadas + próximas)
 const KEEP_PLAYED = 30;                 // tocadas que ficam para o "voltar"
 const LOOPS = ['off', 'all', 'one'];
+const SP_MAX = 100;                     // faixas de uma playlist/álbum do Spotify (o embed público mostra até 100)
+const SP_FIRST = 6;                     // achadas antes de responder (tocam logo); o resto entra aos poucos
+const SP_STEP = 20;                     // buscas por volta do alarme (plano grátis: 50 subpedidos por chamada; cada busca pode tentar 2 vezes)
+const SP_ERR = 'Não consegui ler esse link do Spotify agora. Tente de novo.';
 const DJ = { name: 'Bagre DJ', av: 'dj', uid: 'dj' };
 const chanName = (v, kind) => { const n = clean(v, 32); return kind === 'text' ? n.toLowerCase().replace(/\s+/g, '-') : n; };
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, max);
@@ -82,6 +89,7 @@ export class Server {
       CREATE TABLE IF NOT EXISTS members (uid TEXT PRIMARY KEY, name TEXT NOT NULL, av TEXT NOT NULL, seen INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS chans (id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, uid TEXT, pos INTEGER NOT NULL, ts INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS music (ch TEXT PRIMARY KEY, s TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS spq (id INTEGER PRIMARY KEY AUTOINCREMENT, ch TEXT NOT NULL, j TEXT NOT NULL);
       INSERT OR IGNORE INTO chans (id, kind, name, uid, pos, ts) VALUES ('chat', 'text', 'chat', NULL, 0, 0), ('voz', 'voice', 'Canal de voz', NULL, 0, 0);`);
     // migração S-1357: só acrescenta colunas (nada é apagado); mensagens antigas ficam com uid vazio
     const cols = new Set(this.sql.exec('PRAGMA table_info(msgs)').toArray().map((c) => c.name));
@@ -247,7 +255,10 @@ export class Server {
       if (!a.uid || a.closed) continue;
       if (this.dead(ws, a, now)) this.gone(ws, a); else left = true;
     }
-    if (left) await this.ctx.storage.setAlarm(now + 60000);
+    let more = false;
+    try { more = await this.spStep(); } catch (err) { console.warn('Spotify fila', String(err)); more = this.spPending(); }
+    if (more) await this.ctx.storage.setAlarm(Date.now() + 200);
+    else if (left) await this.ctx.storage.setAlarm(now + 60000);
   }
 
   // ---------- sinalização WebRTC ----------
@@ -404,11 +415,12 @@ export class Server {
     ws.serializeAttachment(att);
     const by = (this.sql.exec('SELECT name FROM members WHERE uid = ?', att.uid).toArray()[0] || {}).name || 'Alguém';
     const tc = typeof d.tc === 'string' ? this.textChan(d.tc) : ''; // veio de um comando no chat: o DJ responde lá
-    let items = null, label = '';
+    let items = null, label = '', sp = null;
     if (d.op === 'play') { // texto (busca) ou link (vídeo/playlist): resolve antes de mexer no estado
       const r = await this.resolve(clean(d.q, 300));
       if (r.err) { if (tc) this.djSay(tc, `${by}: ${r.err}`); else no(r.err); return; }
       items = r.list; label = r.label || '';
+      if (r.sp) sp = r.sp; // playlist/álbum do Spotify: o resto entra aos poucos
     } else if (d.op === 'add') items = Array.isArray(d.items) ? d.items.slice(0, 100) : [];
     let alt = null;
     if (d.op === 'bad' && (d.code === 101 || d.code === 150)) alt = await this.altOf(d.ch, d.k); // S-1580: outra versão que toque no site (até 5)
@@ -425,11 +437,20 @@ export class Server {
       else if (!cur) { const at = s.q.length; s.q.push(...add); Server.start(s, at, t); }
       else s.q.push(...add);
       const one = add[0];
-      if (tc) {
+      let note = '';
+      if (sp) { // playlist/álbum do Spotify: avisa para todos no chat (como um bot do Discord) e guarda o resto
+        const rest = sp.rest.length;
+        note = `${by} pôs ${add.length} de ${label} na fila.${rest ? ` As outras ${rest} entram em instantes.` : ''}${sp.total > sp.want ? ` A playlist tem ${sp.total} músicas: o Bagre DJ pega as ${sp.want} primeiras.` : ''}`;
+        this.djSay(tc || s.tc || 'chat', `${note}${now1 ? ` Tocando agora: ${one.t}` : ''}`);
+        if (rest) {
+          this.sql.exec('INSERT INTO spq (ch, j) VALUES (?, ?)', d.ch, JSON.stringify({ rest: sp.rest, after: add[add.length - 1].k, by, tc: tc || s.tc || 'chat', label, added: add.length, miss: sp.miss, want: sp.want }));
+          await this.ctx.storage.setAlarm(Date.now() + 100);
+        }
+      } else if (tc) {
         this.djSay(tc, add.length > 1 ? `${by} pôs ${add.length} músicas${label ? ` de ${label}` : ''} na fila.${now1 ? ` Tocando agora: ${one.t}` : ''}`
           : now1 ? `Tocando agora: ${one.t} (pedido por ${by})` : `Na fila (#${s.q.length - 1 - s.i}): ${one.t} (pedido por ${by})`);
       }
-      ws.send(JSON.stringify({ t: 'musok', op: 'add', n: add.length, now: now1, title: one.t }));
+      ws.send(JSON.stringify({ t: 'musok', op: 'add', n: add.length, now: now1, title: one.t, note }));
     } else if (d.op === 'skip') { if (!cur) return no('Nada tocando agora.'); Server.advance(s, t, true); if (tc) this.djSay(tc, `${by} pulou ${cur.t}.`); }
     else if (d.op === 'prev') {
       if (cur && Server.posOf(s, t) > 5) Server.start(s, s.i, t);
@@ -445,6 +466,7 @@ export class Server {
     } else if (d.op === 'stop') {
       if (!s.q.length) return no('A fila já está vazia.');
       s.q = []; s.i = -1; s.paused = false; s.at = 0; s.pos = 0;
+      this.sql.exec('DELETE FROM spq WHERE ch = ?', d.ch); // playlist do Spotify que ainda entrava: para também
       if (tc) this.djSay(tc, `${by} parou a música e limpou a fila.`);
     } else if (d.op === 'rm') {
       const i = idx(d.k);
@@ -538,14 +560,14 @@ export class Server {
     const pos = new Map(ids.map((id, n) => [id, n]));
     return out.sort((a, b) => pos.get(a.id) - pos.get(b.id));
   }
-  async resolve(q) { // -> { list, label } ou { err }
+  async resolve(q, first = SP_FIRST) { // -> { list, label, sp? } ou { err }
     if (!q) return { err: 'Diga o nome da música ou cole um link do YouTube.' };
     const link = Server.parseYt(q);
     const key = !!this.env.YT_KEY;
     try {
-      const sp = Server.parseSp(q);
-      if (sp) return await this.spotify(sp);
-      if (/spotify\.(com|link)/i.test(q)) return { err: 'Cole o link de uma música, álbum ou playlist do Spotify (open.spotify.com/...).' };
+      const sp = Server.parseSp(q) || (Server.spShort(q) ? await Server.spUnshort(q) : null);
+      if (sp) return await this.spotify(sp, first).catch((err) => { console.warn('Spotify', String(err)); return { err: SP_ERR }; });
+      if (Server.spLike(q)) return { err: 'Cole o link de uma música, álbum ou playlist do Spotify (open.spotify.com/... ou spotify.link/...).' };
       if (link && link.list && !link.v) {
         if (!key) {
           const p = await Server.ytPublicList(link.list).catch(() => ({ list: [] }));
@@ -599,12 +621,15 @@ export class Server {
     this.ytc.set(k, { at: Date.now(), list });
     return list;
   }
-  static async innertube(path, body) { // a API pública que a própria página do YouTube usa (sem chave)
+  static async innertube(path, body, retry = 1) { // a API pública que a própria página do YouTube usa (sem chave)
     const r = await fetch(`https://www.youtube.com/youtubei/v1/${path}?prettyPrint=false`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ context: { client: { clientName: 'WEB', clientVersion: '2.20251101.00.00', hl: 'pt', gl: 'BR' } }, ...body }),
     });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (!r.ok) { // S-0032: o YouTube às vezes recusa (403) uma busca que sai do Cloudflare; a 2ª tentativa sai por outro caminho
+      if (retry > 0 && (r.status === 403 || r.status === 429 || r.status >= 500)) { await new Promise((ok) => setTimeout(ok, 300)); return Server.innertube(path, body, retry - 1); }
+      throw new Error(`HTTP ${r.status}`);
+    }
     return r.json();
   }
   static ytItems(j, max) { // vídeos da resposta (formato antigo videoRenderer e o novo lockupViewModel); ao vivo (sem duração) fica de fora
@@ -635,25 +660,102 @@ export class Server {
     const j = await Server.innertube('browse', { browseId: `VL${list}` });
     return { list: Server.ytItems(j, 100), title: ((j.metadata || {}).playlistMetadataRenderer || {}).title || '' };
   }
-  static parseSp(q) { // open.spotify.com/(intl-xx/)track|album|playlist/<id>
-    const m = /^(?:https?:\/\/)?open\.spotify\.com\/(?:intl-[a-z-]+\/)?(track|album|playlist)\/([A-Za-z0-9]{22})/i.exec(q.trim());
+  static parseSp(q) { // open.spotify.com/(intl-xx/)(embed/)(user/<x>/)track|album|playlist/<id> ou spotify:playlist:<id>
+    const t = String(q || '').trim();
+    const m = /^spotify:(?:user:[^:\s]+:)?(track|album|playlist):([A-Za-z0-9]{22})(?![A-Za-z0-9])/i.exec(t)
+      || /^(?:https?:\/\/)?(?:open|play)\.spotify\.com\/(?:intl-[a-z]{2,3}(?:-[a-z0-9]{2,4})?\/)?(?:embed\/)?(?:user\/[^/?#\s]+\/)?(track|album|playlist)\/([A-Za-z0-9]{22})(?![A-Za-z0-9])/i.exec(t);
     return m ? { kind: m[1].toLowerCase(), id: m[2] } : null;
   }
-  async spotify(sp) { // -> { list, label } ou { err }: lê só nome e artista (página pública do embed) e acha cada uma no YouTube
+  static spShort(q) { // link encurtado do app do Spotify (spotify.link/<x>, spotify.app.link/<x>)
+    const m = /^(?:https?:\/\/)?((?:spotify\.link|spotify\.app\.link)\/[A-Za-z0-9_-]{4,40})(?:[/?#]\S*)?$/i.exec(String(q || '').trim());
+    return m ? `https://${m[1]}` : '';
+  }
+  static spLike(q) { return /(^|[\s/.])spotify(:|\.com|\.link|\.app\.link)/i.test(q); }
+  static async spUnshort(q) { // segue o redirecionamento (sem abrir a página do app) até achar o link open.spotify.com
+    let u = Server.spShort(q);
+    for (let n = 0; n < 2 && u; n++) {
+      const r = await fetch(u, { redirect: 'manual' });
+      const loc = r.headers.get('location') || '';
+      const sp = Server.parseSp(loc);
+      if (sp) return sp;
+      u = /^https:\/\/(spotify\.link|spotify\.app\.link|open\.spotify\.com)\//i.test(loc) ? loc : '';
+    }
+    return null;
+  }
+  static async spTotal(sp) { // quantas músicas a playlist tem de verdade (a página pública diz; o embed só mostra 100)
+    try {
+      const r = await fetch(`https://open.spotify.com/${sp.kind}/${sp.id}`, { headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'pt-BR' } });
+      const m = r.ok && /<meta name="music:song_count" content="(\d+)"/.exec(await r.text());
+      return m ? Number(m[1]) : 0;
+    } catch { return 0; }
+  }
+  async spFind(part) { // cada faixa (nome + 1º artista) achada pela busca do YouTube de sempre; a que não achou fica de fora
+    const found = await Promise.all(part.map((x) => {
+      const q = `${x.t} ${String(x.a || '').split(',')[0].replace(/\s+/g, ' ').trim()}`;
+      return this.search(q).then((l) => l[0] || null, (err) => { console.warn('Spotify busca', q.slice(0, 60), String(err)); return null; });
+    }));
+    return found.filter(Boolean);
+  }
+  async spotify(sp, first = SP_FIRST) { // -> { list, label, sp } ou { err }: lê só nome e artista (página pública do embed)
     const r = await fetch(`https://open.spotify.com/embed/${sp.kind}/${sp.id}`, { headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'pt-BR' } });
     if (r.status === 404) return { err: 'Esse link do Spotify não existe ou é privado.' };
     if (!r.ok) throw new Error(`Spotify HTTP ${r.status}`);
     const m = /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/.exec(await r.text());
-    const e = m && (((((JSON.parse(m[1]).props || {}).pageProps || {}).state || {}).data || {}).entity);
+    const pp = m && ((JSON.parse(m[1]).props || {}).pageProps || {});
+    if (pp && (pp.status === 404 || (!pp.state && pp.title))) return { err: 'Esse link do Spotify não existe ou é privado.' }; // apagada, privada ou id errado
+    const e = pp && ((pp.state || {}).data || {}).entity;
     if (!e) throw new Error('Spotify: página mudou');
-    const tracks = sp.kind === 'track' ? [{ t: e.name || e.title, a: (e.artists || []).map((x) => x.name).join(', ') }]
-      : (e.trackList || []).filter((x) => x.isPlayable !== false).map((x) => ({ t: x.title, a: x.subtitle }));
-    const want = tracks.filter((x) => x.t).slice(0, 30); // limite de subpedidos do plano grátis
-    const found = await Promise.all(want.map((x) => this.search(`${x.t} ${String(x.a || '').split(',')[0]}`).then((l) => l[0] || null, () => null)));
-    const list = found.filter(Boolean);
+    const one = (x) => String(x || '').replace(/\u00a0/g, ' ').trim();
+    const tracks = (sp.kind === 'track' ? [{ t: e.name || e.title, a: (e.artists || []).map((x) => x.name).join(', ') }]
+      : (e.trackList || []).map((x) => ({ t: x.title, a: x.subtitle }))).map((x) => ({ t: one(x.t), a: one(x.a) })).filter((x) => x.t); // tocável ou não no Spotify: o som vem do YouTube
     const name = clean(e.name || e.title, 60);
-    if (!list.length) return { err: 'Não achei essas músicas do Spotify no YouTube.' };
-    return { list, label: sp.kind === 'track' ? '' : `“${name}”${tracks.length > want.length ? ` (as ${want.length} primeiras)` : ''}` };
+    if (!tracks.length) return { err: 'Essa playlist do Spotify está vazia.' };
+    if (sp.kind === 'track') {
+      const list = await this.spFind(tracks);
+      return list.length ? { list } : { err: 'Não achei essa música do Spotify no YouTube.' };
+    }
+    const want = tracks.slice(0, SP_MAX);
+    const totalP = tracks.length >= SP_MAX ? Server.spTotal(sp) : Promise.resolve(0); // junto com as primeiras buscas
+    let list = [], n = 0, miss = 0;
+    while (n < want.length && (n < first || (!list.length && n < Math.max(first, SP_FIRST * 3)))) { // as primeiras (se nenhuma achou, tenta mais umas)
+      const part = want.slice(n, n + first);
+      const got = await this.spFind(part);
+      list = list.concat(got);
+      miss += part.length - got.length;
+      n += part.length;
+    }
+    const rest = want.slice(n);
+    const total = Math.max(tracks.length, await totalP);
+    if (!list.length && !rest.length) return { err: 'Não achei essas músicas do Spotify no YouTube.' };
+    if (!list.length) return { err: 'Não achei as primeiras músicas dessa playlist no YouTube.' };
+    return { list, label: `“${name}”`, more: rest.length, total, sp: { rest, total, want: want.length, miss } };
+  }
+  spPending() { return this.sql.exec('SELECT 1 FROM spq LIMIT 1').toArray().length > 0; }
+  async spStep() { // 1 volta do alarme: acha mais SP_STEP faixas da playlist mais antiga e põe logo depois das dela na fila
+    const r0 = this.sql.exec('SELECT id, ch, j FROM spq ORDER BY id LIMIT 1').toArray()[0];
+    if (!r0) return false;
+    const job = JSON.parse(r0.j);
+    const part = job.rest.splice(0, SP_STEP);
+    const found = await this.spFind(part);
+    if (!this.sql.exec('SELECT 1 FROM spq WHERE id = ?', r0.id).toArray().length) return this.spPending(); // /stop no meio: para
+    const s = this.mget(r0.ch); // lido depois do await
+    const add = found.map((x) => this.item(x, job.by)).filter(Boolean).slice(0, Math.max(0, MAX_Q - s.q.length));
+    job.miss += part.length - found.length;
+    const full = s.q.length + add.length >= MAX_Q && (job.rest.length > 0 || add.length < found.length);
+    if (add.length) {
+      const p = s.q.findIndex((x) => x.k === job.after);
+      const idle = !s.q[s.i];
+      const at = p >= 0 && p >= s.i ? p + 1 : s.q.length; // logo depois das que já entraram (o que outros pediram depois fica depois)
+      s.q.splice(at, 0, ...add);
+      if (idle) Server.start(s, at, Date.now()); // a fila tinha acabado: volta a tocar
+      job.after = add[add.length - 1].k;
+      job.added += add.length;
+      this.mset(r0.ch, s);
+    }
+    if (job.rest.length && !full) { this.sql.exec('UPDATE spq SET j = ? WHERE id = ?', JSON.stringify(job), r0.id); return true; }
+    this.sql.exec('DELETE FROM spq WHERE id = ?', r0.id);
+    this.djSay(job.tc, `Pronto: ${job.added} músicas de ${job.label} na fila.${job.miss ? ` ${job.miss} não achei no YouTube.` : ''}${full ? ` A fila chegou a ${MAX_Q}: o resto ficou de fora.` : ''}`);
+    return this.spPending();
   }
   async oembedAll(ids) { // playlist sem a Data API: títulos pelo oEmbed (até 40 por vez, limite de subpedidos do plano grátis)
     const one = async (id) => {
@@ -666,7 +768,7 @@ export class Server {
   }
   async ytSearch(ws, att, d, now) { // { t:'yt', q, n } ou { t:'yt', ids, n } -> { t:'ytres', n, list, err, needIds }
     if (!att.uid || (typeof d.q !== 'string' && !Array.isArray(d.ids))) return;
-    const reply = (r) => ws.send(JSON.stringify({ t: 'ytres', n: d.n, list: r.list || [], label: r.label || '', err: r.err || '', needIds: r.needIds || '' }));
+    const reply = (r) => ws.send(JSON.stringify({ t: 'ytres', n: d.n, list: r.list || [], label: r.label || '', err: r.err || '', needIds: r.needIds || '', more: r.more || 0, total: r.total || 0, link: r.link || '' }));
     if (Array.isArray(d.ids)) {
       const ids = [...new Set(d.ids.filter((v) => typeof v === 'string' && YT_ID.test(v)))];
       const list = await this.oembedAll(ids);
@@ -677,7 +779,7 @@ export class Server {
     ws.serializeAttachment(att);
     const q = clean(d.q, 200);
     if (!q) return reply({});
-    if (Server.parseYt(q) || Server.parseSp(q)) return reply(await this.resolve(q));
+    if (Server.parseYt(q) || Server.parseSp(q) || Server.spShort(q)) { const r = await this.resolve(q, SP_FIRST * 2); return reply(r.sp ? { list: r.list, label: r.label, more: r.more, total: r.total, link: q } : r); }
     try { reply({ list: await this.search(q) }); } catch (err) { reply({ err: Server.ytErr(err) }); }
   }
 

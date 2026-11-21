@@ -93,6 +93,11 @@ globalThis.fetch = async (u, opt) => {
   }
   if (u.hostname === 'open.spotify.com' && u.pathname === '/embed/track/4cOdK2wGLETKBW3PvgPWqT') return new Response(nextData({ name: 'Never Gonna Give You Up', artists: [{ name: 'Rick Astley' }] }));
   if (u.hostname === 'open.spotify.com' && u.pathname === '/embed/playlist/37i9dQZF1DXcBWIGoYBM5M') return new Response(nextData({ name: 'Top', trackList: [{ title: 'A', subtitle: 'X, Y' }, { title: 'B', subtitle: 'Z', isPlayable: false }, { title: 'C', subtitle: 'W' }] }));
+  if (u.hostname === 'open.spotify.com' && u.pathname === '/embed/playlist/1111111111111111111111') return new Response(nextData({ name: 'Grande', trackList: Array.from({ length: 100 }, (_, i) => ({ title: `F${i}`, subtitle: `Art${i}, Outro` })) }));
+  if (u.hostname === 'open.spotify.com' && u.pathname === '/playlist/1111111111111111111111') return new Response('<meta name="music:song_count" content="9379"/>');
+  if (u.hostname === 'open.spotify.com' && u.pathname === '/embed/playlist/2222222222222222222222') return new Response(`<html><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { status: 404, title: 'Page not found' } } })}</script></html>`); // apagada: o embed responde 200 com a página de erro
+  if (u.hostname === 'spotify.link' && u.pathname === '/zLIDHxA0bKb') { assert.equal(opt && opt.redirect, 'manual'); return new Response('', { status: 307, headers: { location: 'https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=x&_branch_match_id=1' } }); }
+  if (u.hostname === 'spotify.link') return new Response('', { status: 404 });
   if (u.hostname === 'open.spotify.com') return new Response('', { status: 404 });
   throw new Error(`rede inesperada ${u}`);
 };
@@ -110,10 +115,30 @@ assert.equal(Server.parseSp('https://evil.com/open.spotify.com/track/4cOdK2wGLET
 const spT = await nokey.resolve('https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT');
 assert.equal(spT.list.length, 1); assert.equal(asked.at(-1), 'never gonna give you up rick astley');
 const spP = await nokey.resolve('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M');
-assert.equal(spP.list.length, 2, 'faixa que não toca no Spotify fica de fora'); assert.equal(spP.label, '“Top”');
+assert.equal(spP.list.length, 3, 'S-0032: faixa que não toca no Spotify entra (o som vem do YouTube)'); assert.equal(spP.label, '“Top”');
 assert.ok(asked.includes('a x') && asked.includes('c w'));
 assert.match((await nokey.resolve('https://open.spotify.com/album/0000000000000000000000')).err, /não existe/);
-assert.match((await nokey.resolve('https://spotify.link/abc')).err, /open\.spotify\.com/);
+// S-0032: todos os formatos de link de playlist do Spotify
+const PL = { kind: 'playlist', id: '37i9dQZF1DXcBWIGoYBM5M' };
+for (const l of ['https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=5e6ac325d5d843ee', 'open.spotify.com/intl-pt/playlist/37i9dQZF1DXcBWIGoYBM5M', 'https://open.spotify.com/intl-pt-br/playlist/37i9dQZF1DXcBWIGoYBM5M',
+  'spotify:playlist:37i9dQZF1DXcBWIGoYBM5M', 'spotify:user:spotify:playlist:37i9dQZF1DXcBWIGoYBM5M', 'https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M?utm_source=generator',
+  'https://open.spotify.com/user/jaacolaa/playlist/37i9dQZF1DXcBWIGoYBM5M?si=_G', 'https://play.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M']) assert.deepEqual(Server.parseSp(l), PL, l);
+assert.equal(Server.parseSp('spotify:playlist:37i9dQZF1DXcBWIGoYBM5Mx'), null);
+assert.equal(Server.spShort('https://spotify.link/zLIDHxA0bKb'), 'https://spotify.link/zLIDHxA0bKb');
+assert.equal(Server.spShort('https://evil.com/spotify.link/zLIDHxA0bKb'), '');
+const spS = await nokey.resolve('https://spotify.link/zLIDHxA0bKb');
+assert.equal(spS.label, '“Top”', 'spotify.link segue o redirecionamento até a playlist');
+assert.match((await nokey.resolve('https://spotify.link/abcd')).err, /Spotify/);
+const spU = await nokey.resolve('spotify:playlist:37i9dQZF1DXcBWIGoYBM5M');
+assert.equal(spU.label, '“Top”', 'URI spotify:playlist: não vira busca de texto');
+assert.match((await nokey.resolve('https://open.spotify.com/playlist/2222222222222222222222')).err, /não existe ou é privado/, 'apagada não vira "YouTube não respondeu"');
+const big = await nokey.resolve('https://open.spotify.com/playlist/1111111111111111111111');
+assert.equal(big.list.length, 6, 'as 6 primeiras saem logo'); assert.equal(big.sp.rest.length, 94, 'o resto (até 100) entra aos poucos');
+assert.equal(big.sp.total, 9379); assert.equal(big.sp.want, 100);
+assert.equal(big.sp.rest[0].t, 'F6'); assert.equal(big.sp.rest[0].a, 'Art6, Outro', 'espaço especial do Spotify vira espaço');
+assert.ok(asked.includes('f0 art0'), 'busca = nome + 1º artista');
+const bigL = await nokey.resolve('https://open.spotify.com/playlist/1111111111111111111111', 30);
+assert.equal(bigL.list.length, 30); assert.equal(bigL.more, 70);
 
 // S-1580: versão bloqueada fora do YouTube -> outra versão da mesma música (até 5 tentativas, sem repetir id)
 {
@@ -142,4 +167,4 @@ assert.equal(s.q.length, 30, 'das tocadas ficam só as 30 últimas'); assert.equ
 s.loop = 'all'; s.i = 9; Server.advance(s, 5000, false); assert.equal(s.q[s.i].t, 'm20');
 s.i = s.q.length - 1; Server.advance(s, 6000, false); assert.equal(s.q[s.i].t, 'm10', 'repetir a fila volta ao começo');
 const t = { q: Array.from({ length: 40 }, (_, i) => ({ k: `k${i}`, id: 'aaaaaaaaaaa', t: `m${i}`, d: 100 })), i: 35, at: 0, pos: 0, paused: false, loop: 'off' }; Server.advance(t, 7000, false); assert.equal(t.i, 30); assert.equal(t.q[t.i].t, 'm36');
-console.log('DJ BUSCA OK: links, duração, busca (sem bloqueado e sem live), cache, playlist em 2 páginas, sem chave (busca pública), Spotify (faixa, playlist, 404), cota, fila (repetir/avançar)');
+console.log('DJ BUSCA OK: links, duração, busca (sem bloqueado e sem live), cache, playlist em 2 páginas, sem chave (busca pública), Spotify (faixa, playlist, 404, links spotify.link/URI/intl/embed/user, até 100 com o resto aos poucos), cota, fila (repetir/avançar)');

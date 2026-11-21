@@ -2664,7 +2664,8 @@
         });
         return;
       }
-      dj.res = { list: Array.isArray(d.list) ? d.list.filter((x) => x && /^[A-Za-z0-9_-]{11}$/.test(x.id)).slice(0, 100) : [], err: String(d.err || ''), label: String(d.label || ''), q: dj.res ? dj.res.q : '' };
+      dj.res = { list: Array.isArray(d.list) ? d.list.filter((x) => x && /^[A-Za-z0-9_-]{11}$/.test(x.id)).slice(0, 100) : [], err: String(d.err || ''), label: String(d.label || ''), q: dj.res ? dj.res.q : '',
+        more: Number.isInteger(d.more) && d.more > 0 ? Math.min(d.more, 100) : 0, total: Number.isInteger(d.total) ? d.total : 0, link: typeof d.link === 'string' ? d.link.slice(0, 300) : '' }; // S-0032: playlist do Spotify (o resto o servidor põe aos poucos)
       $('djGo').disabled = false;
       if (dj.auto && dj.auto.n === n) { // /play <link de playlist>: tudo direto para a fila
         const a = dj.auto;
@@ -2675,7 +2676,7 @@
       }
       renderDjRes();
     } else if (d.t === 'musok' && typeof d.title === 'string') {
-      toast(d.n > 1 ? `${d.n} músicas na fila` : d.now ? `Tocando agora: ${d.title}` : `Na fila: ${d.title}`);
+      toast(typeof d.note === 'string' && d.note ? d.note.slice(0, 200) : d.n > 1 ? `${d.n} músicas na fila` : d.now ? `Tocando agora: ${d.title}` : `Na fila: ${d.title}`);
     }
   }
   function musSend(op, extra = {}) {
@@ -2918,14 +2919,15 @@
     $('djResWrap').hidden = !r;
     if (!r) return;
     const here = djHere();
-    $('djResHead').textContent = r.loading ? 'Buscando…' : r.err ? 'Busca' : r.label ? `Playlist ${r.label} · ${r.list.length}` : `Resultados para “${r.q.slice(0, 40)}”`;
+    $('djResHead').textContent = r.loading ? 'Buscando…' : r.err ? 'Busca' : r.label ? `Playlist ${r.label} · ${r.more ? `${r.list.length} de ${r.list.length + r.more}` : r.list.length}` : `Resultados para “${r.q.slice(0, 40)}”`;
     const rows = [];
     if (r.err && !r.loading) rows.push(Object.assign(document.createElement('li'), { className: 'dj-empty dj-err', textContent: r.err }));
     else if (!r.loading && !r.list.length) rows.push(Object.assign(document.createElement('li'), { className: 'dj-empty', textContent: 'Nada encontrado.' }));
-    if (r.list.length > 1 && r.label) {
+    if ((r.list.length > 1 || r.more) && r.label) {
       const li = Object.assign(document.createElement('li'), { className: 'dj-all' });
-      const b = Object.assign(document.createElement('button'), { type: 'button', className: 'btn btn-primary', textContent: `Pôr as ${r.list.length} na fila`, disabled: !here });
-      b.addEventListener('click', () => { if (musSend('add', { items: r.list })) closeDjRes(); });
+      const all = r.list.length + r.more;
+      const b = Object.assign(document.createElement('button'), { type: 'button', className: 'btn btn-primary', textContent: `Pôr as ${all} na fila`, disabled: !here });
+      b.addEventListener('click', () => { if (r.more && r.link ? musSend('play', { q: r.link }) : musSend('add', { items: r.list })) closeDjRes(); }); // Spotify: o servidor põe todas (as primeiras tocam logo)
       li.append(b);
       rows.push(li);
     }
@@ -2994,7 +2996,7 @@
     if (/[?&]list=[A-Za-z0-9_-]{10,64}/.test(arg) && !/[?&]v=|youtu\.be\//.test(arg)) djSearch(arg, { tc, now });
     else musSend('play', { q: arg, now, tc });
   }
-  const DJ_HELP = 'Comandos do Bagre DJ: /play <nome ou link do YouTube/Spotify> (toca ou põe na fila) · /playnow <nome ou link> · /skip · /back · /pause · /resume · /queue · /np · /shuffle · /loop [fila|uma|off] · /remove <n> · /stop';
+  const DJ_HELP = 'Comandos do Bagre DJ: /play <nome ou link do YouTube/Spotify; playlist entra inteira, até 100> (toca ou põe na fila) · /playnow <nome ou link> · /skip · /back · /pause · /resume · /queue · /np · /shuffle · /loop [fila|uma|off] · /remove <n> · /stop';
   function djCommand(text) { // devolve true se o texto era um comando do DJ (não vai como mensagem)
     const m = /^\/([a-zA-Zçã]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
     if (!m) return false;
