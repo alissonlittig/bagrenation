@@ -89,7 +89,9 @@ def say(pg, text):
 
 
 def last_dj(pg, text, timeout=20000):
-    expect(pg.locator("#chatLog .msg.is-bot").last).to_contain_text(text, timeout=timeout)
+    # S-0037: o DJ fala e logo depois põe o cartão "Tocando agora" da próxima (como os bots do Discord): vale a mensagem
+    # mais nova do DJ que tem o texto, não só a última
+    expect(pg.locator("#chatLog .msg.is-bot", has_text=text).last).to_be_visible(timeout=timeout)
 
 
 def run(base, shots):
@@ -258,7 +260,7 @@ def run(base, shots):
         a.wait_for_function("() => BAGRENATION.dj().title !== 'Me at the zoo (fim)'", timeout=40000)
         step(f"fim do vídeo de 19 s passa para a próxima sozinho ({rest} na fila depois dele)")
         say(b, "/stop")
-        last_dj(a, "parou a música")
+        last_dj(a, "Fila limpa")  # S-0033: /stop = /leave (para, limpa e tira o DJ, como no Rythm)
         for pg in (a, b, c):
             pg.wait_for_function("() => BAGRENATION.dj().id === null")
         expect(a.locator("#people li.is-bot")).to_have_count(0)
@@ -270,7 +272,7 @@ def run(base, shots):
         expect(a.locator("#chatLog .msg.ephem").last).to_contain_text("A fila está vazia")
         expect(b.locator("#chatLog .msg.ephem")).to_have_count(0)
         say(a, "/ajuda")
-        expect(a.locator("#chatLog .msg.ephem").last).to_contain_text("/play")
+        expect(a.locator("#chatLog .msg.ephem").last).to_contain_text("!play")
         say(a, "/ola isto não é comando")
         expect(b.locator("#chatLog .msg").last).to_contain_text("/ola isto não é comando")
         T.voice_ready(a, 2)
@@ -278,7 +280,9 @@ def run(base, shots):
         step("/queue e /ajuda respondem só para quem pediu; texto com / que não é comando vai normal; voz segue (Bruno ouve a Ana)")
 
         # 12. S-1580: nome -> toca (painel + Enter e /play <nome>), Spotify (faixa e playlist)
-        a.fill("#djQ", "me at the zoo jawed")
+        if not a.locator("#djQ").is_visible():  # S-0033: /stop tira o DJ do canal e o painel fecha; o botão da música abre de novo
+            a.click("#djBtn")
+        a.fill("#djQ", "big buck bunny blender")  # S-0037: vídeo longo (o de 19 s acabava antes do próximo pedido entrar na fila)
         t0 = time.time()
         a.press("#djQ", "Enter")
         expect(a.locator("#djQ")).to_have_value("")

@@ -1288,3 +1288,14 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
   .djc-add .djc-title { font-size: 19px; }
   .djc-sub, .djc-eta { font-size: 16px; }
 }
+/* S-0037: fila, letra e ajuda não têm capa: 1 coluna em qualquer largura (a regra do celular de 92 px era só para o cartão com capa) */
+.djc.djc-q, .djc.djc-ly, .djc.djc-help { grid-template-columns: minmax(0, 1fr); }
+@container chatlog (max-width: 460px) {
+  .djc.djc-q, .djc.djc-ly, .djc.djc-help { padding: 8px 10px; width: 100%; }
+  .djc-ol li { grid-template-columns: 26px minmax(0, 1fr); row-gap: 0; padding: 4px; }
+  .djc-ol i { grid-column: 2; font-size: 15px; }
+  .djc-now { font-size: 16px; }
+  .djc-cmds { grid-template-columns: minmax(0, 1fr); font-size: 17px; }
+  .djc-cmds dd { margin-bottom: 4px; }
+  .djc-lyr { font-size: 19px; max-height: 300px; }
+}
