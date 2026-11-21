@@ -312,8 +312,10 @@ def run(base, shots):
             pg.wait_for_function("() => BAGRENATION.dj().id === null")
 
         # 13. playlist por link no chat (sem a Data API: o player lista os vídeos e o servidor pega os títulos)
+        n_bot = b.locator("#chatLog .msg.is-bot").count()
         say(a, f"/play {PLAYLIST}")
-        last_dj(b, "músicas", timeout=45000)
+        b.wait_for_function("n => document.querySelectorAll('#chatLog .msg.is-bot').length > n", arg=n_bot, timeout=45000)
+        a.wait_for_function("() => BAGRENATION.dj().q.length >= 2", timeout=45000)
         d = dj(a)
         assert len(d["q"]) >= 2, d["q"]
         playing(b, d["id"])
