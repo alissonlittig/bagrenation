@@ -33,6 +33,8 @@
   const CAN_SHARE = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
   // App para PC (desktop/, Tauri): esta mesma página com tecla global, bandeja e avisos. No navegador é undefined.
   const DESK = window.__TAURI__ || null;
+  // App para Android (mobile/, Capacitor, S-0057): esta mesma página; mobile.js põe a ponte nativa em window.BAGRE_MOB.
+  const MOB = window.BAGRE_MOB || null;
 
   // ---------- estado ----------
   let room = null;          // nome do servidor (fixo) quando conectado
@@ -101,7 +103,7 @@
   };
 
   // Bagre DJ (S-1566): estado da música de cada canal de voz (vem do servidor do chat) e o player deste aparelho
-  const PLAYER = `${DESK ? 'https://alissonlittig.github.io/bagrenation/' : ''}player.html?v=1566`;
+  const PLAYER = `${DESK || MOB ? 'https://alissonlittig.github.io/bagrenation/' : ''}player.html?v=1566`;
   const PLAYER_ORIGIN = new URL(PLAYER, location.href).origin;
   const djVol0 = Number(store('djvol'));
   const dj = {
@@ -356,6 +358,7 @@
         const where = e.vch === 'voz' ? 'no canal de voz' : `em ${chanLabel(e.vch)}`;
         if (after || (!first && !inVoice)) { note(`${e.name} entrou ${where}`); sfx('in'); }
         if (!first && (after || !inVoice) && DESK && (!document.hasFocus() || document.documentElement.classList.contains('app-hidden'))) DESK.core.invoke('notify', { body: `${e.name} entrou ${where}` }).catch(() => {});
+        else if (!first && (after || !inVoice) && MOB && MOB.hidden()) MOB.notify(`${e.name} entrou ${where}`);
       }
       if (!e.sharing) { e.stopped = false; removeStream(e); }
       if (e.tile) e.tile.setName(e.name);
@@ -900,6 +903,7 @@
     if (t) fsWake();
     else if (screen.orientation && screen.orientation.unlock) try { screen.orientation.unlock(); } catch { /* sem trava */ }
     if (DESK) DESK.core.invoke('fullscreen', { on: !!t }).catch(() => {}); // app: a janela inteira em tela cheia (cobre a barra do Windows)
+    if (MOB) { const v = t && t.querySelector('video'); MOB.fullscreen(!!t, !!v && v.videoWidth > v.videoHeight); } // Android: tela deitada gira o celular
   });
   for (const t of ['pointermove', 'pointerdown', 'keydown', 'wheel']) document.addEventListener(t, fsWake, { passive: true, capture: true });
   document.addEventListener('keydown', (ev) => { // Esc sai mesmo onde o navegador/WebView não tira sozinho
@@ -1501,10 +1505,11 @@
     renderUnread();
     sfx('tap');
     const now = Date.now();
-    if (DESK && document.documentElement.classList.contains('app-hidden') && now - chat.notifyAt > 10000) {
+    if ((DESK && document.documentElement.classList.contains('app-hidden') || MOB && MOB.hidden()) && now - chat.notifyAt > 10000) {
       chat.notifyAt = now;
       const where = ch === 'chat' ? '' : ` em #${chanLabel(ch)}`;
-      DESK.core.invoke('notify', { body: `${m.name}${where}: ${m.text || (m.media && m.media.mime.startsWith('video/') ? 'mandou um vídeo' : 'mandou uma imagem')}`.slice(0, 160) }).catch(() => {});
+      const body = `${m.name}${where}: ${m.text || (m.media && m.media.mime.startsWith('video/') ? 'mandou um vídeo' : 'mandou uma imagem')}`.slice(0, 160);
+      if (MOB) MOB.notify(body); else DESK.core.invoke('notify', { body }).catch(() => {});
     }
   }
   // Não lidas por canal: contador das que chegaram com o canal fechado; negrito também para o que chegou com o
@@ -2191,6 +2196,7 @@
     $('vuMark').hidden = voice.mode !== 'vad' || !voice.sens;
     $('pttKeyBtn').textContent = pickingKey === 'ptt' ? 'Aperte…' : keyName(voice.key);
     $('pttKeyBtn').setAttribute('aria-pressed', String(pickingKey === 'ptt'));
+    if (MOB) { const c = inVoice && chanOf(myVch); MOB.callState(inVoice, inVoice ? `Na voz · ${c && c.kind === 'voice' ? c.name : 'Canal de voz'}` : ''); }
     if (DESK) {
       $('muteKeyBtn').textContent = pickingKey === 'mute' ? 'Aperte… (Backspace: nenhuma)' : keyName(voice.muteKey);
       $('muteKeyBtn').setAttribute('aria-pressed', String(pickingKey === 'mute'));
@@ -3781,6 +3787,21 @@
     else if (focusOn()) { setFocus(''); $('focusBtn').focus(); }
     else if (!$('panel').hidden && narrow()) { togglePanel(false); $('panelBtn').focus(); }
   });
+  if (MOB) { // Android: botão voltar fecha o que estiver aberto (igual ao Esc); notificação da voz sai da voz / para a tela
+    MOB.hooks.leave = () => leaveVoice();
+    MOB.hooks.stopShare = () => stopShare();
+    MOB.hooks.back = () => {
+      if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return true; }
+      if (!$('settings').hidden) { toggleSettings(false); return true; }
+      if (!$('voicePop').hidden) { togglePop('voicePop', false); return true; }
+      if (!$('statusPop').hidden) { togglePop('statusPop', false); return true; }
+      if (!$('msgMenu').hidden || !$('reactPop').hidden || !$('userMenu').hidden) { closeMenus(); return true; }
+      if (replyTo !== null) { cancelReply(); return true; }
+      if (focusOn()) { setFocus(''); return true; }
+      if (!$('panel').hidden && narrow()) { togglePanel(false); return true; }
+      return false;
+    };
+  }
   $('focusBtn').addEventListener('click', toggleFocus);
   $('focusTop').addEventListener('click', toggleFocus);
   $('chatTop').addEventListener('click', toggleChat);

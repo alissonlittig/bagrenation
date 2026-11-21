@@ -4,7 +4,7 @@
 //   POST /s/<srv>/up          envia um arquivo (imagem, GIF ou vídeo) e devolve { id, mime, size }
 //   GET  /s/<srv>/m/<id>      devolve o arquivo (com Range, para o vídeo poder avançar)
 //   POST /s/<srv>/del?id=N    apaga uma mensagem (moderação: Authorization: Bearer <ADMIN_KEY>)
-// Escrever exige Origin do site ou do app: não é segredo (dá para forjar fora do navegador), só impede
+// Escrever exige Origin do site ou do app (PC: tauri.localhost; Android: https://localhost, S-0057): não é segredo (dá para forjar fora do navegador), só impede
 // que outra página use o chat. Moderação de verdade = ADMIN_KEY, guardada como secret do Worker.
 // Identidade (S-1357): cada aparelho guarda uma chave aleatória; o id público (uid) é o hash dela. Só quem tem a
 // chave edita e apaga as próprias mensagens. Presença (online/ausente/offline), "digitando", respostas e reações
@@ -28,7 +28,7 @@
 // artista, 'official audio/video', duração a até 15 s da oficial; fortnite, remix, cover, nightcore, sped up, slowed,
 // karaoke, 8d, reverb, live, instrumental (e lyrics de canal qualquer) só passam se o pedido tiver a palavra.
 
-const ORIGINS = [/^https:\/\/alissonlittig\.github\.io$/, /^https?:\/\/tauri\.localhost$/, /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/];
+const ORIGINS = [/^https:\/\/alissonlittig\.github\.io$/, /^https:\/\/localhost$/, /^https?:\/\/tauri\.localhost$/, /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/];
 const MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime']);
 const MAX_FILE = 25 * 1024 * 1024;
 const MAX_AV = 5 * 1024 * 1024;         // avatar enviado (S-1397): só imagem, não conta no teto de 3 GB e nunca expira

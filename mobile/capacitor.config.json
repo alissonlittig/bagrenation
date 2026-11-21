@@ -1,0 +1,7 @@
+{
+  "appId": "io.github.alissonlittig.bagrenation",
+  "appName": "BAGRENATION",
+  "webDir": "www",
+  "backgroundColor": "#07040f",
+  "android": { "allowMixedContent": false, "webContentsDebuggingEnabled": true, "captureInput": false }
+}

@@ -1,0 +1,1 @@
+{"name":"bagrenation-mobile","private":true,"version":"1.9.0","type":"module","scripts":{"montar":"node montar.mjs"},"dependencies":{"@capacitor/android":"^8.6.0","@capacitor/core":"^8.6.0"},"devDependencies":{"@capacitor/cli":"^8.6.0"}}

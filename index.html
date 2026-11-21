@@ -19,9 +19,16 @@
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<!-- iPhone/Android: "Adicionar à Tela de Início" abre como app, em tela cheia (S-0057) -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BAGRENATION">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/vt323-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=0037">
+<link rel="stylesheet" href="style.css?v=0057">
 </head>
 <body>
 
@@ -167,7 +174,7 @@
         </span>
       </div>
       <div class="top-actions">
-        <button id="focusTop" class="btn btn-quiet" type="button" title="Esconde as laterais e o chat; fica só o canal de voz (tecla F)" hidden>
+        <button id="focusTop" class="btn btn-quiet" type="button" aria-label="Retrair laterais" title="Esconde as laterais e o chat; fica só o canal de voz (tecla F)" hidden>
           <svg class="ic" aria-hidden="true"><use href="#i-full"/></svg>
           <span>Retrair laterais</span>
         </button>
@@ -627,6 +634,6 @@
 </template>
 
 <noscript><p class="noscript">O BAGRENATION precisa de JavaScript para conectar as pessoas da sala.</p></noscript>
-<script src="app.js?v=0037" defer></script>
+<script src="app.js?v=0057" defer></script>
 </body>
 </html>

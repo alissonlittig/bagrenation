@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- bagre em pixel (silhueta branca para a barra de status) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="16" android:viewportHeight="16">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M4,2h8v1h2v6h-1v1H8v1H2V9H1V4h1V3h2z M14,10h1v2h-1z M13,12h1v1h-1z M9,13h1v1H9z M12,13h1v2h-1z M8,14h1v1H8z"/>
+    <path android:fillColor="#00000000" android:pathData="M6,5h7v3H6z"/>
+</vector>

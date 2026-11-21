@@ -1,2 +1,9 @@
 __pycache__/
 *.pyc
+mobile/node_modules/
+mobile/www/
+mobile/android/app/build/
+mobile/android/build/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/src/main/assets/public/

@@ -1299,3 +1299,9 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
   .djc-cmds dd { margin-bottom: 4px; }
   .djc-lyr { font-size: 19px; max-height: 300px; }
 }
+
+/* S-0057 celular: "Retrair laterais" vira só o ícone (o texto cortava o nome do canal no topo) */
+@media (max-width: 560px) {
+  #focusTop { min-width: 46px; padding: 0; }
+  #focusTop span { display: none; }
+}
