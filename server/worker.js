@@ -23,6 +23,10 @@
 // S-0032: playlist/álbum do Spotify até 100 faixas (o embed mostra até 100): as 6 primeiras tocam logo e o resto entra na fila
 // aos poucos, 20 por vez, pelo alarme do objeto (cada chamada do plano grátis tem só 50 subpedidos). Aceita spotify.link,
 // spotify:playlist:, /intl-xx/, /embed/ e /user/<x>/playlist/.
+// S-0032 E1: versão original. Nome digitado vira título + artista oficiais (iTunes Search API, grátis e sem chave); a busca
+// do YouTube é 'artista - título' e cada resultado ganha nota: canal '- Topic' (áudio oficial do YouTube Music), VEVO ou do
+// artista, 'official audio/video', duração a até 15 s da oficial; fortnite, remix, cover, nightcore, sped up, slowed,
+// karaoke, 8d, reverb, live, instrumental (e lyrics de canal qualquer) só passam se o pedido tiver a palavra.
 
 const ORIGINS = [/^https:\/\/alissonlittig\.github\.io$/, /^https?:\/\/tauri\.localhost$/, /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/];
 const MIME = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime']);
@@ -48,6 +52,11 @@ const SP_MAX = 100;                     // faixas de uma playlist/álbum do Spot
 const SP_FIRST = 6;                     // achadas antes de responder (tocam logo); o resto entra aos poucos
 const SP_STEP = 20;                     // buscas por volta do alarme (plano grátis: 50 subpedidos por chamada; cada busca pode tentar 2 vezes)
 const SP_ERR = 'Não consegui ler esse link do Spotify agora. Tente de novo.';
+const BAD = ['fortnite', 'remix', 'rmx', 'cover', 'covers', 'nightcore', 'sped up', 'speed up', 'speed', 'slowed', 'reverb', 'karaoke', 'karaoke version', '8d', '8d audio',
+  'live', 'ao vivo', 'en vivo', 'live at', 'instrumental', 'piano', 'lofi', 'lo fi', 'mashup', 'reaction', 'react', 'bass boosted', 'tiktok', 'acoustic', 'acustico',
+  'cifra', 'aula', 'tutorial', 'como tocar', 'guitar', 'drum', 'bateria', 'parody', 'parodia', 'edit', 'extended', 'loop', '1 hour', '10 hours', 'mix', 'megamix', 'medley'];
+const WANT = ['fortnite', 'remix', 'cover', 'nightcore', 'sped up', 'slowed', 'reverb', 'karaoke', '8d', 'live', 'ao vivo', 'en vivo', 'instrumental', 'acoustic', 'acustico', 'piano'];
+const LYRIC = ['lyrics', 'lyric', 'letra', 'legendado', 'legenda', 'traducao', 'tradução', 'with lyrics', 'com letra'];
 const DJ = { name: 'Bagre DJ', av: 'dj', uid: 'dj' };
 const chanName = (v, kind) => { const n = clean(v, 32); return kind === 'text' ? n.toLowerCase().replace(/\s+/g, '-') : n; };
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, max);
@@ -520,7 +529,8 @@ export class Server {
       const o = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${cur.id}`)}`);
       if (o.status === 400 || o.status === 404) return null; // o vídeo nem existe: pula, não adianta procurar outra versão
       const q = cur.t.replace(/[([][^)\]]*[)\]]/g, ' ');
-      const v = (await this.search(tried.length % 2 ? cur.t : `${q} lyrics`)).find((x) => !tried.includes(x.id)); // alterna: outros envios da música e a versão com letra
+      const meta = { t: cur.t, a: String(cur.a || '').replace(/\s+-\s+topic$/i, ''), d: cur.d || 0 }; // E1: a outra versão também é a original (sem fortnite, remix, cover...)
+      const v = Server.rank(await this.search(tried.length % 2 ? cur.t : `${q} lyrics`), meta, `${cur.t} lyrics`).find((x) => !tried.includes(x.id)); // alterna: outros envios da música e a versão com letra
       return v ? { k, v, tried: [...tried, v.id] } : null;
     } catch { return null; }
   }
@@ -596,7 +606,7 @@ export class Server {
         return { list: [{ id: link.v, t: j.title, a: j.author_name, d: 0 }] };
       }
       if (link) return { err: 'Não achei um vídeo nesse link do YouTube.' };
-      const list = await this.search(q);
+      const list = await this.song(q);
       return list.length ? { list: list.slice(0, 1) } : { err: `Nada encontrado para “${q.slice(0, 60)}”.` };
     } catch (err) {
       return { err: Server.ytErr(err) };
@@ -620,6 +630,63 @@ export class Server {
     if (this.ytc.size > 200) this.ytc.clear();
     this.ytc.set(k, { at: Date.now(), list });
     return list;
+  }
+  static norm(x) { return String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); }
+  static base(t) { return String(t || '').replace(/[([][^)\]]*[)\]]/g, ' ').replace(/\s+-\s+.*$/, '').replace(/\s+/g, ' ').trim() || String(t || ''); } // sem (feat...), [..] e " - Remastered"
+  static artist1(a) { return String(a || '').replace(/\u00a0/g, ' ').split(/\s*,\s*|\s+&\s+|\s+(?:feat\.?|ft\.?|featuring|Feat\.?|Ft\.?)\s+|\s+x\s+|\s+e\s+/)[0].trim(); } // 'Lil Nas X' fica inteiro
+  static has(text, w) { return ` ${text} `.includes(` ${w} `); }
+  static rank(list, meta, asked) { // a versão original na frente (nota maior); mantém todas (a Lista mostra o resto)
+    const A = Server.norm(asked), an = Server.norm(Server.artist1(meta.a)), bt = Server.norm(Server.base(meta.t));
+    const words = bt.split(' ').filter(Boolean);
+    const score = (v, n) => {
+      const T = Server.norm(v.t), C = Server.norm(v.a), Cj = C.replace(/ /g, '');
+      const known = !!(an || meta.d); // sem o nome oficial: vale a ordem do YouTube (só tira as versões e ajuda o canal citado)
+      let sc = (12 - Math.min(n, 12)) * (known ? 0.5 : 3); // ordem do YouTube desempata
+      for (const w of BAD) if (Server.has(T, w) && !Server.has(A, w) && !Server.has(bt, w)) sc -= 100;
+      for (const w of WANT) if (Server.has(A, w)) sc += Server.has(T, w) ? 30 : -30; // pediu a versão (live, remix, ao vivo...): ela na frente
+      const topic = / topic$/.test(C), vevo = /vevo$/.test(Cj);
+      const at = an.split(' ').filter((w) => w.length >= 3 && !['the', 'and', 'dos', 'das'].includes(w)), ct = C.replace(/ topic$/, '').split(' ').filter((w) => w.length >= 3);
+      const own = !!an && (Cj === an.replace(/ /g, '') || C.startsWith(an) || Cj.startsWith(an.replace(/ /g, '')) || (at.length > 0 && ct.length > 0 && at.filter((w) => ct.includes(w)).length / Math.min(at.length, ct.length) >= 0.5)); // 'Antônio Carlos Jobim' = 'Tom Jobim'
+      if (topic && (own || !an)) sc += 50; else if (vevo) sc += 35; else if (own) sc += 30; // Topic de outro artista = gravação de outro (não ganha)
+      if (!(topic || vevo || own) && LYRIC.some((w) => Server.has(T, w) && !Server.has(A, w))) sc -= 40; // lyrics de canal qualquer
+      if (/\b(official audio|audio oficial)\b/.test(T)) sc += 12; else if (/\b(official (music )?video|clipe oficial|video oficial|videoclipe oficial)\b/.test(T)) sc += 10; else if (/\b(official|oficial)\b/.test(T)) sc += 4;
+      if (known) { if (bt && Server.has(T, bt)) sc += 15; else if (words.length) sc += (words.filter((w) => Server.has(T, w)).length / words.length) * 15 - 15; }
+      if (an && !own && !Server.has(T, an) && !C.includes(an)) sc -= 10;
+      if (C && C.replace(/ topic$/, '').split(' ').every((w) => Server.has(A, w))) sc += 15; // o pedido cita o canal (ex.: 'me at the zoo jawed') // nem o canal nem o título falam do artista
+      if (meta.d > 0 && v.d > 0) { const df = Math.abs(v.d - meta.d); sc += df <= 15 ? 20 : df <= 30 ? 5 : df <= 90 ? -15 : -35; }
+      return sc;
+    };
+    return list.map((v, n) => ({ v, s: score(v, n) })).sort((x, y) => y.s - x.s).map((x) => x.v);
+  }
+  async meta(q) { // nome digitado -> { t, a, d } oficiais (iTunes Search API, grátis, sem chave, ~20 por minuto); null se não bater
+    const qn = Server.norm(q), key = `m:${qn}`;
+    const hit = this.ytc.get(key);
+    if (hit && Date.now() - hit.at < 86400000) return hit.list;
+    let out = null;
+    try {
+      const r = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=10&country=BR`);
+      const res = r.ok ? ((await r.json()).results || []).filter((x) => x.trackName && x.artistName) : [];
+      const qt = qn.split(' ').filter(Boolean);
+      const cand = res.map((x, n) => ({ x, n })).filter(({ x }) => qt.length && qt.every((w) => Server.has(Server.norm(`${x.trackName} ${x.artistName}`), w))); // todas as palavras do pedido
+      if (cand.length) {
+        const pts = new Map(); // o artista que mais aparece no topo é o dono da música (um remix dele também conta; o cover de outro não)
+        for (const { x, n } of cand) { const k = Server.norm(Server.artist1(x.artistName)); pts.set(k, (pts.get(k) || 0) + 1 / (n + 1)); }
+        const best = [...pts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+        const clean = cand.filter(({ x }) => !BAD.some((w) => Server.has(Server.norm(x.trackName), w) && !Server.has(qn, w)));
+        const pick = (clean.find(({ x }) => Server.norm(Server.artist1(x.artistName)) === best) || clean[0] || cand[0]).x;
+        out = { t: pick.trackName, a: Server.artist1(pick.artistName), d: Math.round((pick.trackTimeMillis || 0) / 1000) };
+      }
+    } catch (err) { console.warn('iTunes', String(err)); }
+    if (this.ytc.size > 200) this.ytc.clear();
+    this.ytc.set(key, { at: Date.now(), list: out });
+    return out;
+  }
+  async song(q) { // nome -> resultados com a versão original na frente
+    if (Server.parseYt(q)) return this.search(q);
+    const m = await this.meta(q);
+    if (!m) return Server.rank(await this.search(q), { t: q, a: '', d: 0 }, q);
+    const list = await this.search(`${m.a} - ${Server.base(m.t)}`);
+    return Server.rank(list, m, q);
   }
   static async innertube(path, body, retry = 1) { // a API pública que a própria página do YouTube usa (sem chave)
     const r = await fetch(`https://www.youtube.com/youtubei/v1/${path}?prettyPrint=false`, {
@@ -702,8 +769,9 @@ export class Server {
   }
   async spFind(part) { // cada faixa (nome + 1º artista) achada pela busca do YouTube de sempre; a que não achou fica de fora
     const found = await Promise.all(part.map((x) => {
-      const q = `${x.t} ${String(x.a || '').split(',')[0].replace(/\s+/g, ' ').trim()}`;
-      return this.search(q).then((l) => l[0] || null, (err) => { console.warn('Spotify busca', q.slice(0, 60), String(err)); return null; });
+      const a = Server.artist1(x.a);
+      const q = a ? `${a} - ${Server.base(x.t)}` : Server.base(x.t); // E1: 'artista - título' e a versão original na frente
+      return this.search(q).then((l) => Server.rank(l, { t: x.t, a, d: x.d || 0 }, `${x.t} ${x.a}`)[0] || null, (err) => { console.warn('Spotify busca', q.slice(0, 60), String(err)); return null; });
     }));
     return found.filter(Boolean);
   }
@@ -717,8 +785,9 @@ export class Server {
     const e = pp && ((pp.state || {}).data || {}).entity;
     if (!e) throw new Error('Spotify: página mudou');
     const one = (x) => String(x || '').replace(/\u00a0/g, ' ').trim();
-    const tracks = (sp.kind === 'track' ? [{ t: e.name || e.title, a: (e.artists || []).map((x) => x.name).join(', ') }]
-      : (e.trackList || []).map((x) => ({ t: x.title, a: x.subtitle }))).map((x) => ({ t: one(x.t), a: one(x.a) })).filter((x) => x.t); // tocável ou não no Spotify: o som vem do YouTube
+    const sec = (ms) => (Number.isFinite(ms) && ms > 0 ? Math.round(ms / 1000) : 0);
+    const tracks = (sp.kind === 'track' ? [{ t: e.name || e.title, a: (e.artists || []).map((x) => x.name).join(', '), d: sec(e.duration && (e.duration.totalMilliseconds || e.duration)) }]
+      : (e.trackList || []).map((x) => ({ t: x.title, a: x.subtitle, d: sec(x.duration) }))).map((x) => ({ t: one(x.t), a: one(x.a), d: x.d })).filter((x) => x.t); // tocável ou não no Spotify: o som vem do YouTube
     const name = clean(e.name || e.title, 60);
     if (!tracks.length) return { err: 'Essa playlist do Spotify está vazia.' };
     if (sp.kind === 'track') {
@@ -791,7 +860,7 @@ export class Server {
     const q = clean(d.q, 200);
     if (!q) return reply({});
     if (Server.parseYt(q) || Server.parseSp(q) || Server.spShort(q)) { const r = await this.resolve(q, SP_FIRST * 2); return reply(r.sp ? { list: r.list, label: r.label, more: r.more, total: r.total, link: q } : r); }
-    try { reply({ list: await this.search(q) }); } catch (err) { reply({ err: Server.ytErr(err) }); }
+    try { reply({ list: await this.song(q) }); } catch (err) { reply({ err: Server.ytErr(err) }); }
   }
 
   avOk(v) { // avatar enviado só vale se a imagem existe de verdade (e foi enviada como avatar)

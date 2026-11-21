@@ -113,10 +113,10 @@ assert.equal(sent.at(-1).list.length, 2);
 assert.deepEqual(Server.parseSp('https://open.spotify.com/intl-pt/track/4cOdK2wGLETKBW3PvgPWqT?si=abc'), { kind: 'track', id: '4cOdK2wGLETKBW3PvgPWqT' });
 assert.equal(Server.parseSp('https://evil.com/open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT'), null);
 const spT = await nokey.resolve('https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT');
-assert.equal(spT.list.length, 1); assert.equal(asked.at(-1), 'never gonna give you up rick astley');
+assert.equal(spT.list.length, 1); assert.equal(asked.at(-1), 'rick astley - never gonna give you up', 'E1: artista - título');
 const spP = await nokey.resolve('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M');
 assert.equal(spP.list.length, 3, 'S-0032: faixa que não toca no Spotify entra (o som vem do YouTube)'); assert.equal(spP.label, '“Top”');
-assert.ok(asked.includes('a x') && asked.includes('c w'));
+assert.ok(asked.includes('x - a') && asked.includes('w - c'), JSON.stringify(asked));
 assert.match((await nokey.resolve('https://open.spotify.com/album/0000000000000000000000')).err, /não existe/);
 // S-0032: todos os formatos de link de playlist do Spotify
 const PL = { kind: 'playlist', id: '37i9dQZF1DXcBWIGoYBM5M' };
@@ -136,7 +136,7 @@ const big = await nokey.resolve('https://open.spotify.com/playlist/1111111111111
 assert.equal(big.list.length, 6, 'as 6 primeiras saem logo'); assert.equal(big.sp.rest.length, 94, 'o resto (até 100) entra aos poucos');
 assert.equal(big.sp.total, 9379); assert.equal(big.sp.want, 100);
 assert.equal(big.sp.rest[0].t, 'F6'); assert.equal(big.sp.rest[0].a, 'Art6, Outro', 'espaço especial do Spotify vira espaço');
-assert.ok(asked.includes('f0 art0'), 'busca = nome + 1º artista');
+assert.ok(asked.includes('art0 - f0'), 'busca = 1º artista - nome');
 const bigL = await nokey.resolve('https://open.spotify.com/playlist/1111111111111111111111', 30);
 assert.equal(bigL.list.length, 30); assert.equal(bigL.more, 70);
 
@@ -153,6 +153,21 @@ assert.equal(bigL.list.length, 30); assert.equal(bigL.more, 70);
   const l = await Server.ytPublic('recusada');
   assert.deepEqual(seen, ['/youtubei/v1/search', '/results']); assert.equal(l[0].id, 'eeeeeeeeeee');
   globalThis.fetch = f0;
+}
+
+// S-0032 E1: a versão original na frente (Fortnite, remix, cover, nightcore... ficam para trás se o pedido não tem a palavra)
+{
+  const V = (id, t, a, d) => ({ id, t, a, d });
+  const res = [V('aaaaaaaaaaa', 'Empty Out Your Pockets (Fortnite Version)', 'GameClips', 135), V('bbbbbbbbbbb', 'Juice WRLD - Empty Out Your Pockets (Lyrics)', 'Lyrics Hub', 136),
+    V('ccccccccccc', 'Empty Out Your Pockets - Nightcore', 'NightcoreX', 110), V('ddddddddddd', 'Empty Out Your Pockets', 'Juice WRLD - Topic', 135), V('eeeeeeeeeee', 'Juice WRLD - Empty Out Your Pockets (Official Audio)', 'JuiceWRLDVEVO', 137)];
+  const r = Server.rank(res, { t: 'Empty Out Your Pockets', a: 'Juice WRLD', d: 135 }, 'empty out your pockets');
+  assert.deepEqual(r.map((x) => x.id).slice(0, 2), ['ddddddddddd', 'eeeeeeeeeee'], 'Topic, depois VEVO');
+  assert.equal(r.at(-1).id === 'aaaaaaaaaaa' || r.at(-1).id === 'ccccccccccc', true, 'Fortnite e nightcore por último');
+  const live = Server.rank([V('aaaaaaaaaaa', 'Numb (Live)', 'Linkin Park', 190), V('bbbbbbbbbbb', 'Numb', 'Linkin Park - Topic', 187)], { t: 'Numb (Live)', a: 'Linkin Park', d: 190 }, 'numb live');
+  assert.equal(live[0].id, 'aaaaaaaaaaa', 'pediu live: live vale');
+  const dur = Server.rank([V('aaaaaaaaaaa', 'Numb (Official Video)', 'Linkin Park', 400), V('bbbbbbbbbbb', 'Numb (Official Video)', 'Linkin Park', 188)], { t: 'Numb', a: 'Linkin Park', d: 187 }, 'numb');
+  assert.equal(dur[0].id, 'bbbbbbbbbbb', 'duração perto da oficial');
+  assert.equal(Server.artist1('Chitãozinho & Xororó'), 'Chitãozinho'); assert.equal(Server.artist1('Lil Nas X'), 'Lil Nas X'); assert.equal(Server.artist1('Anitta x Pedro Sampaio'), 'Anitta'); assert.equal(Server.base('Bohemian Rhapsody - Remastered 2011'), 'Bohemian Rhapsody');
 }
 
 // S-1580: versão bloqueada fora do YouTube -> outra versão da mesma música (até 5 tentativas, sem repetir id)
@@ -182,4 +197,4 @@ assert.equal(s.q.length, 30, 'das tocadas ficam só as 30 últimas'); assert.equ
 s.loop = 'all'; s.i = 9; Server.advance(s, 5000, false); assert.equal(s.q[s.i].t, 'm20');
 s.i = s.q.length - 1; Server.advance(s, 6000, false); assert.equal(s.q[s.i].t, 'm10', 'repetir a fila volta ao começo');
 const t = { q: Array.from({ length: 40 }, (_, i) => ({ k: `k${i}`, id: 'aaaaaaaaaaa', t: `m${i}`, d: 100 })), i: 35, at: 0, pos: 0, paused: false, loop: 'off' }; Server.advance(t, 7000, false); assert.equal(t.i, 30); assert.equal(t.q[t.i].t, 'm36');
-console.log('DJ BUSCA OK: links, duração, busca (sem bloqueado e sem live), cache, playlist em 2 páginas, sem chave (busca pública), Spotify (faixa, playlist, 404, links spotify.link/URI/intl/embed/user, até 100 com o resto aos poucos), 403 -> página de resultados, cota, fila (repetir/avançar)');
+console.log('DJ BUSCA OK: links, duração, busca (sem bloqueado e sem live), cache, playlist em 2 páginas, sem chave (busca pública), Spotify (faixa, playlist, 404, links spotify.link/URI/intl/embed/user, até 100 com o resto aos poucos), 403 -> página de resultados, versão original na frente, cota, fila (repetir/avançar)');
