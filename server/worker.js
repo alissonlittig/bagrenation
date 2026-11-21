@@ -58,11 +58,19 @@ const BAD = ['fortnite', 'remix', 'rmx', 'cover', 'covers', 'nightcore', 'sped u
 const WANT = ['fortnite', 'remix', 'cover', 'nightcore', 'sped up', 'slowed', 'reverb', 'karaoke', '8d', 'live', 'ao vivo', 'en vivo', 'instrumental', 'acoustic', 'acustico', 'piano'];
 const LYRIC = ['lyrics', 'lyric', 'letra', 'legendado', 'legenda', 'traducao', 'tradução', 'with lyrics', 'com letra'];
 const DJ = { name: 'Bagre DJ', av: 'dj', uid: 'dj' };
+// S-0033: como os bots de música do Discord. Comandos com ! ou / e apelidos (o app traduz); 'Tocando agora' no chat com capa,
+// barra e botões (1 por canal de voz: o anterior sai quando a próxima começa); fila acabou = o DJ fica DJ_STAY no canal;
+// ninguém no canal há DJ_LEAVE = sai e limpa a fila (só conta quem avisa presença: app/site novos); autoplay ligável (mesmo
+// artista pelo iTunes); letra só de fonte grátis (LRCLIB, sem chave).
+const DJ_LEAVE = 180000;
+const DJ_STAY = 180000;
+const LRC_UA = 'BagreDJ/1.9 (bot de musica de um chat entre amigos)';
 const chanName = (v, kind) => { const n = clean(v, 32); return kind === 'text' ? n.toLowerCase().replace(/\s+/g, '-') : n; };
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim().slice(0, max);
 const bioClean = (s) => clean(String(s ?? '').replace(/\r/g, '').replace(/\n{3,}/g, '\n\n'), 190); // bio pública (S-1412): até 190 caracteres, quebra de linha ok
 const avOf = (v) => (/^[a-z0-9-]{0,24}$/.test(v || '') && v !== 'dj' ? v || '' : ''); // inclui u-<id de 20> (avatar enviado); 'dj' é só do bot
-const row = (r) => ({ ...r, media: r.media ? JSON.parse(r.media) : null, reply: r.reply ? JSON.parse(r.reply) : null, reacts: r.reacts ? JSON.parse(r.reacts) : null });
+const row = (r) => ({ ...r, media: r.media ? JSON.parse(r.media) : null, reply: r.reply ? JSON.parse(r.reply) : null, reacts: r.reacts ? JSON.parse(r.reacts) : null, card: r.card ? JSON.parse(r.card) : null });
+const dur = (ms) => (ms >= 60000 ? `${Math.round(ms / 60000)} min` : `${Math.round(ms / 1000)} s`);
 
 function cors(origin) {
   return origin ? { 'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', Vary: 'Origin' } : {};
@@ -83,6 +91,7 @@ export default {
     const h = new Headers(req.headers); // set (não append): o cliente não consegue injetar a rota nem a origem
     h.set('X-Route', m[2]);
     h.set('X-Ok-Origin', okOrigin);
+    h.set('X-Srv', m[1]);
     return stub.fetch(new Request(req, { headers: h }));
   },
 };
@@ -99,10 +108,12 @@ export class Server {
       CREATE TABLE IF NOT EXISTS chans (id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, uid TEXT, pos INTEGER NOT NULL, ts INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS music (ch TEXT PRIMARY KEY, s TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS spq (id INTEGER PRIMARY KEY AUTOINCREMENT, ch TEXT NOT NULL, j TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS musseen (ch TEXT PRIMARY KEY, ts INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
       INSERT OR IGNORE INTO chans (id, kind, name, uid, pos, ts) VALUES ('chat', 'text', 'chat', NULL, 0, 0), ('voz', 'voice', 'Canal de voz', NULL, 0, 0);`);
     // migração S-1357: só acrescenta colunas (nada é apagado); mensagens antigas ficam com uid vazio
     const cols = new Set(this.sql.exec('PRAGMA table_info(msgs)').toArray().map((c) => c.name));
-    for (const [c, type] of [['uid', 'TEXT'], ['edited', 'INTEGER'], ['reply', 'TEXT'], ['reacts', 'TEXT']]) {
+    for (const [c, type] of [['uid', 'TEXT'], ['edited', 'INTEGER'], ['reply', 'TEXT'], ['reacts', 'TEXT'], ['card', 'TEXT']]) { // card: S-0033
       if (!cols.has(c)) this.sql.exec(`ALTER TABLE msgs ADD COLUMN ${c} ${type}`);
     }
     if (!cols.has('ch')) { // migração S-1363: só acrescenta; tudo o que já existe é do #chat
@@ -125,6 +136,8 @@ export class Server {
 
   async fetch(req) {
     const route = req.headers.get('X-Route');
+    const srv = req.headers.get('X-Srv') || '';
+    if (srv && this.srv !== srv) { this.srv = srv; this.sql.exec("INSERT OR REPLACE INTO kv (k, v) VALUES ('srv', ?)", srv); }
     const origin = req.headers.get('X-Ok-Origin');
     if (route === 'rtc') {
       if (req.headers.get('Upgrade') !== 'websocket') return new Response('esperava WebSocket', { status: 426 });
@@ -142,6 +155,7 @@ export class Server {
       server.send(JSON.stringify({ t: 'members', list: this.members() }));
       server.send(JSON.stringify({ t: 'chans', list: this.chans() }));
       const now = Date.now();
+      if (this.djLeave(now)) await this.ctx.storage.setAlarm(now + this.djT().tick); // S-0033: canal vazio há tempo = o DJ sai
       for (const r of this.sql.exec('SELECT ch, s FROM music').toArray()) server.send(JSON.stringify({ t: 'mus', ch: r.ch, s: JSON.parse(r.s), now }));
       return new Response(null, { status: 101, webSocket: client });
     }
@@ -266,8 +280,9 @@ export class Server {
     }
     let more = false;
     try { more = await this.spStep(); } catch (err) { console.warn('Spotify fila', String(err)); more = this.spPending(); }
+    const djBusy = this.djLeave(Date.now()); // S-0033
     if (more) await this.ctx.storage.setAlarm(Date.now() + 200);
-    else if (left) await this.ctx.storage.setAlarm(now + 60000);
+    else if (left || djBusy) await this.ctx.storage.setAlarm(Date.now() + (djBusy ? this.djT().tick : 60000));
   }
 
   // ---------- sinalização WebRTC ----------
@@ -347,7 +362,9 @@ export class Server {
       return;
     }
     if (d.t === 'react') return this.react(ws, att, d, now);
+    if (d.t === 'mus' && d.op === 'here') return this.djHere(ws, att, d, now);
     if (d.t === 'mus') return this.mus(ws, att, d, now);
+    if (d.t === 'lyr') return this.lyrics(ws, att, d, now);
     if (d.t === 'yt') return this.ytSearch(ws, att, d, now);
     if (d.t === 'edit' || d.t === 'del') return this.change(ws, att, d, now);
     if (d.t !== 'msg') return;
@@ -386,10 +403,55 @@ export class Server {
     const r = this.sql.exec('SELECT s FROM music WHERE ch = ?', ch).toArray()[0];
     return r ? JSON.parse(r.s) : { q: [], i: -1, at: 0, pos: 0, paused: false, loop: 'off', tc: 'chat', v: 0 };
   }
-  mset(ch, s) {
+  mset(ch, s, o = {}) { // o.quiet: não anuncia · o.leave: o DJ sai do canal (sem a espera de DJ_STAY)
+    const old = this.mget(ch);
+    const oc = old.q[old.i], cur = s.q[s.i];
     s.v = (s.v || 0) + 1;
+    if (cur || o.leave) s.stay = 0;
+    else if (oc && !(s.stay > Date.now())) s.stay = Date.now() + this.djT().stay; // a fila acabou: o DJ fica um pouco no canal
     this.sql.exec('INSERT INTO music (ch, s) VALUES (?, ?) ON CONFLICT(ch) DO UPDATE SET s = excluded.s', ch, JSON.stringify(s));
     this.broadcast({ t: 'mus', ch, s, now: Date.now() }, null, true);
+    if (!o.quiet && cur && (!oc || oc.k !== cur.k)) this.djNow(ch, s);
+  }
+  djT() { // prazos do DJ (servidor de teste: curtos, para o teste não esperar 3 min)
+    if (this.srv === undefined) this.srv = (this.sql.exec("SELECT v FROM kv WHERE k = 'srv'").toArray()[0] || {}).v || '';
+    return this.srv.startsWith('teste-') ? { leave: 45000, stay: 20000, tick: 5000 } : { leave: DJ_LEAVE, stay: DJ_STAY, tick: 60000 };
+  }
+  vname(ch) { return (this.sql.exec('SELECT name FROM chans WHERE id = ?', ch).toArray()[0] || {}).name || 'canal de voz'; }
+  djNow(ch, s) { // 'Tocando agora' no chat, como o embed dos bots do Discord (o app desenha capa, barra e botões; o anterior sai)
+    const cur = s.q[s.i];
+    const tc = this.textChan(s.tc) || 'chat';
+    const key = `np:${ch}`;
+    const prev = Number((this.sql.exec('SELECT v FROM kv WHERE k = ?', key).toArray()[0] || {}).v || 0);
+    if (prev) { const r = this.sql.exec("SELECT media FROM msgs WHERE id = ? AND uid = 'dj'", prev).toArray()[0]; if (r) this.remove(prev, r.media); }
+    const id = this.djSay(tc, `Tocando agora em 🔊 ${this.vname(ch)}: ${cur.t}${cur.by ? ` (pedido por ${cur.by})` : ''}`,
+      { k: 'np', ch, key: cur.k, id: cur.id, t: cur.t, a: cur.a, d: cur.d, by: cur.by, vc: clean(this.vname(ch), 32) });
+    this.sql.exec('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)', key, String(id));
+  }
+  djHere(ws, att, d, now) { // { t:'mus', op:'here', ch }: tem gente ouvindo neste canal de voz (a cada ~45 s)
+    if (!att.uid || now - (att.hb || 0) < 10000 || !this.voiceChan(d.ch)) return;
+    att.hb = now;
+    ws.serializeAttachment(att);
+    this.sql.exec('INSERT OR REPLACE INTO musseen (ch, ts) VALUES (?, ?)', d.ch, now);
+  }
+  djLeave(now) { // canal com música e ninguém avisando presença há djT().leave: o DJ sai e limpa a fila; true = ainda há o que vigiar
+    const { leave } = this.djT();
+    const seen = new Map(this.sql.exec('SELECT ch, ts FROM musseen').toArray().map((r) => [r.ch, r.ts]));
+    let busy = false;
+    for (const r of this.sql.exec('SELECT ch, s FROM music').toArray()) {
+      const s = JSON.parse(r.s);
+      const cur = s.q[s.i];
+      if (!cur && !(s.stay > now)) continue;
+      const ts = seen.get(r.ch);
+      if (!ts) continue; // só cliente antigo no canal (não avisa presença): fica como era
+      if (now - ts < leave) { busy = true; continue; }
+      s.q = []; s.i = -1; s.paused = false; s.at = 0; s.pos = 0;
+      this.sql.exec('DELETE FROM spq WHERE ch = ?', r.ch);
+      this.sql.exec('DELETE FROM musseen WHERE ch = ?', r.ch);
+      this.mset(r.ch, s, { quiet: true, leave: true });
+      if (cur) this.djSay(s.tc || 'chat', `Saí de 🔊 ${this.vname(r.ch)}: ninguém ouvindo há ${dur(leave)}. Limpei a fila.`);
+    }
+    return busy;
   }
   static posOf(s, now) { return s.paused ? s.pos : Math.max(0, (now - s.at) / 1000); }
   static start(s, i, now, pos = 0) { s.i = i; s.paused = false; s.pos = 0; s.at = now - pos * 1000; }
@@ -408,12 +470,14 @@ export class Server {
     const k = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => 'abcdefghijklmnopqrstuvwxyz234567'[b & 31]).join('');
     return { k, id: x.id, t: clean(x.t, 140) || 'Vídeo do YouTube', a: clean(x.a, 60), d, by: clean(by, 24) };
   }
-  djSay(ch, text) { // mensagem do Bagre DJ no canal de texto (fica no histórico, como a de um bot do Discord)
+  djSay(ch, text, card) { // mensagem do Bagre DJ no canal de texto (fica no histórico, como a de um bot do Discord); card = embed (S-0033)
     const c = this.textChan(ch) || 'chat';
     const now = Date.now();
     const t = clean(text, 2000);
-    const id = this.sql.exec('INSERT INTO msgs (ts, name, av, text, media, uid, reply, ch) VALUES (?, ?, ?, ?, NULL, ?, NULL, ?) RETURNING id', now, DJ.name, DJ.av, t, DJ.uid, c).one().id;
-    this.broadcast({ t: 'msg', m: { id, ts: now, name: DJ.name, av: DJ.av, text: t, media: null, uid: DJ.uid, reply: null, edited: null, reacts: null, ch: c } }, null, c !== 'chat');
+    const cj = card ? JSON.stringify(card) : null; // o app antigo só mostra o texto
+    const id = this.sql.exec('INSERT INTO msgs (ts, name, av, text, media, uid, reply, ch, card) VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?) RETURNING id', now, DJ.name, DJ.av, t, DJ.uid, c, cj).one().id;
+    this.broadcast({ t: 'msg', m: { id, ts: now, name: DJ.name, av: DJ.av, text: t, media: null, uid: DJ.uid, reply: null, edited: null, reacts: null, ch: c, card: card || null } }, null, c !== 'chat');
+    return id;
   }
   async mus(ws, att, d, now) { // { t:'mus', ch, op, tc?, ... }: qualquer membro identificado controla o DJ do canal
     const no = (text) => ws.send(JSON.stringify({ t: 'err', text }));
@@ -423,6 +487,8 @@ export class Server {
     if (++att.mn > 12) { ws.serializeAttachment(att); return no('Calma: muitas ordens de música seguidas.'); }
     ws.serializeAttachment(att);
     const by = (this.sql.exec('SELECT name FROM members WHERE uid = ?', att.uid).toArray()[0] || {}).name || 'Alguém';
+    const mo = {}; // opções do mset (S-0033)
+    let ended = false;
     const tc = typeof d.tc === 'string' ? this.textChan(d.tc) : ''; // veio de um comando no chat: o DJ responde lá
     let items = null, label = '', sp = null;
     if (d.op === 'play') { // texto (busca) ou link (vídeo/playlist): resolve antes de mexer no estado
@@ -444,6 +510,7 @@ export class Server {
       const now1 = d.now === true || !cur;
       if (cur && d.now === true) { s.q.splice(s.i + 1, 0, ...add); Server.start(s, s.i + 1, t); }
       else if (!cur) { const at = s.q.length; s.q.push(...add); Server.start(s, at, t); }
+      else if (d.top === true) s.q.splice(s.i + 1, 0, ...add); // !playtop: entra como a próxima
       else s.q.push(...add);
       const one = add[0];
       let note = '';
@@ -455,12 +522,15 @@ export class Server {
           this.sql.exec('INSERT INTO spq (ch, j) VALUES (?, ?)', d.ch, JSON.stringify({ rest: sp.rest, after: add[add.length - 1].k, by, tc: tc || s.tc || 'chat', label, added: add.length, miss: sp.miss, want: sp.want }));
           await this.ctx.storage.setAlarm(Date.now() + 100);
         }
-      } else if (tc) {
-        this.djSay(tc, add.length > 1 ? `${by} pôs ${add.length} músicas${label ? ` de ${label}` : ''} na fila.${now1 ? ` Tocando agora: ${one.t}` : ''}`
-          : now1 ? `Tocando agora: ${one.t} (pedido por ${by})` : `Na fila (#${s.q.length - 1 - s.i}): ${one.t} (pedido por ${by})`);
-      }
+      } else if (tc && add.length > 1) this.djSay(tc, `${by} pôs ${add.length} músicas${label ? ` de ${label}` : ''} na fila.`);
+      else if (tc && !now1) { // 1 música na fila: cartão com a posição e quando toca (como o 'Added to queue' dos bots)
+        const pos = s.q.findIndex((x) => x.k === one.k) - s.i;
+        let eta = cur.d ? Math.max(0, cur.d - Server.posOf(s, t)) : -1;
+        for (const x of s.q.slice(s.i + 1, s.i + pos)) eta = eta < 0 || !x.d ? -1 : eta + x.d;
+        this.djSay(tc, `Na fila (#${pos}): ${one.t} (pedido por ${by})`, { k: 'add', id: one.id, t: one.t, a: one.a, d: one.d, by, n: pos, eta: eta >= 0 ? Math.round(eta) : null });
+      } // tocando agora: o cartão 'Tocando agora' sai do mset
       ws.send(JSON.stringify({ t: 'musok', op: 'add', n: add.length, now: now1, title: one.t, note }));
-    } else if (d.op === 'skip') { if (!cur) return no('Nada tocando agora.'); Server.advance(s, t, true); if (tc) this.djSay(tc, `${by} pulou ${cur.t}.`); }
+    } else if (d.op === 'skip') { if (!cur) return no('Nada tocando agora.'); Server.advance(s, t, true); ended = !s.q[s.i]; if (tc) this.djSay(tc, `${by} pulou ${cur.t}.`); }
     else if (d.op === 'prev') {
       if (cur && Server.posOf(s, t) > 5) Server.start(s, s.i, t);
       else if (s.i > 0) Server.start(s, Math.min(s.i, s.q.length) - 1, t);
@@ -470,32 +540,68 @@ export class Server {
     else if (d.op === 'resume') { if (!cur || !s.paused) return; s.at = t - s.pos * 1000; s.paused = false; if (tc) this.djSay(tc, `${by} voltou a tocar ${cur.t}.`); }
     else if (d.op === 'seek') {
       if (!cur || !Number.isFinite(d.pos)) return;
-      const p = Math.max(0, Math.min(d.pos, cur.d || 86400));
+      const p = Math.max(0, Math.min(d.pos, cur.d ? cur.d - 1 : 86400));
       if (s.paused) s.pos = p; else s.at = t - p * 1000;
-    } else if (d.op === 'stop') {
-      if (!s.q.length) return no('A fila já está vazia.');
+      if (tc) this.djSay(tc, `${by} foi para ${Server.mmss(p)}${cur.d ? ` de ${Server.mmss(cur.d)}` : ''} em ${cur.t}.`);
+    } else if (d.op === 'stop' || d.op === 'leave') { // !stop, !leave, !dc: para, limpa a fila e o DJ sai do canal
+      if (!s.q.length && !(s.stay > t)) return no('O Bagre DJ não está tocando nada.');
       s.q = []; s.i = -1; s.paused = false; s.at = 0; s.pos = 0;
       this.sql.exec('DELETE FROM spq WHERE ch = ?', d.ch); // playlist do Spotify que ainda entrava: para também
-      if (tc) this.djSay(tc, `${by} parou a música e limpou a fila.`);
+      mo.leave = true;
+      if (tc) this.djSay(tc, d.op === 'leave' ? `${by} tirou o Bagre DJ de 🔊 ${this.vname(d.ch)}. Fila limpa.` : `${by} parou a música e limpou a fila.`);
+    } else if (d.op === 'clear') { // !clear: limpa só o que vem depois (a atual continua)
+      const n = Math.max(0, s.q.length - s.i - 1);
+      if (!cur || !n) return no('A fila já está vazia.');
+      s.q.splice(s.i + 1);
+      this.sql.exec('DELETE FROM spq WHERE ch = ?', d.ch);
+      if (tc) this.djSay(tc, `${by} limpou a fila (${n} ${n === 1 ? 'música' : 'músicas'}). ${cur.t} continua tocando.`);
+    } else if (d.op === 'dedupe') { // !removedupes: tira as repetidas do que vem depois
+      const seen = new Set(cur ? [cur.id] : []);
+      const before = s.q.length;
+      s.q = s.q.filter((x, n) => n <= s.i || (seen.has(x.id) ? false : (seen.add(x.id), true)));
+      const n = before - s.q.length;
+      if (!n) return no('Nenhuma música repetida na fila.');
+      if (tc) this.djSay(tc, `${by} tirou ${n} ${n === 1 ? 'repetida' : 'repetidas'} da fila.`);
+    } else if (d.op === 'rm' && Array.isArray(d.ks)) { // !remove 2-5: várias de uma vez (só o que ainda vai tocar)
+      const ks = new Set(d.ks.filter((k) => typeof k === 'string').slice(0, MAX_Q));
+      const before = s.q.length;
+      s.q = s.q.filter((x, n) => n <= s.i || !ks.has(x.k));
+      const n = before - s.q.length;
+      if (!n) return;
+      if (tc) this.djSay(tc, `${by} tirou ${n} ${n === 1 ? 'música' : 'músicas'} da fila.`);
     } else if (d.op === 'rm') {
       const i = idx(d.k);
       if (i < 0) return;
-      s.q.splice(i, 1);
+      const [x] = s.q.splice(i, 1);
       if (i < s.i) s.i--;
-      else if (i === s.i) { if (s.i < s.q.length) Server.start(s, s.i, t); else Server.idle(s); }
+      else if (i === s.i) { if (s.i < s.q.length) Server.start(s, s.i, t); else { Server.idle(s); ended = true; } }
+      if (tc) this.djSay(tc, `${by} tirou da fila: ${x.t}`);
     } else if (d.op === 'mv') { // reordenar só o que ainda vai tocar
       const i = idx(d.k);
       if (i <= s.i || !Number.isInteger(d.to)) return;
       const [x] = s.q.splice(i, 1);
       s.q.splice(Math.max(s.i + 1, Math.min(d.to, s.q.length)), 0, x);
-    } else if (d.op === 'jump') { const i = idx(d.k); if (i < 0) return; Server.start(s, i, t); }
+      if (tc) this.djSay(tc, `${by} moveu ${x.t} para #${s.q.findIndex((y) => y.k === x.k) - s.i} da fila.`);
+    } else if (d.op === 'jump') { const i = idx(d.k); if (i < 0) return; Server.start(s, i, t); if (tc) this.djSay(tc, `${by} pulou para ${s.q[i].t}.`); }
+    else if (d.op === 'join') { // !join: o DJ entra no canal de voz e espera um pedido
+      if (!cur) s.stay = t + this.djT().stay;
+      if (tc) this.djSay(tc, cur ? `Já estou em 🔊 ${this.vname(d.ch)} tocando ${cur.t}.` : `Entrei em 🔊 ${this.vname(d.ch)}. Peça com !p <nome ou link>.`);
+    } else if (d.op === 'auto') { // !autoplay: quando a fila acaba, o DJ põe uma parecida
+      s.auto = d.on === true;
+      if (tc) this.djSay(tc, s.auto ? `${by} ligou o autoplay: quando a fila acabar, eu ponho uma música parecida.` : `${by} desligou o autoplay.`);
+      if (s.auto && !cur && s.q.length) ended = true;
+    }
     else if (d.op === 'shuffle') {
       const rest = s.q.splice(Math.max(0, s.i + 1));
       for (let i = rest.length - 1; i > 0; i--) { const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1); [rest[i], rest[j]] = [rest[j], rest[i]]; }
       s.q.push(...rest);
       if (rest.length < 2) return no('Precisa de 2 músicas na fila para embaralhar.');
       if (tc) this.djSay(tc, `${by} embaralhou a fila.`);
-    } else if (d.op === 'loop') { if (!LOOPS.includes(d.mode)) return; s.loop = d.mode; }
+    } else if (d.op === 'loop') {
+      if (!LOOPS.includes(d.mode)) return;
+      s.loop = d.mode;
+      if (tc) this.djSay(tc, `${by}: ${{ off: 'repetir desligado', all: 'repetindo a fila', one: `repetindo ${cur ? cur.t : 'a música'}` }[d.mode]}.`);
+    }
     else if (d.op === 'dur') { // duração que o player descobriu (link sem a Data API)
       const i = idx(d.k);
       if (i < 0 || s.q[i].d || !Number.isFinite(d.d) || d.d <= 0 || d.d > 86400) return;
@@ -504,6 +610,8 @@ export class Server {
       if (!cur || cur.k !== d.k || s.paused) return;
       if (cur.d && Server.posOf(s, t) < cur.d - 8) return;
       Server.advance(s, t, false);
+      ended = !s.q[s.i];
+      if (ended && !s.auto) this.djSay(s.tc || 'chat', `A fila acabou. Fico em 🔊 ${this.vname(d.ch)} mais ${dur(this.djT().stay)}: !p <nome> para continuar.`);
     } else if (d.op === 'bad') { // não toca fora do YouTube (dono bloqueou) ou foi removido: pula e avisa no chat
       if (!cur || cur.k !== d.k || ![2, 100, 101, 150].includes(d.code)) return;
       const nx = alt && alt.k === cur.k && this.item(alt.v, cur.by);
@@ -515,10 +623,90 @@ export class Server {
         return;
       }
       s.q.splice(s.i, 1);
-      if (s.i < s.q.length) Server.start(s, s.i, t); else Server.idle(s);
+      if (s.i < s.q.length) Server.start(s, s.i, t); else { Server.idle(s); ended = true; }
       this.djSay(s.tc || 'chat', d.code === 100 || d.code === 2 ? `${cur.t} não existe mais no YouTube. Pulei para a próxima.` : `${cur.t} não pode tocar fora do YouTube (o dono bloqueou). Pulei para a próxima.`);
     } else return;
-    this.mset(d.ch, s);
+    this.mset(d.ch, s, mo);
+    if (ended && s.auto && !mo.leave) await this.autoNext(d.ch, cur || s.q[s.q.length - 1]); // S-0033: autoplay
+  }
+  static mmss(t) { t = Math.max(0, Math.floor(t || 0)); const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = String(t % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`; }
+  static ttl(t) { // título do YouTube sem (Official Video), [HD], lyrics...
+    return String(t || '').replace(/[([{][^)\]}]*[)\]}]/g, ' ').replace(/\b(official|oficial|music|video|vídeo|videoclipe|clipe|audio|áudio|lyrics?|letra|legendado|hd|hq|4k|remaster(ed)?|visualizer)\b/gi, ' ')
+      .replace(/\s+/g, ' ').replace(/\s*[-–—|]\s*$/, '').trim();
+  }
+  async autoNext(ch, last) { // fila acabou com o autoplay ligado: uma música do mesmo artista (iTunes); sem artista, a busca do YouTube
+    if (!last) return;
+    try {
+      const s0 = this.mget(ch);
+      const played = new Set(s0.q.map((x) => Server.norm(Server.ttl(x.t)))), ids = new Set(s0.q.map((x) => x.id));
+      let a = /\s+-\s+topic$/i.test(last.a || '') ? last.a.replace(/\s+-\s+topic$/i, '') : '';
+      const sp = /^(.+?)\s+[-–—|]\s+(.+)$/.exec(Server.ttl(last.t));
+      if (!a && sp) a = sp[1];
+      if (!a) { const m = await this.meta(Server.ttl(last.t)); if (m) a = m.a; }
+      a = Server.artist1(a);
+      let pick = null;
+      if (a) {
+        const r = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(a)}&entity=song&attribute=artistTerm&limit=40&country=BR`);
+        const res = r.ok ? ((await r.json()).results || []) : [];
+        const seen = new Set();
+        const cand = res.filter((x) => {
+          const k = Server.norm(Server.base(x.trackName));
+          if (!x.trackName || seen.has(k) || played.has(k) || [...played].some((p) => p.includes(k)) || Server.norm(Server.artist1(x.artistName)) !== Server.norm(a)) return false;
+          seen.add(k);
+          return !BAD.some((w) => Server.has(Server.norm(x.trackName), w));
+        }).slice(0, 12);
+        const c = cand.length ? cand[crypto.getRandomValues(new Uint32Array(1))[0] % cand.length] : null;
+        if (c) pick = Server.rank(await this.search(`${a} - ${Server.base(c.trackName)}`), { t: c.trackName, a, d: Math.round((c.trackTimeMillis || 0) / 1000) }, c.trackName).find((x) => !ids.has(x.id)) || null;
+      }
+      if (!pick) pick = (await this.search(a || Server.ttl(last.t))).find((x) => !ids.has(x.id) && !played.has(Server.norm(Server.ttl(x.t)))) || null;
+      if (!pick) return;
+      const s = this.mget(ch); // lido depois do await: alguém pode ter pedido outra
+      if (s.q[s.i] || !s.auto || s.q.length >= MAX_Q) return;
+      const it = this.item(pick, 'autoplay');
+      if (!it) return;
+      s.q.push(it);
+      Server.start(s, s.q.length - 1, Date.now());
+      this.mset(ch, s);
+    } catch (err) { console.warn('autoplay', String(err)); }
+  }
+  async lyrics(ws, att, d, now) { // { t:'lyr', n, q?, ch? }: letra só de fonte grátis (LRCLIB, sem chave); sem letra, diz que não achou
+    const reply = (o) => ws.send(JSON.stringify({ t: 'lyrres', n: d.n, ...o }));
+    if (!att.uid) return;
+    if (now - (att.ly || 0) < 1500) return reply({ err: 'Calma: uma letra por vez.' });
+    att.ly = now;
+    ws.serializeAttachment(att);
+    let q = clean(d.q, 200), t = '', a = '', du = 0;
+    if (!q) { // a que está tocando no meu canal
+      const s = this.voiceChan(d.ch) ? this.mget(d.ch) : null;
+      const cur = s && s.q[s.i];
+      if (!cur) return reply({ err: 'Nada tocando agora. Use !lyrics <nome da música>.' });
+      du = cur.d || 0;
+      const sp = /^(.+?)\s+[-–—|]\s+(.+)$/.exec(Server.ttl(cur.t));
+      if (/\s+-\s+topic$/i.test(cur.a || '')) { a = cur.a.replace(/\s+-\s+topic$/i, ''); t = Server.ttl(cur.t); }
+      else if (sp) { a = sp[1]; t = sp[2]; }
+      q = Server.ttl(cur.t);
+    }
+    try {
+      if (!t) { const m = await this.meta(q); if (m) { t = m.t; a = m.a; du = du || m.d; } }
+      const H = { 'user-agent': LRC_UA, 'lrclib-client': LRC_UA };
+      let j = null;
+      if (t && a) {
+        const r = await fetch(`https://lrclib.net/api/get?track_name=${encodeURIComponent(Server.base(t))}&artist_name=${encodeURIComponent(Server.artist1(a))}${du ? `&duration=${du}` : ''}`, { headers: H });
+        if (r.ok) j = await r.json();
+      }
+      if (!j || !(j.plainLyrics || j.instrumental)) {
+        const r = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(t && a ? `${Server.artist1(a)} ${Server.base(t)}` : q)}`, { headers: H });
+        const list = r.ok ? await r.json() : [];
+        const ok = Array.isArray(list) ? list.filter((x) => x && (x.plainLyrics || x.instrumental)) : [];
+        j = ok.find((x) => !du || Math.abs((x.duration || 0) - du) <= 10) || ok[0] || null;
+      }
+      if (!j) return reply({ err: `Não achei a letra de “${(t || q).slice(0, 60)}” numa fonte grátis (LRCLIB).` });
+      if (j.instrumental || !j.plainLyrics) return reply({ err: `“${clean(j.trackName, 60)}” é instrumental: não tem letra.` });
+      return reply({ t: clean(j.trackName, 120), a: clean(j.artistName, 80), text: String(j.plainLyrics).slice(0, 12000), src: 'LRCLIB' });
+    } catch (err) {
+      console.warn('letra', String(err));
+      return reply({ err: 'A fonte de letras (LRCLIB) não respondeu. Tente de novo.' });
+    }
   }
 
   async altOf(ch, k) { // música atual não toca embutida (o dono bloqueou fora do YouTube): acha outra versão dela, até 5 tentativas

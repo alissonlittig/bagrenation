@@ -1070,7 +1070,8 @@
     }
     for (const [ch, s] of dj.st) { // o Bagre DJ aparece no canal enquanto tem música, como um bot do Discord
       const c = djCur(s);
-      if (c && chanOf(ch)) all.push({ id: `dj-${ch}`, name: 'Bagre DJ', av: 'dj', bot: true, invoice: true, vch: ch, sub: `${s.paused ? 'pausado' : 'tocando'}: ${c.t}`, tip: c.t, sharing: false, stopped: false, talking: false, muted: false, deaf: false, off: false });
+      const wait = !c && s.stay > srvNow(); // S-0033: !join ou a fila acabou: o DJ fica um pouco no canal esperando
+      if ((c || wait) && chanOf(ch)) all.push({ id: `dj-${ch}`, name: 'Bagre DJ', av: 'dj', bot: true, invoice: true, vch: ch, sub: c ? `${s.paused ? 'pausado' : 'tocando'}: ${c.t}` : 'esperando: !p <nome>', tip: c ? c.t : 'Peça com !p <nome ou link>', sharing: false, stopped: false, talking: false, muted: false, deaf: false, off: false });
     }
     // cada canal de voz tem a sua lista embaixo dele; o palco mostra o canal de voz aberto (viewVch)
     const lists = new Map([...document.querySelectorAll('ul.people-voice[data-ch]')].map((ul) => [ul.dataset.ch, ul]));
@@ -1415,7 +1416,7 @@
       onChans(d.list);
     } else if (d.t === 'chanok' && typeof d.id === 'string') {
       if (!d.op && chanOf(d.id)) { if (d.kind === 'text') { openText(d.id); $('chatInput').focus(); } else joinVoice(d.id); }
-    } else if (d.t === 'mus' || d.t === 'clk' || d.t === 'ytres' || d.t === 'musok') {
+    } else if (d.t === 'mus' || d.t === 'clk' || d.t === 'ytres' || d.t === 'musok' || d.t === 'lyrres') {
       onDj(d);
     } else if (d.t === 'err' && typeof d.text === 'string') {
       toast(d.text.slice(0, 200), 6000);
@@ -1687,6 +1688,12 @@
       body.append(p);
     }
     if (m.media && /^[a-z0-9]{20}$/.test(m.media.id)) body.append(mediaEl(m.media));
+    if (m.uid === 'dj' && m.card && typeof m.card === 'object' && ['np', 'add'].includes(m.card.k) && /^[A-Za-z0-9_-]{11}$/.test(m.card.id || '')) { // S-0033
+      const p = body.querySelector('.msg-text');
+      if (p) p.remove();
+      body.append(djCardEl(m.card));
+      li.classList.add('has-djc');
+    }
     if (!m.text && m.edited) body.append(edited());
     if (m.reacts && typeof m.reacts === 'object') {
       const row = Object.assign(document.createElement('div'), { className: 'reacts' });
@@ -2633,7 +2640,8 @@
     const q = s.q.filter((x) => x && /^[A-Za-z0-9_-]{11}$/.test(x.id) && typeof x.k === 'string').map((x) => ({
       k: x.k.slice(0, 16), id: x.id, t: String(x.t || 'Vídeo do YouTube').slice(0, 140), a: String(x.a || '').slice(0, 60), d: Number(x.d) > 0 ? Number(x.d) : 0, by: String(x.by || '').slice(0, 24),
     }));
-    return { q, i: Number.isInteger(s.i) ? s.i : -1, at: Number(s.at) || 0, pos: Number(s.pos) || 0, paused: s.paused === true, loop: ['off', 'all', 'one'].includes(s.loop) ? s.loop : 'off', v: Number(s.v) || 0 };
+    return { q, i: Number.isInteger(s.i) ? s.i : -1, at: Number(s.at) || 0, pos: Number(s.pos) || 0, paused: s.paused === true, loop: ['off', 'all', 'one'].includes(s.loop) ? s.loop : 'off', v: Number(s.v) || 0,
+      auto: s.auto === true, stay: Number(s.stay) || 0 }; // S-0033: autoplay e até quando o DJ espera no canal sem música
   }
   function djClock(ws) { // 5 medidas do relógio do servidor; vale a de menor ida e volta
     dj.rtt = Infinity;
@@ -2670,11 +2678,14 @@
       if (dj.auto && dj.auto.n === n) { // /play <link de playlist>: tudo direto para a fila
         const a = dj.auto;
         dj.auto = null;
-        if (dj.res.list.length) musSend('add', { items: dj.res.list, tc: a.tc, now: a.now });
+        if (dj.res.list.length) musSend('add', { items: dj.res.list, tc: a.tc, now: a.now, top: a.top });
         else djEphemeral(dj.res.err || 'Nada encontrado nessa playlist.');
         dj.res = null;
       }
       renderDjRes();
+    } else if (d.t === 'lyrres' && d.n === dj.ly) { // S-0033: letra (LRCLIB) ou o aviso de que não achou
+      if (d.err) djEphemeral(String(d.err).slice(0, 200));
+      else djEphemeral('', djLyricsEl(d));
     } else if (d.t === 'musok' && typeof d.title === 'string') {
       toast(typeof d.note === 'string' && d.note ? d.note.slice(0, 200) : d.n > 1 ? `${d.n} músicas na fila` : d.now ? `Tocando agora: ${d.title}` : `Na fila: ${d.title}`);
     }
@@ -2824,7 +2835,7 @@
     }
     $('djTap').hidden = !dj.blocked;
   }
-  setInterval(() => { if (room) { djSync(); djProgress(); } }, 500);
+  setInterval(() => { if (room) { djSync(); djProgress(); djCardsTick(); djBeat(); } }, 500);
 
   // painel do Bagre DJ
   function renderDj() {
@@ -2984,58 +2995,327 @@
     }
     seek.style.setProperty('--fill', `${d ? Math.min(100, (t / d) * 100) : 0}%`);
   }
-  function djEphemeral(text) { // resposta do Bagre DJ que só eu vejo (como as respostas "só você vê" do Discord)
+  function djEphemeral(text, extra) { // resposta do Bagre DJ que só eu vejo (como as respostas "só você vê" do Discord); extra = cartão (S-0033)
     const m = { id: -(++dj.eph), ts: Date.now(), name: 'Bagre DJ', av: 'dj', uid: 'dj', text };
     const li = msgEl(m, null);
     li.classList.add('ephem');
+    if (extra) { li.querySelector('.msg-body').append(extra); li.classList.add('has-djc'); }
     li.querySelector('.msg-body').append(Object.assign(document.createElement('p'), { className: 'ephem-note', textContent: 'Só você vê esta mensagem' }));
     $('chatLog').append(li);
     scrollDown();
   }
-  function djPlay(arg, now, tc) { // nome ou link: a 1ª música achada toca (ou entra na fila); playlist do YouTube vai inteira
-    if (/[?&]list=[A-Za-z0-9_-]{10,64}/.test(arg) && !/[?&]v=|youtu\.be\//.test(arg)) djSearch(arg, { tc, now });
-    else musSend('play', { q: arg, now, tc });
+  function djPlay(arg, now, tc, top) { // nome ou link: a 1ª música achada toca (ou entra na fila); playlist do YouTube vai inteira; top = !playtop
+    if (/[?&]list=[A-Za-z0-9_-]{10,64}/.test(arg) && !/[?&]v=|youtu\.be\//.test(arg)) djSearch(arg, { tc, now, top });
+    else musSend('play', { q: arg, now, tc, top: top === true });
   }
-  const DJ_HELP = 'Comandos do Bagre DJ: /play <nome ou link do YouTube/Spotify; playlist entra inteira, até 100> (toca ou põe na fila) · /playnow <nome ou link> · /skip · /back · /pause · /resume · /queue · /np · /shuffle · /loop [fila|uma|off] · /remove <n> · /stop';
-  function djCommand(text) { // devolve true se o texto era um comando do DJ (não vai como mensagem)
-    const m = /^\/([a-zA-Zçã]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
+  // ---------- S-0033: comandos como os bots de música do Discord (Rythm, Groovy, FredBoat, Jockie) ----------
+  // ! ou / e os apelidos de sempre (!p, !s, !q, !np, !fs, !dc...). Quem muda a música, o DJ conta para todos no chat; o que
+  // é só consulta (fila, letra, ajuda, volume) responde "só você vê". Sem moderação: entre amigos, qualquer um pula e mexe.
+  const DJ_CMDS = [ // [nome, apelidos, uso, o que faz]
+    ['play', ['p', 'tocar'], '<nome ou link>', 'toca ou põe na fila (YouTube, Spotify; playlist entra inteira)'],
+    ['playnow', ['pn', 'ps', 'playskip'], '<nome ou link>', 'toca agora, passando na frente'],
+    ['playtop', ['pt', 'top'], '<nome ou link>', 'põe como a próxima da fila'],
+    ['search', ['busca', 'buscar', 'find'], '<nome>', 'mostra os resultados para escolher'],
+    ['skip', ['s', 'next', 'n', 'fs', 'forceskip', 'vs', 'voteskip', 'pular'], '', 'pula a música (sem votação: qualquer um pula)'],
+    ['skipto', ['st', 'pularpara'], '<nº>', 'pula direto para a nº da fila'],
+    ['back', ['prev', 'previous', 'voltar', 'anterior'], '', 'volta para a anterior'],
+    ['replay', ['restart', 'rp', 'recomecar', 'recomeçar'], '', 'recomeça a música'],
+    ['pause', ['pausar'], '', 'pausa (de novo: volta a tocar)'],
+    ['resume', ['r', 'unpause', 'continuar', 'despausar'], '', 'volta a tocar'],
+    ['nowplaying', ['np', 'current', 'tocando', 'agora'], '', 'o que está tocando, com barra e botões'],
+    ['queue', ['q', 'fila', 'list', 'lista'], '[página]', 'a fila, 10 por página'],
+    ['move', ['m', 'mv', 'mover'], '<de> [para]', 'muda a posição na fila (sem [para]: vira a próxima)'],
+    ['remove', ['rm', 'tirar', 'del'], '<nº> ou <nº-nº>', 'tira da fila'],
+    ['clear', ['limpar', 'cl'], '', 'limpa a fila (a atual continua)'],
+    ['removedupes', ['rmd', 'rd', 'dupes', 'repetidas'], '', 'tira as repetidas da fila'],
+    ['shuffle', ['sh', 'embaralhar', 'misturar'], '', 'embaralha a fila'],
+    ['loop', ['repeat', 'l', 'repetir'], '[uma|fila|off]', 'repete esta música (sem nada: liga/desliga)'],
+    ['loopqueue', ['lq', 'qloop', 'queueloop', 'repetirfila'], '', 'repete a fila inteira (liga/desliga)'],
+    ['seek', ['se', 'ir', 'pos'], '<tempo>', 'vai para 1:30, 90, 2m45s, +10 ou -10'],
+    ['forward', ['fwd', 'ff', 'avancar', 'avançar'], '[tempo]', 'avança (sem tempo: 10 s)'],
+    ['rewind', ['rwd', 'rw', 'retroceder'], '[tempo]', 'volta (sem tempo: 10 s)'],
+    ['volume', ['vol', 'v'], '[0-100]', 'o SEU volume da música (cada um tem o seu)'],
+    ['lyrics', ['ly', 'letra'], '[nome]', 'letra da música (fonte grátis: LRCLIB)'],
+    ['join', ['summon', 'entrar', 'vem'], '', 'chama o Bagre DJ para o seu canal de voz'],
+    ['leave', ['dc', 'disconnect', 'stop', 'sair', 'parar'], '', 'para, limpa a fila e tira o DJ do canal'],
+    ['autoplay', ['ap', 'radio', 'rádio'], '[on|off]', 'fila acabou: põe uma parecida (mesmo artista)'],
+    ['help', ['h', 'commands', 'comandos', 'ajuda', 'dj'], '', 'esta lista'],
+  ];
+  const DJ_ALIAS = new Map(DJ_CMDS.flatMap(([n, al]) => [n, ...al].map((x) => [x, n])));
+  const YT11 = /^[A-Za-z0-9_-]{11}$/;
+  function djTime(v) { // '1:30', '90', '2m45s', '1h2m', '1:02:03' -> segundos (null = não entendi)
+    const s = String(v || '').trim().toLowerCase().replace(',', '.');
+    if (/^\d+(:\d{1,2}){1,2}$/.test(s)) return s.split(':').reduce((a, x) => a * 60 + Number(x), 0);
+    if (/^\d+(\.\d+)?\s*s?$/.test(s)) return Math.round(parseFloat(s));
+    const m = /^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m(?:in)?)?\s*(?:(\d+)\s*s(?:eg)?)?$/.exec(s);
+    return m && (m[1] || m[2] || m[3]) ? (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0) : null;
+  }
+  function djBtn(icon, label, fn, cls) {
+    const b = Object.assign(document.createElement('button'), { type: 'button', className: `icon-btn djc-b ${cls || ''}`.trim(), title: label });
+    b.setAttribute('aria-label', label);
+    if (icon.startsWith('#')) b.textContent = icon.slice(1);
+    else b.innerHTML = `<svg class="ic" aria-hidden="true"><use href="#i-${icon}"/></svg>`;
+    b.addEventListener('click', fn);
+    return b;
+  }
+  const p_ = (cls, text) => Object.assign(document.createElement('p'), { className: cls, textContent: text });
+  function djCardEl(c) { // cartão do Bagre DJ: 'np' = Tocando agora (ao vivo: barra e botões); 'add' = entrou na fila
+    const el = Object.assign(document.createElement('div'), { className: `djc djc-${c.k}` });
+    el.dataset.ch = String(c.ch || '');
+    el.dataset.key = String(c.key || '');
+    const t = String(c.t || 'Vídeo do YouTube').slice(0, 140);
+    const img = Object.assign(document.createElement('img'), { className: 'djc-cover', src: thumb(c.id, c.k === 'np'), alt: '', loading: 'lazy' });
+    const main = Object.assign(document.createElement('div'), { className: 'djc-main' });
+    const title = p_('djc-title', t);
+    title.title = t;
+    const sub = p_('djc-sub', [c.a && String(c.a).slice(0, 60), c.by && `pedido por ${String(c.by).slice(0, 24)}`].filter(Boolean).join(' · '));
+    if (c.k === 'add') {
+      const d = Number(c.d) > 0 ? ` · ${mmss(c.d)}` : '';
+      main.append(p_('djc-kick', `Na fila · #${Number(c.n) || '?'}`), title, p_('djc-sub', `${sub.textContent}${d}`));
+      if (Number.isFinite(c.eta) && c.eta !== null) main.append(p_('djc-eta', c.eta < 5 ? 'Toca logo depois desta' : `Toca em ~${mmss(c.eta)}`));
+      el.append(img, main);
+      return el;
+    }
+    const bar = Object.assign(document.createElement('div'), { className: 'djc-bar' });
+    bar.append(Object.assign(document.createElement('span'), { className: 'djc-t', textContent: '0:00' }),
+      Object.assign(document.createElement('span'), { className: 'djc-track', innerHTML: '<i></i>' }),
+      Object.assign(document.createElement('span'), { className: 'djc-d', textContent: Number(c.d) > 0 ? mmss(c.d) : '--:--' }));
+    const st = () => dj.st.get(el.dataset.ch);
+    const act = (fn) => () => { if (inVoice && myVch === el.dataset.ch) fn(st()); else toast(`Entre em ${chanLabel(el.dataset.ch)} para controlar a música.`); };
+    const btns = Object.assign(document.createElement('div'), { className: 'djc-btns' });
+    btns.append(
+      djBtn('prev', 'Voltar', act(() => musSend('prev'))),
+      djBtn('pause', 'Pausar', act((s) => musSend(s && s.paused ? 'resume' : 'pause')), 'djc-play'),
+      djBtn('next', 'Pular', act(() => musSend('skip'))),
+      djBtn('shuffle', 'Embaralhar a fila', act(() => musSend('shuffle')), 'djc-sh'),
+      djBtn('loop', 'Repetir', act((s) => musSend('loop', { mode: { off: 'all', all: 'one', one: 'off' }[s ? s.loop : 'off'] })), 'djc-loop'),
+      djBtn('stop', 'Parar e tirar o DJ do canal', act(() => musSend('leave', { tc: textCh })), 'djc-stop'),
+      djBtn('#Letra', 'Letra da música', () => djLyrics('', el.dataset.ch), 'djc-txt djc-any'),
+      djBtn('#Fila', 'Ver a fila', () => djEphemeral('', djQueueCard(1, el.dataset.ch)), 'djc-txt djc-any'),
+    );
+    btns.querySelector('.djc-loop').append(Object.assign(document.createElement('span'), { className: 'dj-one', textContent: '1', hidden: true }));
+    main.append(p_('djc-kick', 'Tocando agora'), title, sub, bar, btns, p_('djc-foot', ''));
+    el.append(img, main);
+    djCardTick(el);
+    return el;
+  }
+  function djCardTick(el) { // o cartão da música que está tocando fica vivo; os de antes viram uma linha 'Tocou'
+    const ch = el.dataset.ch, s = dj.st.get(ch), cur = djCur(s);
+    const live = !!cur && cur.k === el.dataset.key;
+    if (!live) { if (!el.classList.contains('is-past')) { el.classList.remove('is-live', 'is-paused'); el.classList.add('is-past'); el.querySelector('.djc-kick').textContent = 'Tocou'; } return; }
+    el.classList.remove('is-past');
+    el.classList.add('is-live');
+    el.classList.toggle('is-paused', s.paused);
+    el.querySelector('.djc-kick').textContent = `${s.paused ? 'Pausado' : 'Tocando agora'} · ${chanLabel(ch)}`;
+    const d = cur.d || (dj.tk && dj.tk.id === cur.id ? dj.tk.d : 0);
+    const t = Math.min(djPos(s), d || Infinity);
+    el.querySelector('.djc-t').textContent = mmss(t);
+    el.querySelector('.djc-d').textContent = d ? mmss(d) : '--:--';
+    el.querySelector('.djc-track i').style.width = `${d ? Math.min(100, (t / d) * 100) : 0}%`;
+    const can = inVoice && myVch === ch;
+    const up = s.q.slice(s.i + 1);
+    for (const b of el.querySelectorAll('.djc-b:not(.djc-any)')) b.disabled = !can;
+    el.querySelector('.djc-sh').disabled = !can || up.length < 2;
+    const pb = el.querySelector('.djc-play');
+    setIcon(pb.querySelector('use'), s.paused ? 'play' : 'pause');
+    pb.setAttribute('aria-label', s.paused ? 'Tocar' : 'Pausar'); pb.title = pb.getAttribute('aria-label');
+    const lb = el.querySelector('.djc-loop');
+    lb.setAttribute('aria-pressed', String(s.loop !== 'off'));
+    lb.title = { off: 'Repetir: desligado', all: 'Repetir: a fila', one: 'Repetir: esta música' }[s.loop];
+    lb.querySelector('.dj-one').hidden = s.loop !== 'one';
+    el.querySelector('.djc-foot').textContent = (up.length ? `Próxima: ${up[0].t}${up.length > 1 ? ` · +${up.length - 1} na fila` : ''}` : s.auto ? 'Fila vazia · autoplay ligado' : 'Fila vazia · !p <nome> para pedir')
+      + (can ? '' : ` · entre em ${chanLabel(ch)} para controlar`);
+  }
+  function djCardsTick() { for (const el of document.querySelectorAll('#chatLog .djc-np')) djCardTick(el); }
+  function djBeat() { // estou num canal de voz com o DJ: aviso o servidor (sem ninguém avisando por 3 min, o DJ sai do canal)
+    let key = '';
+    for (const [ch, s] of dj.st) if (!djCur(s) && s.stay > srvNow()) key += `${ch},`;
+    if (key !== dj.waitKey) { dj.waitKey = key; renderPeople(); } // a espera do DJ no canal acabou (ou começou)
+    if (!inVoice || !chatOpen()) return;
+    const s = dj.st.get(myVch);
+    if (!s || (!djCur(s) && !(s.stay > srvNow()))) return;
+    if (dj.beatCh === myVch && Date.now() - dj.beatAt < 20000) return;
+    dj.beatCh = myVch; dj.beatAt = Date.now();
+    chat.ws.send(JSON.stringify({ t: 'mus', ch: myVch, op: 'here' }));
+  }
+  function djQueueCard(page, ch) { // !queue: a fila em páginas de 10 (como o !q dos bots), com ◀ ▶
+    const box = Object.assign(document.createElement('div'), { className: 'djc djc-q' });
+    const draw = (want) => {
+      const s = dj.st.get(ch), cur = djCur(s), up = s ? s.q.slice(Math.max(0, s.i + 1)) : [];
+      const per = 10, pages = Math.max(1, Math.ceil(up.length / per)), pg = Math.min(Math.max(1, Math.round(want) || 1), pages);
+      const left = (cur && cur.d ? Math.max(0, cur.d - djPos(s)) : 0) + up.reduce((a, x) => a + (x.d || 0), 0);
+      const main = Object.assign(document.createElement('div'), { className: 'djc-main' });
+      main.append(p_('djc-kick', `Fila · ${chanLabel(ch)}`));
+      main.append(p_('djc-now', cur ? `${s.paused ? 'Pausado' : 'Tocando'}: ${cur.t} · ${mmss(djPos(s))}${cur.d ? ` de ${mmss(cur.d)}` : ''}${cur.by ? ` · ${cur.by}` : ''}` : 'Nada tocando agora.'));
+      const ol = Object.assign(document.createElement('ol'), { className: 'djc-ol', start: (pg - 1) * per + 1 });
+      for (const [n, x] of up.slice((pg - 1) * per, pg * per).entries()) {
+        const li = document.createElement('li');
+        li.append(Object.assign(document.createElement('b'), { textContent: String((pg - 1) * per + n + 1) }),
+          Object.assign(document.createElement('span'), { textContent: x.t, title: x.t }),
+          Object.assign(document.createElement('i'), { textContent: [x.d ? mmss(x.d) : '', x.by].filter(Boolean).join(' · ') }));
+        ol.append(li);
+      }
+      if (!up.length) ol.append(Object.assign(document.createElement('li'), { className: 'djc-empty', textContent: 'A fila está vazia. Peça com !p <nome ou link>.' }));
+      main.append(ol, p_('djc-foot', `${up.length} na fila · ${mmss(left)} até acabar · repetir: ${{ off: 'não', all: 'a fila', one: 'esta música' }[s ? s.loop : 'off']}${s && s.auto ? ' · autoplay' : ''}`));
+      if (pages > 1) {
+        const nav = Object.assign(document.createElement('div'), { className: 'djc-nav' });
+        const prev = djBtn('prev', 'Página anterior', () => draw(pg - 1), 'djc-any');
+        const next = djBtn('next', 'Próxima página', () => draw(pg + 1), 'djc-any');
+        prev.disabled = pg <= 1; next.disabled = pg >= pages;
+        nav.append(prev, Object.assign(document.createElement('span'), { className: 'djc-pg', textContent: `página ${pg} de ${pages}` }), next);
+        main.append(nav);
+      }
+      box.dataset.page = String(pg);
+      box.replaceChildren(main);
+    };
+    draw(page);
+    return box;
+  }
+  function djLyrics(q, ch) { // !lyrics [nome]: a letra vem do servidor (LRCLIB, grátis); sem nome = a que está tocando
+    if (!chatOpen()) { toast('O chat está reconectando. Tente de novo em instantes.'); return; }
+    dj.ly = (dj.ly || 0) + 1;
+    chat.ws.send(JSON.stringify({ t: 'lyr', q: clean(q, 200), ch: ch || myVch || viewVch, n: dj.ly }));
+  }
+  function djLyricsEl(d) {
+    const box = Object.assign(document.createElement('div'), { className: 'djc djc-ly' });
+    const main = Object.assign(document.createElement('div'), { className: 'djc-main' });
+    main.append(p_('djc-kick', 'Letra'), p_('djc-title', String(d.t || '').slice(0, 120)), p_('djc-sub', String(d.a || '').slice(0, 80)),
+      Object.assign(document.createElement('pre'), { className: 'djc-lyr', textContent: String(d.text || '') }), p_('djc-src', `Fonte: ${String(d.src || 'LRCLIB').slice(0, 20)} (letras grátis)`));
+    box.append(main);
+    return box;
+  }
+  function djHelpEl() {
+    const box = Object.assign(document.createElement('div'), { className: 'djc djc-help' });
+    const main = Object.assign(document.createElement('div'), { className: 'djc-main' });
+    const dl = Object.assign(document.createElement('dl'), { className: 'djc-cmds' });
+    for (const [n, al, use, what] of DJ_CMDS) {
+      const dt = document.createElement('dt');
+      dt.append(Object.assign(document.createElement('b'), { textContent: `!${n}` }), use ? ` ${use}` : '');
+      const dd = document.createElement('dd');
+      dd.append(what, al.length ? Object.assign(document.createElement('i'), { textContent: ` · ${al.slice(0, 4).map((x) => `!${x}`).join(' ')}` }) : '');
+      dl.append(dt, dd);
+    }
+    main.append(p_('djc-kick', 'Comandos do Bagre DJ'), p_('djc-sub', 'Com ! ou / (ex.: !p numb, /skip). Os botões do cartão "Tocando agora" fazem o mesmo.'), dl);
+    box.append(main);
+    return box;
+  }
+  function djCommand(text) { // devolve true se o texto era um comando do DJ (não vai como mensagem); '!oi' sem comando vira mensagem
+    const m = /^[!/]([^\s!/]+)(?:\s+([\s\S]*))?$/.exec(text.trim());
     if (!m) return false;
-    const cmd = m[1].toLowerCase();
+    const cmd = DJ_ALIAS.get(m[1].toLowerCase());
+    if (!cmd) return false;
     const arg = (m[2] || '').trim();
-    const CMDS = ['play', 'p', 'tocar', 'playnow', 'pn', 'skip', 's', 'next', 'pular', 'back', 'prev', 'voltar', 'pause', 'pausar', 'resume', 'r', 'continuar', 'queue', 'q', 'fila', 'np', 'tocando', 'shuffle', 'embaralhar', 'loop', 'repetir', 'remove', 'rm', 'tirar', 'stop', 'parar', 'dj', 'help', 'ajuda'];
-    if (!CMDS.includes(cmd)) return false;
-    if (['dj', 'help', 'ajuda'].includes(cmd)) { djEphemeral(DJ_HELP); return true; }
+    if (cmd === 'help') { djEphemeral('', djHelpEl()); return true; }
+    if (cmd === 'lyrics') { djLyrics(arg); return true; }
     if (!inVoice) { djEphemeral('Entre num canal de voz primeiro: eu toco no canal em que você está.'); return true; }
     const s = dj.st.get(myVch);
     const cur = djCur(s);
     const tc = textCh;
-    if (['play', 'p', 'tocar', 'playnow', 'pn'].includes(cmd)) {
-      if (!arg) { if (cur && s.paused) musSend('resume', { tc }); else djEphemeral('Use /play <nome da música ou link do YouTube ou Spotify>.'); return true; }
-      djPlay(arg, cmd === 'playnow' || cmd === 'pn', tc);
-    } else if (['skip', 's', 'next', 'pular'].includes(cmd)) { if (!cur) djEphemeral('Nada tocando agora.'); else musSend('skip', { tc }); }
-    else if (['back', 'prev', 'voltar'].includes(cmd)) musSend('prev', { tc });
-    else if (['pause', 'pausar'].includes(cmd)) { if (!cur || s.paused) djEphemeral(cur ? 'Já está pausado. /resume volta a tocar.' : 'Nada tocando agora.'); else musSend('pause', { tc }); }
-    else if (['resume', 'r', 'continuar'].includes(cmd)) { if (!cur || !s.paused) djEphemeral(cur ? 'Já está tocando.' : 'Nada tocando agora.'); else musSend('resume', { tc }); }
-    else if (['queue', 'q', 'fila'].includes(cmd)) {
-      const up = s ? s.q.slice(Math.max(0, s.i + 1)) : [];
-      dj.pref = 'open';
-      renderDj();
-      djEphemeral(`${cur ? `Tocando: ${cur.t} (${mmss(djPos(s))}${cur.d ? ` de ${mmss(cur.d)}` : ''})` : 'Nada tocando.'}\n${up.length ? up.slice(0, 10).map((x, n) => `${n + 1}. ${x.t}${x.d ? ` (${mmss(x.d)})` : ''}`).join('\n') + (up.length > 10 ? `\n… e mais ${up.length - 10}` : '') : 'A fila está vazia.'}`);
-    } else if (['np', 'tocando'].includes(cmd)) djEphemeral(cur ? `Tocando agora: ${cur.t} · ${mmss(djPos(s))}${cur.d ? ` de ${mmss(cur.d)}` : ''}${cur.by ? ` · pedido por ${cur.by}` : ''}` : 'Nada tocando agora.');
-    else if (['shuffle', 'embaralhar'].includes(cmd)) musSend('shuffle', { tc });
-    else if (['loop', 'repetir'].includes(cmd)) {
-      const a = arg.toLowerCase();
-      const mode = /^(fila|all|queue|tudo)$/.test(a) ? 'all' : /^(uma|one|musica|música|track|1)$/.test(a) ? 'one' : /^(off|nao|não|desligar|0)$/.test(a) ? 'off' : { off: 'all', all: 'one', one: 'off' }[s ? s.loop : 'off'];
-      musSend('loop', { mode });
-      djEphemeral({ off: 'Repetir desligado.', all: 'Repetindo a fila.', one: 'Repetindo esta música.' }[mode]);
-    } else if (['remove', 'rm', 'tirar'].includes(cmd)) {
-      const n = Number(arg);
-      const up = s ? s.q.slice(Math.max(0, s.i + 1)) : [];
-      if (!Number.isInteger(n) || n < 1 || n > up.length) djEphemeral(`Use /remove <número na fila, de 1 a ${up.length || 1}>.`);
-      else { musSend('rm', { k: up[n - 1].k }); djEphemeral(`Tirei da fila: ${up[n - 1].t}`); }
-    } else if (['stop', 'parar'].includes(cmd)) musSend('stop', { tc });
+    const up = s ? s.q.slice(Math.max(0, s.i + 1)) : [];
+    const base = s ? Math.max(0, s.i + 1) : 0;
+    const need = () => { if (!cur) djEphemeral('Nada tocando agora. Peça com !p <nome ou link>.'); return !cur; };
+    const num = (v) => { const n = Number(v); return Number.isInteger(n) && n >= 1 && n <= up.length ? n : 0; };
+    const range = `de 1 a ${up.length || 1}`;
+    switch (cmd) {
+      case 'play': case 'playnow': case 'playtop':
+        if (!arg) { if (cur && s.paused) musSend('resume', { tc }); else djEphemeral(`Use !${cmd === 'play' ? 'p' : cmd} <nome da música ou link do YouTube ou Spotify>.`); break; }
+        djPlay(arg, cmd === 'playnow', tc, cmd === 'playtop');
+        break;
+      case 'search':
+        if (!arg) { djEphemeral('Use !search <nome da música>.'); break; }
+        dj.pref = 'open'; renderDj(); djSearch(arg);
+        djEphemeral(`Resultados de “${arg.slice(0, 60)}” no painel do Bagre DJ: toque para tocar ou pôr na fila.`);
+        break;
+      case 'skip': if (!need()) musSend('skip', { tc }); break;
+      case 'skipto': { const n = num(arg); if (!n) djEphemeral(`Use !skipto <nº da fila, ${range}>.`); else musSend('jump', { k: up[n - 1].k, tc }); break; }
+      case 'back': musSend('prev', { tc }); break;
+      case 'replay': if (!need()) musSend('seek', { pos: 0, tc }); break;
+      case 'pause': if (!need()) musSend(s.paused ? 'resume' : 'pause', { tc }); break;
+      case 'resume': if (!need()) { if (s.paused) musSend('resume', { tc }); else djEphemeral('Já está tocando.'); } break;
+      case 'nowplaying': if (!need()) djEphemeral('', djCardEl({ k: 'np', ch: myVch, key: cur.k, id: cur.id, t: cur.t, a: cur.a, d: cur.d, by: cur.by })); break;
+      case 'queue': djEphemeral('', djQueueCard(Number(arg) || 1, myVch)); break;
+      case 'move': {
+        const ns = (arg.match(/\d+/g) || []).map(Number);
+        const from = num(ns[0]), to = ns.length > 1 ? Math.min(Math.max(1, ns[1]), up.length) : 1;
+        if (!from) djEphemeral(`Use !move <de> [para], ${range}. Ex.: !move 5 1`);
+        else if (from === to) djEphemeral('Essa música já está nessa posição.');
+        else musSend('mv', { k: up[from - 1].k, to: base + to - 1, tc });
+        break;
+      }
+      case 'remove': {
+        const r = /^(\d+)\s*-\s*(\d+)$/.exec(arg);
+        if (r) {
+          const a = num(r[1]), b = num(r[2]);
+          if (!a || !b || b < a) djEphemeral(`Use !remove <nº>-<nº>, ${range}.`); else musSend('rm', { ks: up.slice(a - 1, b).map((x) => x.k), tc });
+        } else if (/^(last|ultima|última)$/i.test(arg) && up.length) musSend('rm', { k: up[up.length - 1].k, tc });
+        else { const n = num(arg); if (!n) djEphemeral(`Use !remove <nº da fila, ${range}> (ou 2-5).`); else musSend('rm', { k: up[n - 1].k, tc }); }
+        break;
+      }
+      case 'clear': musSend('clear', { tc }); break;
+      case 'removedupes': musSend('dedupe', { tc }); break;
+      case 'shuffle': if (up.length < 2) djEphemeral('Precisa de 2 músicas na fila para embaralhar.'); else musSend('shuffle', { tc }); break;
+      case 'loop': {
+        const a = arg.toLowerCase();
+        const mode = /^(fila|all|queue|tudo|q)$/.test(a) ? 'all' : /^(uma|one|musica|música|track|song|esta|1|on)$/.test(a) ? 'one' : /^(off|nao|não|desligar|desliga|0|none)$/.test(a) ? 'off' : s && s.loop === 'one' ? 'off' : 'one';
+        musSend('loop', { mode, tc });
+        break;
+      }
+      case 'loopqueue': musSend('loop', { mode: s && s.loop === 'all' ? 'off' : 'all', tc }); break;
+      case 'seek': case 'forward': case 'rewind': {
+        if (need()) break;
+        const sign = cmd === 'forward' ? '+' : cmd === 'rewind' ? '-' : /^[+-]/.test(arg) ? arg[0] : '';
+        const n = arg ? djTime(arg.replace(/^[+-]/, '')) : cmd === 'seek' ? null : 10;
+        if (n === null) { djEphemeral('Use !seek <tempo>: 1:30, 90, 2m45s, +10 ou -10.'); break; }
+        const at = djPos(s), pos = sign === '+' ? at + n : sign === '-' ? at - n : n;
+        if (cur.d && pos >= cur.d) { djEphemeral(`Essa música tem ${mmss(cur.d)}. Para pular, use !skip.`); break; }
+        musSend('seek', { pos: Math.max(0, pos), tc });
+        break;
+      }
+      case 'volume': {
+        if (!arg) { djEphemeral(`Seu volume do Bagre DJ: ${dj.mute ? 'mudo' : `${dj.vol}%`}. Use !volume <0 a 100> (muda só para você).`); break; }
+        const v = Number(arg.replace('%', ''));
+        if (!Number.isFinite(v) || v < 0 || v > 100) { djEphemeral('Use !volume <0 a 100>.'); break; }
+        dj.vol = Math.round(v); store('djvol', String(dj.vol));
+        if (dj.vol > 0 && dj.mute) { dj.mute = false; store('djmute', '0'); }
+        djVolume(); renderDj();
+        djEphemeral(`Seu volume do Bagre DJ: ${dj.vol}% (só para você: cada um tem o seu, como no Discord).`);
+        break;
+      }
+      case 'join': musSend('join', { tc }); break;
+      case 'leave': musSend('leave', { tc }); break;
+      case 'autoplay': {
+        const a = arg.toLowerCase();
+        musSend('auto', { on: /^(on|ligar|liga|sim|1)$/.test(a) ? true : /^(off|desligar|desliga|nao|não|0)$/.test(a) ? false : !(s && s.auto), tc });
+        break;
+      }
+      default: return false;
+    }
     return true;
   }
+  // sugestões ao digitar ! ou / no chat (como a lista de comandos do Discord): toque completa o comando
+  const djSug = Object.assign(document.createElement('ul'), { id: 'djSug', className: 'dj-sug', hidden: true });
+  djSug.setAttribute('aria-label', 'Comandos do Bagre DJ');
+  $('chatForm').append(djSug);
+  function djSugRender() {
+    const m = /^([!/])(\S*)$/.exec($('chatInput').value);
+    const w = m ? m[2].toLowerCase() : '';
+    const list = m ? DJ_CMDS.filter(([n, al]) => [n, ...al].some((x) => x.startsWith(w))).slice(0, 8) : [];
+    djSug.hidden = !list.length;
+    if (!list.length) return;
+    djSug.replaceChildren(...list.map(([n, al, use, what]) => {
+      const li = document.createElement('li');
+      const b = Object.assign(document.createElement('button'), { type: 'button' });
+      b.append(Object.assign(document.createElement('b'), { textContent: `${m[1]}${n}` }), Object.assign(document.createElement('i'), { textContent: use }),
+        Object.assign(document.createElement('span'), { textContent: `${what}${al.length ? ` · ${al.slice(0, 3).map((x) => m[1] + x).join(' ')}` : ''}` }));
+      b.addEventListener('pointerdown', (ev) => ev.preventDefault()); // o campo não perde o foco
+      b.addEventListener('click', () => { $('chatInput').value = `${m[1]}${n}${use ? ' ' : ''}`; djSug.hidden = true; $('chatInput').focus(); });
+      li.append(b);
+      return li;
+    }));
+  }
+  $('chatInput').addEventListener('input', djSugRender);
+  $('chatInput').addEventListener('blur', () => setTimeout(() => { djSug.hidden = true; }, 150));
+  $('chatInput').addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !djSug.hidden) { djSug.hidden = true; ev.stopPropagation(); } if (ev.key === 'Enter') djSug.hidden = true; });
   // eventos do painel
   $('djBtn').addEventListener('click', () => {
     dj.pref = $('dj').hidden ? 'open' : 'closed';
