@@ -627,10 +627,21 @@ export class Server {
       body: JSON.stringify({ context: { client: { clientName: 'WEB', clientVersion: '2.20251101.00.00', hl: 'pt', gl: 'BR' } }, ...body }),
     });
     if (!r.ok) { // S-0032: o YouTube às vezes recusa (403) uma busca que sai do Cloudflare; a 2ª tentativa sai por outro caminho
-      if (retry > 0 && (r.status === 403 || r.status === 429 || r.status >= 500)) { await new Promise((ok) => setTimeout(ok, 300)); return Server.innertube(path, body, retry - 1); }
+      if (retry > 0 && (r.status === 403 || r.status === 429 || r.status >= 500)) {
+        await new Promise((ok) => setTimeout(ok, 300));
+        if (path === 'search' && body.query) return Server.ytHtml(body.query); // busca: a 2ª tentativa vai pela página de resultados
+        return Server.innertube(path, body, retry - 1);
+      }
       throw new Error(`HTTP ${r.status}`);
     }
     return r.json();
+  }
+  static async ytHtml(q) { // página de resultados do YouTube (só vídeos): o mesmo formato (videoRenderer) dentro do ytInitialData
+    const r = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}&sp=EgIQAQ%253D%253D&hl=pt&gl=BR`, { headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36', 'accept-language': 'pt-BR' } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const m = /var ytInitialData = (\{[\s\S]*?\});<\/script>/.exec(await r.text());
+    if (!m) throw new Error('YouTube: página mudou');
+    return JSON.parse(m[1]);
   }
   static ytItems(j, max) { // vídeos da resposta (formato antigo videoRenderer e o novo lockupViewModel); ao vivo (sem duração) fica de fora
     const out = [];

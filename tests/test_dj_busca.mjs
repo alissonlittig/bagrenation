@@ -140,6 +140,21 @@ assert.ok(asked.includes('f0 art0'), 'busca = nome + 1º artista');
 const bigL = await nokey.resolve('https://open.spotify.com/playlist/1111111111111111111111', 30);
 assert.equal(bigL.list.length, 30); assert.equal(bigL.more, 70);
 
+// S-0032: o YouTube recusa (403) a busca que sai do Cloudflare -> 2ª tentativa pela página de resultados (mesmo formato)
+{
+  const f0 = globalThis.fetch;
+  let seen = [];
+  globalThis.fetch = async (u) => {
+    u = new URL(u); seen.push(u.pathname);
+    if (u.pathname === '/youtubei/v1/search') return new Response('', { status: 403 });
+    if (u.pathname === '/results') return new Response(`<script>var ytInitialData = ${JSON.stringify({ contents: { a: [vr('eeeeeeeeeee', 'Pela página', '4:00', 'Canal')] } })};</script>`);
+    throw new Error(`rede inesperada ${u}`);
+  };
+  const l = await Server.ytPublic('recusada');
+  assert.deepEqual(seen, ['/youtubei/v1/search', '/results']); assert.equal(l[0].id, 'eeeeeeeeeee');
+  globalThis.fetch = f0;
+}
+
 // S-1580: versão bloqueada fora do YouTube -> outra versão da mesma música (até 5 tentativas, sem repetir id)
 {
   const st = { q: [{ k: 'k1', id: 'aaaaaaaaaaa', t: 'linkin park', d: 100 }], i: 0 };
@@ -167,4 +182,4 @@ assert.equal(s.q.length, 30, 'das tocadas ficam só as 30 últimas'); assert.equ
 s.loop = 'all'; s.i = 9; Server.advance(s, 5000, false); assert.equal(s.q[s.i].t, 'm20');
 s.i = s.q.length - 1; Server.advance(s, 6000, false); assert.equal(s.q[s.i].t, 'm10', 'repetir a fila volta ao começo');
 const t = { q: Array.from({ length: 40 }, (_, i) => ({ k: `k${i}`, id: 'aaaaaaaaaaa', t: `m${i}`, d: 100 })), i: 35, at: 0, pos: 0, paused: false, loop: 'off' }; Server.advance(t, 7000, false); assert.equal(t.i, 30); assert.equal(t.q[t.i].t, 'm36');
-console.log('DJ BUSCA OK: links, duração, busca (sem bloqueado e sem live), cache, playlist em 2 páginas, sem chave (busca pública), Spotify (faixa, playlist, 404, links spotify.link/URI/intl/embed/user, até 100 com o resto aos poucos), cota, fila (repetir/avançar)');
+console.log('DJ BUSCA OK: links, duração, busca (sem bloqueado e sem live), cache, playlist em 2 páginas, sem chave (busca pública), Spotify (faixa, playlist, 404, links spotify.link/URI/intl/embed/user, até 100 com o resto aos poucos), 403 -> página de resultados, cota, fila (repetir/avançar)');

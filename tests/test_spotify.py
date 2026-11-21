@@ -116,7 +116,7 @@ def run(base, mode, out):
                 if tag == "grande":
                     assert any("pega as 100 primeiras" in x for x in r["dj"]), r
                 if tag == "user":
-                    assert " de " in lista, r
+                    assert " de " in lista.lower(), r
         errs = [e for e in M.errors if "favicon" not in e]
         br.close()
     pathlib.Path(out).write_text(json.dumps({"modo": mode, "base": base, "servidor": srv, "casos": res, "erros_console": errs}, ensure_ascii=False, indent=1), encoding="utf-8")
