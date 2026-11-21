@@ -54,7 +54,8 @@ const SP_STEP = 20;                     // buscas por volta do alarme (plano gr�
 const SP_ERR = 'Não consegui ler esse link do Spotify agora. Tente de novo.';
 const BAD = ['fortnite', 'remix', 'rmx', 'cover', 'covers', 'nightcore', 'sped up', 'speed up', 'speed', 'slowed', 'reverb', 'karaoke', 'karaoke version', '8d', '8d audio',
   'live', 'ao vivo', 'en vivo', 'live at', 'instrumental', 'piano', 'lofi', 'lo fi', 'mashup', 'reaction', 'react', 'bass boosted', 'tiktok', 'acoustic', 'acustico',
-  'cifra', 'aula', 'tutorial', 'como tocar', 'guitar', 'drum', 'bateria', 'parody', 'parodia', 'edit', 'extended', 'loop', '1 hour', '10 hours', 'mix', 'megamix', 'medley'];
+  'cifra', 'aula', 'tutorial', 'como tocar', 'guitar', 'drum', 'bateria', 'parody', 'parodia', 'edit', 'extended', 'loop', '1 hour', '10 hours', 'mix', 'megamix', 'medley',
+  'arr', 'arranged', 'arrangement', 'concert band', 'marching band', 'orchestra', 'orquestra', 'band version', 'tribute', 'tributo', 'kids', 'infantil', 'violin', 'sax'];
 const WANT = ['fortnite', 'remix', 'cover', 'nightcore', 'sped up', 'slowed', 'reverb', 'karaoke', '8d', 'live', 'ao vivo', 'en vivo', 'instrumental', 'acoustic', 'acustico', 'piano'];
 const LYRIC = ['lyrics', 'lyric', 'letra', 'legendado', 'legenda', 'traducao', 'tradução', 'with lyrics', 'com letra'];
 const DJ = { name: 'Bagre DJ', av: 'dj', uid: 'dj' };
@@ -641,8 +642,14 @@ export class Server {
       const played = new Set(s0.q.map((x) => Server.norm(Server.ttl(x.t)))), ids = new Set(s0.q.map((x) => x.id));
       let a = /\s+-\s+topic$/i.test(last.a || '') ? last.a.replace(/\s+-\s+topic$/i, '') : '';
       const sp = /^(.+?)\s+[-–—|]\s+(.+)$/.exec(Server.ttl(last.t));
-      if (!a && sp) a = sp[1];
+      // S-0037: o artista oficial vem do iTunes (título + canal); "Numb – Linkin Park" tem o artista DEPOIS do traço, então o
+      // traço sozinho só vale no fim (antes o autoplay procurava o artista "Numb" e caía numa música de outro)
+      if (!a) { const m = await this.meta(`${Server.ttl(last.t)} ${last.a || ''}`.trim()); if (m) a = m.a; }
+      // iTunes não respondeu (de dentro do servidor ele às vezes recusa): o canal do vídeo é o artista (a versão original
+      // vem do canal dele, Topic ou VEVO); só sem canal vale o pedaço antes do traço
+      if (!a && last.a && last.a !== 'autoplay') a = String(last.a).replace(/\s*(vevo|official|oficial|music|tv)$/i, '').trim();
       if (!a) { const m = await this.meta(Server.ttl(last.t)); if (m) a = m.a; }
+      if (!a && sp) a = sp[1];
       a = Server.artist1(a);
       let pick = null;
       if (a) {
@@ -655,10 +662,23 @@ export class Server {
           seen.add(k);
           return !BAD.some((w) => Server.has(Server.norm(x.trackName), w));
         }).slice(0, 12);
-        const c = cand.length ? cand[crypto.getRandomValues(new Uint32Array(1))[0] % cand.length] : null;
-        if (c) pick = Server.rank(await this.search(`${a} - ${Server.base(c.trackName)}`), { t: c.trackName, a, d: Math.round((c.trackTimeMillis || 0) / 1000) }, c.trackName).find((x) => !ids.has(x.id)) || null;
+        console.log('autoplay itunes', r.status, res.length, cand.length);
+        const rnd = crypto.getRandomValues(new Uint32Array(cand.length || 1));
+        const order = cand.map((c, n) => ({ c, r: rnd[n] })).sort((x, y) => x.r - y.r).map((x) => x.c);
+        for (const c of order.slice(0, 3)) { // S-0037: até 3 músicas do artista (a busca de uma pode não voltar nada)
+          pick = Server.rank(await this.search(`${a} - ${Server.base(c.trackName)}`), { t: c.trackName, a, d: Math.round((c.trackTimeMillis || 0) / 1000) }, c.trackName)
+            .find((x) => !ids.has(x.id) && !BAD.some((w) => Server.has(Server.norm(x.t), w))) || null;
+          if (pick) break;
+        }
       }
-      if (!pick) pick = (await this.search(a || Server.ttl(last.t))).find((x) => !ids.has(x.id) && !played.has(Server.norm(Server.ttl(x.t)))) || null;
+      if (!pick) { // sem a lista do iTunes: a busca do YouTube pelo artista, sem repetir a mesma música (outro vídeo, letra, ao vivo)
+        const an = Server.norm(a), songs = [...played].map((p) => (an ? p.replace(an, ' ') : p).replace(/\s+/g, ' ').trim()).filter((p) => p.length >= 3);
+        pick = (await this.search(a || Server.ttl(last.t))).find((x) => {
+          const T = Server.norm(Server.ttl(x.t));
+          return !ids.has(x.id) && !played.has(T) && !songs.some((p) => Server.has(T, p)) && !BAD.some((w) => Server.has(Server.norm(x.t), w));
+        }) || null;
+      }
+      console.log('autoplay', JSON.stringify({ last: last.t, a, pick: pick && pick.t, via: pick && pick.a }));
       if (!pick) return;
       const s = this.mget(ch); // lido depois do await: alguém pode ter pedido outra
       if (s.q[s.i] || !s.auto || s.q.length >= MAX_Q) return;
@@ -670,7 +690,7 @@ export class Server {
     } catch (err) { console.warn('autoplay', String(err)); }
   }
   async lyrics(ws, att, d, now) { // { t:'lyr', n, q?, ch? }: letra só de fonte grátis (LRCLIB, sem chave); sem letra, diz que não achou
-    const reply = (o) => ws.send(JSON.stringify({ t: 'lyrres', n: d.n, ...o }));
+    const reply = (o) => ws.send(JSON.stringify({ ...o, t: 'lyrres', n: d.n })); // o tipo vem por último: o título vai em 'title' (S-0037)
     if (!att.uid) return;
     if (now - (att.ly || 0) < 1500) return reply({ err: 'Calma: uma letra por vez.' });
     att.ly = now;
@@ -702,7 +722,7 @@ export class Server {
       }
       if (!j) return reply({ err: `Não achei a letra de “${(t || q).slice(0, 60)}” numa fonte grátis (LRCLIB).` });
       if (j.instrumental || !j.plainLyrics) return reply({ err: `“${clean(j.trackName, 60)}” é instrumental: não tem letra.` });
-      return reply({ t: clean(j.trackName, 120), a: clean(j.artistName, 80), text: String(j.plainLyrics).slice(0, 12000), src: 'LRCLIB' });
+      return reply({ title: clean(j.trackName, 120), a: clean(j.artistName, 80), text: String(j.plainLyrics).slice(0, 12000), src: 'LRCLIB' });
     } catch (err) {
       console.warn('letra', String(err));
       return reply({ err: 'A fonte de letras (LRCLIB) não respondeu. Tente de novo.' });
@@ -851,9 +871,12 @@ export class Server {
     const hit = this.ytc.get(key);
     if (hit && Date.now() - hit.at < 86400000) return hit.list;
     let out = null;
+    let answered = false; // a fonte respondeu (só então o resultado, achado ou não, fica guardado)
     try {
       const r = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=song&limit=10&country=BR`);
+      answered = r.ok;
       const res = r.ok ? ((await r.json()).results || []).filter((x) => x.trackName && x.artistName) : [];
+      if (!r.ok) console.warn('iTunes', r.status);
       const qt = qn.split(' ').filter(Boolean);
       const cand = res.map((x, n) => ({ x, n })).filter(({ x }) => qt.length && qt.every((w) => Server.has(Server.norm(`${x.trackName} ${x.artistName}`), w))); // todas as palavras do pedido
       if (cand.length) {
@@ -865,6 +888,8 @@ export class Server {
         out = { t: pick.trackName, a: Server.artist1(pick.artistName), d: Math.round((pick.trackTimeMillis || 0) / 1000) };
       }
     } catch (err) { console.warn('iTunes', String(err)); }
+    if (!answered) return out; // iTunes recusou (de dentro do Cloudflare às vezes vem 403/429): não guarda; a próxima pergunta de novo
+    // (o LRCLIB como 2ª fonte foi testado no S-0037 e devolveu artista errado: sem o iTunes vale a ordem do YouTube + as versões barradas)
     if (this.ytc.size > 200) this.ytc.clear();
     this.ytc.set(key, { at: Date.now(), list: out });
     return out;

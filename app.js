@@ -2617,7 +2617,7 @@
       const at = tk ? (tk.st === 1 ? tk.t + (Date.now() - tk.ts) / 1000 : tk.t) : null;
       return { id: cur && cur.id, k: cur && cur.k, title: cur && cur.t, paused: s ? s.paused : null, target: s && cur ? djPos(s) : null,
         st: tk ? tk.st : null, at, now: Date.now(), pid: tk ? tk.id : '', pv: tk ? tk.v : null, pm: tk ? tk.m : null, ready: dj.ready, frame: !!dj.frame, aud: !!dj.aud, results: !!dj.res, soundMs: dj.aud ? dj.aud.soundMs : null, fb: [...dj.fb], blocked: dj.blocked,
-        q: s ? s.q.map((x) => x.t) : [], i: s ? s.i : -1, loop: s ? s.loop : 'off', off: dj.off, rtt: dj.rtt, vol: dj.vol, mute: dj.mute || voice.deaf, fixes: dj.fixes };
+        q: s ? s.q.map((x) => x.t) : [], i: s ? s.i : -1, loop: s ? s.loop : 'off', auto: s ? !!s.auto : false, stay: s ? s.stay || 0 : 0, off: dj.off, rtt: dj.rtt, vol: dj.vol, mute: dj.mute || voice.deaf, fixes: dj.fixes };
     },
     musSend: (op, extra) => musSend(op, extra || {}),
     band: (limited, avail) => { if (local) checkBand(limited, avail, target(local.stream.getVideoTracks()[0])); return { n: band.n, warned: band.warned }; },
@@ -3089,7 +3089,7 @@
       djBtn('next', 'Pular', act(() => musSend('skip'))),
       djBtn('shuffle', 'Embaralhar a fila', act(() => musSend('shuffle')), 'djc-sh'),
       djBtn('loop', 'Repetir', act((s) => musSend('loop', { mode: { off: 'all', all: 'one', one: 'off' }[s ? s.loop : 'off'] })), 'djc-loop'),
-      djBtn('stop', 'Parar e tirar o DJ do canal', act(() => musSend('leave', { tc: textCh })), 'djc-stop'),
+      djBtn('djstop', 'Parar e tirar o DJ do canal', act(() => musSend('leave', { tc: textCh })), 'djc-stop'),
       djBtn('#Letra', 'Letra da música', () => djLyrics('', el.dataset.ch), 'djc-txt djc-any'),
       djBtn('#Fila', 'Ver a fila', () => djEphemeral('', djQueueCard(1, el.dataset.ch)), 'djc-txt djc-any'),
     );
@@ -3179,7 +3179,7 @@
   function djLyricsEl(d) {
     const box = Object.assign(document.createElement('div'), { className: 'djc djc-ly' });
     const main = Object.assign(document.createElement('div'), { className: 'djc-main' });
-    main.append(p_('djc-kick', 'Letra'), p_('djc-title', String(d.t || '').slice(0, 120)), p_('djc-sub', String(d.a || '').slice(0, 80)),
+    main.append(p_('djc-kick', 'Letra'), p_('djc-title', String(d.title || '').slice(0, 120)), p_('djc-sub', String(d.a || '').slice(0, 80)),
       Object.assign(document.createElement('pre'), { className: 'djc-lyr', textContent: String(d.text || '') }), p_('djc-src', `Fonte: ${String(d.src || 'LRCLIB').slice(0, 20)} (letras grátis)`));
     box.append(main);
     return box;

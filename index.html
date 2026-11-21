@@ -21,7 +21,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/vt323-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=0033">
+<link rel="stylesheet" href="style.css?v=0037">
 </head>
 <body>
 
@@ -30,6 +30,7 @@
 <svg class="sprite" aria-hidden="true" focusable="false">
   <symbol id="i-cast" viewBox="0 0 16 16"><path d="M1 1h14v1h-14zM1 2h1v1h-1zM14 2h1v1h-1zM1 3h1v1h-1zM8 3h1v1h-1zM14 3h1v1h-1zM1 4h1v1h-1zM7 4h3v1h-3zM14 4h1v1h-1zM1 5h1v1h-1zM6 5h5v1h-5zM14 5h1v1h-1zM1 6h1v1h-1zM8 6h1v1h-1zM14 6h1v1h-1zM1 7h1v1h-1zM8 7h1v1h-1zM14 7h1v1h-1zM1 8h1v1h-1zM14 8h1v1h-1zM1 9h14v1h-14zM5 11h6v1h-6zM7 12h2v1h-2zM5 13h6v1h-6z"/></symbol>
   <symbol id="i-stop" viewBox="0 0 16 16"><path d="M1 1h14v1h-14zM1 2h1v1h-1zM14 2h1v1h-1zM1 3h1v1h-1zM14 3h1v1h-1zM1 4h1v1h-1zM6 4h4v1h-4zM14 4h1v1h-1zM1 5h1v1h-1zM6 5h4v1h-4zM14 5h1v1h-1zM1 6h1v1h-1zM6 6h4v1h-4zM14 6h1v1h-1zM1 7h1v1h-1zM6 7h4v1h-4zM14 7h1v1h-1zM1 8h1v1h-1zM14 8h1v1h-1zM1 9h14v1h-14zM5 11h6v1h-6zM7 12h2v1h-2zM5 13h6v1h-6z"/></symbol>
+  <symbol id="i-djstop" viewBox="0 0 16 16"><path d="M3 3h10v10h-10z"/></symbol>
   <symbol id="i-vol" viewBox="0 0 16 16"><path d="M7 1h1v1h-1zM6 2h2v1h-2zM13 2h1v1h-1zM5 3h3v1h-3zM10 3h1v1h-1zM14 3h1v1h-1zM1 4h7v1h-7zM11 4h1v1h-1zM14 4h1v1h-1zM1 5h7v1h-7zM11 5h1v1h-1zM14 5h1v1h-1zM1 6h7v1h-7zM11 6h1v1h-1zM14 6h1v1h-1zM1 7h7v1h-7zM11 7h1v1h-1zM14 7h1v1h-1zM1 8h7v1h-7zM11 8h1v1h-1zM14 8h1v1h-1zM1 9h7v1h-7zM11 9h1v1h-1zM14 9h1v1h-1zM5 10h3v1h-3zM10 10h1v1h-1zM14 10h1v1h-1zM6 11h2v1h-2zM13 11h1v1h-1zM7 12h1v1h-1z"/></symbol>
   <symbol id="i-mute" viewBox="0 0 16 16"><path d="M7 1h1v1h-1zM6 2h2v1h-2zM5 3h3v1h-3zM1 4h7v1h-7zM1 5h7v1h-7zM9 5h1v1h-1zM13 5h1v1h-1zM1 6h7v1h-7zM10 6h1v1h-1zM12 6h1v1h-1zM1 7h7v1h-7zM11 7h1v1h-1zM1 8h7v1h-7zM10 8h1v1h-1zM12 8h1v1h-1zM1 9h7v1h-7zM9 9h1v1h-1zM13 9h1v1h-1zM5 10h3v1h-3zM6 11h2v1h-2zM7 12h1v1h-1z"/></symbol>
   <symbol id="i-copy" viewBox="0 0 16 16"><path d="M1 1h9v1h-9zM1 2h1v1h-1zM9 2h1v1h-1zM1 3h1v1h-1zM9 3h1v1h-1zM1 4h1v1h-1zM6 4h9v1h-9zM1 5h1v1h-1zM6 5h1v1h-1zM14 5h1v1h-1zM1 6h1v1h-1zM6 6h1v1h-1zM14 6h1v1h-1zM1 7h1v1h-1zM6 7h1v1h-1zM14 7h1v1h-1zM1 8h1v1h-1zM6 8h1v1h-1zM14 8h1v1h-1zM1 9h6v1h-6zM14 9h1v1h-1zM6 10h1v1h-1zM14 10h1v1h-1zM6 11h1v1h-1zM14 11h1v1h-1zM6 12h9v1h-9z"/></symbol>
@@ -263,7 +264,7 @@
               <button id="djPlay" class="icon-btn dj-play" type="button" aria-label="Pausar" title="Pausar"><svg class="ic" aria-hidden="true"><use id="djPlayIcon" href="#i-pause"/></svg></button>
               <button id="djNext" class="icon-btn" type="button" aria-label="Pular" title="Pular"><svg class="ic" aria-hidden="true"><use href="#i-next"/></svg></button>
               <button id="djLoop" class="icon-btn dj-loop" type="button" aria-pressed="false" aria-label="Repetir: desligado" title="Repetir: desligado"><svg class="ic" aria-hidden="true"><use href="#i-loop"/></svg><span id="djLoopOne" class="dj-one" hidden>1</span></button>
-              <button id="djStop" class="icon-btn" type="button" aria-label="Parar e limpar a fila" title="Parar e limpar a fila"><svg class="ic" aria-hidden="true"><use href="#i-stop"/></svg></button>
+              <button id="djStop" class="icon-btn" type="button" aria-label="Parar e limpar a fila" title="Parar e limpar a fila"><svg class="ic" aria-hidden="true"><use href="#i-djstop"/></svg></button>
             </div>
             <div class="dj-vol">
               <button id="djMute" class="icon-btn" type="button" aria-pressed="false" aria-label="Mutar só a música" title="Mutar só a música (só para você)"><svg class="ic" aria-hidden="true"><use id="djMuteIcon" href="#i-vol"/></svg></button>
@@ -626,6 +627,6 @@
 </template>
 
 <noscript><p class="noscript">O BAGRENATION precisa de JavaScript para conectar as pessoas da sala.</p></noscript>
-<script src="app.js?v=0033" defer></script>
+<script src="app.js?v=0037" defer></script>
 </body>
 </html>

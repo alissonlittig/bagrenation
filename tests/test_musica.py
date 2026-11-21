@@ -107,7 +107,7 @@ def run(base, shots):
 
         # 1. /play no chat
         say(a, f"/play {BUNNY}")
-        last_dj(b, "Tocando agora: Big Buck Bunny")
+        last_dj(b, "Big Buck Bunny")  # S-0037: virou o cartão Tocando agora (título no cartão)
         expect(a.locator("#chatInput")).to_have_value("")
         playing(a, "aqz-KE-bpKQ")
         playing(b, "aqz-KE-bpKQ")
@@ -292,9 +292,9 @@ def run(base, shots):
         assert dj(a)["results"] is False, "abriu a lista em vez de tocar"
         step(f"nome no painel + Enter: a 1ª música achada ({dj(a)['title']}) toca para os 3 em {took:.1f} s, sem escolher em lista (diferença {g:.2f} s)")
         say(b, "/play rick astley never gonna give you up")
-        last_dj(a, "Na fila (#1)")
+        last_dj(a, "Na fila · #1")
         say(c, "/play https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT")
-        last_dj(a, "Na fila (#2)")
+        last_dj(a, "Na fila · #2")
         d = dj(b)
         assert len(d["q"]) - d["i"] - 1 == 2 and all("rick" in t.lower() or "never" in t.lower() for t in d["q"][d["i"] + 1:]), d["q"]
         step(f"/play <nome> com música tocando entra na fila; link de faixa do Spotify vira a mesma música no YouTube ({d['q'][-1]})")
