@@ -191,7 +191,7 @@ def a_hears(app, name):
 def a_playing(app):
     app.wait_for_function("() => { const v = document.querySelector('.tile video'); return v && v.videoWidth > 0 && v.currentTime > 0.5; }", timeout=45000)
     t0 = app.evaluate("() => document.querySelector('.tile video').currentTime")
-    time.sleep(1.2)
+    time.sleep(3)  # S-0059: emulador sem placa de vídeo pode demorar a pintar o quadro seguinte
     assert app.evaluate("() => document.querySelector('.tile video').currentTime") > t0, "vídeo congelado no Android"
 
 
@@ -262,7 +262,7 @@ def main():
             app.click("#chanChat")
             app.wait_for_function("() => document.querySelector('#room').dataset.view === 'chat'")
         app.click("#fileBtn")
-        time.sleep(2.5)
+        time.sleep(5)
         try:
             if tem("Recent|Recentes|Downloads|Files|Arquivos|Choose|Escolher"):
                 foto("a03_seletor_android")
@@ -277,6 +277,9 @@ def main():
         except AssertionError as e:
             print("  seletor nativo:", e, flush=True)
             adb("shell", "input", "keyevent", "4")
+            time.sleep(1.5)
+            adb("shell", "am", "start", "-n", f"{PKG}/.MainActivity")  # S-0059: seletor que abriu atrasado deixa o WebView parado; o app volta para a frente
+            time.sleep(2)
             import base64
             app.evaluate(JS_ARQ, base64.b64encode(img.read_bytes()).decode())
             via = "campo de arquivo (seletor nativo não respondeu)"
