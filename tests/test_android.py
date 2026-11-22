@@ -364,6 +364,11 @@ def main():
         rot = adb("shell", "dumpsys", "window", "displays")
         foto("a06_tela_cheia")
         deitado = "mCurrentRotation=ROTATION_90" in rot or "mCurrentRotation=ROTATION_270" in rot or "rotation=1" in rot or "rotation=3" in rot
+        try:  # S-0059: 1a tela cheia do app: o Android mostra o aviso "Viewing full screen" e o 1o voltar só fecha o aviso
+            toque(r"Got it|Entendi|OK", 2)
+            time.sleep(1)
+        except AssertionError:
+            pass
         adb("shell", "input", "keyevent", "4")  # voltar sai da tela cheia
         app.wait_for_function("() => !document.fullscreenElement", timeout=10000)
         ok(f"ver a tela do outro: a transmissão do site toca no Android; tela cheia fica aberta (sem barras){' e o celular deita' if deitado else ''}; voltar sai da tela cheia")
