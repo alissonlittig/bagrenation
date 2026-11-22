@@ -431,6 +431,7 @@
     if (inVoice || !room) return;
     inVoice = true;
     myVch = ch;
+    vcSend(); // S-0059: o servidor conta o tempo de chamada
     layout(); // mostra o botão Retrair do topo
     openMic(); // negado = aviso curto + botão "Ativar microfone" na faixa da voz
     sfx('in');
@@ -443,6 +444,7 @@
     stopShare();
     inVoice = false;
     myVch = '';
+    vcSend(); // S-0059
     for (const e of peers.values()) offVoice(e);
     closeMic();
     voice.keyDown = false;
@@ -1263,7 +1265,36 @@
   }
   function sendMe() { // quem sou eu e como quero aparecer (só depois de ter nome)
     if (chatOpen() && store('name')) chat.ws.send(JSON.stringify({ t: 'me', key: myKey, name: myName, av: myAv, st: myStatus(), ...(store('bio') !== null ? { bio: store('bio') } : {}) }));
+    vcSend();
   }
+  // ---------- tempo de chamada (S-0059, como no Discord) ----------
+  // O servidor guarda quando a 1ª pessoa entrou em cada canal de voz e zera quando ele esvazia: todos veem o mesmo tempo.
+  const vct = new Map(); // canal de voz -> início (relógio do servidor)
+  let vcOff = 0;         // relógio do servidor - o meu
+  function vcSend() { if (chatOpen() && store('name')) chat.ws.send(JSON.stringify({ t: 'vc', ch: inVoice ? myVch : '' })); }
+  function vcOnTimes(d) {
+    vct.clear();
+    for (const [ch, ts] of Object.entries(d.m)) if (/^[a-z0-9]{1,12}$/.test(ch) && Number.isFinite(ts)) vct.set(ch, ts);
+    if (Number.isFinite(d.now)) vcOff = d.now - Date.now();
+    vcTick();
+  }
+  function vcFmt(ms) { // 04:12 · 1:04:12
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return h ? `${h}:${two(m)}:${two(s % 60)}` : `${two(m)}:${two(s % 60)}`;
+  }
+  function vcTick() {
+    const now = Date.now() + vcOff;
+    for (const el of document.querySelectorAll('.chan[data-ch] .chan-time')) {
+      const ts = vct.get(el.closest('.chan').dataset.ch);
+      el.hidden = !ts;
+      el.textContent = ts ? vcFmt(now - ts) : '';
+    }
+    const ts = $('room').dataset.view === 'voice' ? vct.get(viewVch) : 0;
+    $('callTime').hidden = !ts;
+    if (ts) { $('callTime').textContent = vcFmt(now - ts); $('callTime').title = `Chamada desde ${new Date(ts - vcOff).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`; }
+  }
+  setInterval(vcTick, 1000);
   // Ausente automático: 10 min sem mexer. No app vale o teclado/mouse do Windows inteiro (jogando = ativo).
   let lastInput = Date.now();
   let idleMs = 600000;
@@ -1311,6 +1342,7 @@
     }
     $('roomTitle').textContent = v === 'chat' ? chanLabel(textCh) : chanLabel(viewVch);
     setIcon($('topIcon'), v === 'chat' ? 'hash' : 'vol');
+    vcTick();
     renderDj();
   }
   const chatSeen = () => document.visibilityState === 'visible' && !document.documentElement.classList.contains('app-hidden')
@@ -1422,14 +1454,19 @@
       if (!d.op && chanOf(d.id)) { if (d.kind === 'text') { openText(d.id); $('chatInput').focus(); } else joinVoice(d.id); }
     } else if (d.t === 'mus' || d.t === 'clk' || d.t === 'ytres' || d.t === 'musok' || d.t === 'lyrres') {
       onDj(d);
+    } else if (d.t === 'djn' && typeof d.text === 'string') { // S-0059: aviso do Bagre DJ: só no painel de música
+      djNotice(d);
+    } else if (d.t === 'vct' && d.m && typeof d.m === 'object') { // S-0059: tempo de chamada de cada canal de voz (início no servidor)
+      vcOnTimes(d);
     } else if (d.t === 'err' && typeof d.text === 'string') {
-      toast(d.text.slice(0, 200), 6000);
+      if (Date.now() - (dj.cmdAt || 0) < 15000) djFeedAdd(d.text.slice(0, 200), null, true); // erro de um pedido de música: no painel de música
+      else toast(d.text.slice(0, 200), 6000);
     } else if (d.t === 'typing' && /^[a-f0-9]{16}$/.test(d.uid || '') && d.uid !== myUid && (d.ch || 'chat') === textCh) {
       typers.set(d.uid, Date.now());
       renderTyping();
     }
   }
-  const okMsg = (m) => !!m && Number.isInteger(m.id) && typeof m.name === 'string' && typeof m.text === 'string';
+  const okMsg = (m) => !!m && Number.isInteger(m.id) && typeof m.name === 'string' && typeof m.text === 'string' && m.uid !== 'dj'; // S-0059: o DJ não fala no chat
   const okMember = (m) => !!m && /^[a-f0-9]{16}$/.test(m.uid || '') && typeof m.name === 'string' && ['on', 'idle', 'off'].includes(m.st)
     && ((m.av = avOk(m.av)), true);
   const mine = (m) => (m.uid ? m.uid === myUid : m.name === myName); // antigas (sem uid): pelo nome, como antes
@@ -1561,7 +1598,7 @@
     const b = Object.assign(document.createElement('button'), { type: 'button', className: 'chan' });
     b.dataset.ch = c.id;
     b.innerHTML = `<svg class="ic" aria-hidden="true"><use href="#i-${c.kind === 'text' ? 'hash' : 'vol'}"/></svg><span class="chan-name"></span>`
-      + (c.kind === 'text' ? '<span class="badge chan-badge" hidden></span>' : '<span class="chan-count"></span>');
+      + (c.kind === 'text' ? '<span class="badge chan-badge" hidden></span>' : '<span class="chan-time" title="Tempo de chamada" hidden></span><span class="chan-count"></span>');
     const g = Object.assign(document.createElement('button'), { type: 'button', className: 'icon-btn chan-gear', title: 'Editar canal' });
     g.dataset.ch = c.id;
     g.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg>';
@@ -1646,13 +1683,25 @@
     const hm = `${two(d.getHours())}:${two(d.getMinutes())}`;
     return today ? `hoje ${hm}` : `${two(d.getDate())}/${two(d.getMonth() + 1)} ${hm}`;
   }
-  function linkify(el, text) { // links viram <a> (o app abre no navegador padrão)
+  function linkify(el, text) { // links viram <a>: site = aba nova; app de PC e celular = navegador padrão do sistema (S-0059)
     for (const part of text.split(/(https?:\/\/[^\s<>"]+)/)) {
       if (/^https?:\/\//.test(part)) {
-        const a = Object.assign(document.createElement('a'), { href: part, textContent: part, target: '_blank', rel: 'noopener noreferrer' });
-        el.append(a);
+        const tail = (/[.,;:!?)\]}'»]+$/.exec(part) || [''])[0]; // "veja https://x.com/a." -> o ponto final não entra no link
+        const url = tail ? part.slice(0, -tail.length) : part;
+        let ok = false;
+        try { ok = ['http:', 'https:'].includes(new URL(url).protocol); } catch { /* não é link */ }
+        if (!ok) { el.append(part); continue; }
+        el.append(Object.assign(document.createElement('a'), { href: url, textContent: url, target: '_blank', rel: 'noopener noreferrer', className: 'msg-link' }));
+        if (tail) el.append(tail);
       } else if (part) el.append(part);
     }
+  }
+  function linkPreview(text) { // S-0059: prévia pequena só do 1º link do YouTube (capa pelo id; nada é buscado em site de fora)
+    const m = /https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com\/(?:watch\?(?:[^\s#]*&)?v=|shorts\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/.exec(text);
+    if (!m) return null;
+    const a = Object.assign(document.createElement('a'), { className: 'msg-prev', href: `https://www.youtube.com/watch?v=${m[1]}`, target: '_blank', rel: 'noopener noreferrer', title: 'Abrir no YouTube' });
+    a.append(Object.assign(document.createElement('img'), { src: thumb(m[1]), alt: '', loading: 'lazy', width: 160, height: 90 }), Object.assign(document.createElement('span'), { textContent: 'YouTube' }));
+    return a;
   }
   function msgEl(m, prev) {
     const li = document.createElement('li');
@@ -1691,6 +1740,8 @@
       linkify(p, m.text);
       if (m.edited) p.append(' ', edited());
       body.append(p);
+      const pv = linkPreview(m.text);
+      if (pv) body.append(pv);
     }
     if (m.media && /^[a-z0-9]{20}$/.test(m.media.id)) body.append(mediaEl(m.media));
     if (m.uid === 'dj' && m.card && typeof m.card === 'object' && ['np', 'add'].includes(m.card.k) && /^[A-Za-z0-9_-]{11}$/.test(m.card.id || '')) { // S-0033
@@ -2693,6 +2744,7 @@
       if (d.err) djEphemeral(String(d.err).slice(0, 200));
       else djEphemeral('', djLyricsEl(d));
     } else if (d.t === 'musok' && typeof d.title === 'string') {
+      if (Date.now() - (dj.cmdAt || 0) < 15000) return; // S-0059: pedido pelo chat: o aviso do DJ já entra no painel de música
       toast(typeof d.note === 'string' && d.note ? d.note.slice(0, 200) : d.n > 1 ? `${d.n} músicas na fila` : d.now ? `Tocando agora: ${d.title}` : `Na fila: ${d.title}`);
     }
   }
@@ -3001,14 +3053,28 @@
     }
     seek.style.setProperty('--fill', `${d ? Math.min(100, (t / d) * 100) : 0}%`);
   }
-  function djEphemeral(text, extra) { // resposta do Bagre DJ que só eu vejo (como as respostas "só você vê" do Discord); extra = cartão (S-0033)
-    const m = { id: -(++dj.eph), ts: Date.now(), name: 'Bagre DJ', av: 'dj', uid: 'dj', text };
-    const li = msgEl(m, null);
-    li.classList.add('ephem');
-    if (extra) { li.querySelector('.msg-body').append(extra); li.classList.add('has-djc'); }
-    li.querySelector('.msg-body').append(Object.assign(document.createElement('p'), { className: 'ephem-note', textContent: 'Só você vê esta mensagem' }));
-    $('chatLog').append(li);
-    scrollDown();
+  // S-0059 (Alisson 22/11: "Deixa só coisas de música somente na aba de música"): o Bagre DJ não escreve nada no chat de texto.
+  // Resposta de comando e aviso do DJ entram no painel de música (#djFeed): aviso curto some sozinho (toast discreto ali);
+  // fila, letra, ajuda e Tocando agora pedidos com comando abrem o painel e ficam lá até fechar.
+  const djShown = () => !$('dj').hidden;
+  function djFeedAdd(text, extra, mine) {
+    const box = $('djFeed');
+    const li = Object.assign(document.createElement('li'), { className: `dj-fi${extra ? ' has-djc' : ''}` });
+    if (text) li.append(p_('dj-ft', text));
+    if (extra) {
+      li.append(extra);
+      li.prepend(djBtn('close', 'Fechar', () => li.remove(), 'dj-fx djc-any'));
+      for (const old of [...box.querySelectorAll('.dj-fi.has-djc')]) old.remove(); // 1 cartão por vez
+    } else setTimeout(() => { li.classList.add('out'); setTimeout(() => li.remove(), 400); }, 6000);
+    box.prepend(li);
+    while (box.children.length > 4) box.lastElementChild.remove();
+    if (extra) { dj.pref = 'open'; if ($('room').dataset.view !== 'voice') setView('voice'); renderDj(); }
+    else if (mine && !djShown()) toast(text.slice(0, 200));
+  }
+  function djEphemeral(text, extra) { djFeedAdd(text, extra, true); } // resposta que só eu vejo: no painel de música
+  function djNotice(d) { // aviso do DJ para o canal de voz d.ch (antes ia para o chat)
+    if (d.ch && d.ch !== myVch && d.ch !== viewVch) return;
+    djFeedAdd(d.text.slice(0, 300), null, Date.now() - (dj.cmdAt || 0) < 15000);
   }
   function djPlay(arg, now, tc, top) { // nome ou link: a 1ª música achada toca (ou entra na fila); playlist do YouTube vai inteira; top = !playtop
     if (/[?&]list=[A-Za-z0-9_-]{10,64}/.test(arg) && !/[?&]v=|youtu\.be\//.test(arg)) djSearch(arg, { tc, now, top });
@@ -3132,7 +3198,7 @@
     el.querySelector('.djc-foot').textContent = (up.length ? `Próxima: ${up[0].t}${up.length > 1 ? ` · +${up.length - 1} na fila` : ''}` : s.auto ? 'Fila vazia · autoplay ligado' : 'Fila vazia · !p <nome> para pedir')
       + (can ? '' : ` · entre em ${chanLabel(ch)} para controlar`);
   }
-  function djCardsTick() { for (const el of document.querySelectorAll('#chatLog .djc-np')) djCardTick(el); }
+  function djCardsTick() { for (const el of document.querySelectorAll('#djFeed .djc-np')) djCardTick(el); }
   function djBeat() { // estou num canal de voz com o DJ: aviso o servidor (sem ninguém avisando por 3 min, o DJ sai do canal)
     let key = '';
     for (const [ch, s] of dj.st) if (!djCur(s) && s.stay > srvNow()) key += `${ch},`;
@@ -3210,6 +3276,7 @@
     if (!m) return false;
     const cmd = DJ_ALIAS.get(m[1].toLowerCase());
     if (!cmd) return false;
+    dj.cmdAt = Date.now(); // S-0059: o retorno deste comando aparece no painel de música
     const arg = (m[2] || '').trim();
     if (cmd === 'help') { djEphemeral('', djHelpEl()); return true; }
     if (cmd === 'lyrics') { djLyrics(arg); return true; }
@@ -3988,9 +4055,11 @@
         .then((on) => { $('autoStart').checked = on; toast(on ? 'O BAGRENATION abre com o Windows, direto na bandeja.' : 'O BAGRENATION não abre mais com o Windows.'); })
         .catch((err) => { $('autoStart').checked = !$('autoStart').checked; toast(`Não deu para mudar: ${err}`); });
     });
-    document.addEventListener('click', (ev) => {
+    document.addEventListener('click', (ev) => { // link abre no navegador padrão do Windows (S-0059: a permissão agora aceita http/https)
       const a = ev.target.closest('a[href^="http"]');
-      if (a) { ev.preventDefault(); DESK.opener.openUrl(a.href).catch(() => {}); }
+      if (!a) return;
+      ev.preventDefault();
+      DESK.opener.openUrl(a.href).catch((err) => toast(`Não consegui abrir o link: ${String(err).slice(0, 120)}`, 6000));
     });
   }
 

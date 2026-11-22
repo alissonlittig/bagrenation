@@ -314,6 +314,35 @@ def main():
         foto("a04_dj")
         ok(f"Bagre DJ: '{d['title']}' tocando no Android pelo player.html do site (player oficial coberto), tempo andando {t0:.1f} -> {t1:.1f} s, diferença para o site {g:.2f} s")
         site.fill("#chatInput", "!dc"); site.press("#chatInput", "Enter")
+        app.wait_for_function("() => BAGRENATION.dj().q.length === 0", timeout=20000)
+        nchat = app.evaluate("() => [...document.querySelectorAll('#chatLog .msg')].filter((li) => li.classList.contains('is-bot') || /Bagre DJ/.test(li.textContent) || /^[!/](p|dc)\\b/.test(li.querySelector('.msg-text')?.textContent || '')).length")
+        assert nchat == 0, f"{nchat} mensagem(ns) do DJ ou de comando no chat do Android"
+        ok("S-0059 DJ fora do chat: !p e !dc do site tocaram/pararam no Android sem nenhuma mensagem do DJ nem do comando no chat do Android")
+
+        # 4b. S-0059: tempo de chamada igual no Android e no site
+        app.wait_for_function("() => { const e = document.querySelector('.chan[data-ch=\"voz\"] .chan-time'); return e && !e.hidden; }", timeout=15000)
+        ta = app.evaluate("() => document.querySelector('.chan[data-ch=\"voz\"] .chan-time').textContent")
+        ts = site.evaluate("() => document.querySelector('.chan[data-ch=\"voz\"] .chan-time').textContent")
+        sec = lambda t: sum(int(x) * 60 ** i for i, x in enumerate(reversed(t.split(':'))))
+        assert abs(sec(ta) - sec(ts)) <= 1, (ta, ts)
+        ok(f"S-0059 tempo de chamada: Android {ta} e site {ts} no canal de voz (mesmo início, guardado no servidor)")
+
+        # 4c. S-0059: link do chat abre no navegador do Android (Chrome do emulador)
+        link = "https://x.com/NASA/status/1858930170416726393"
+        site.fill("#chatInput", f"olha {link}")
+        site.press("#chatInput", "Enter")
+        app.wait_for_function("u => [...document.querySelectorAll('#chatLog a.msg-link')].some((a) => a.href === u)", link, 20000)
+        adb("logcat", "-c")
+        app.evaluate("u => [...document.querySelectorAll('#chatLog a.msg-link')].filter((a) => a.href === u).pop().click()", link)
+        time.sleep(4)
+        lg = adb("logcat", "-d", "-s", "ActivityTaskManager:I")
+        top = adb("shell", "dumpsys", "activity", "activities")
+        abriu = ("x.com" in lg and "VIEW" in lg) or "com.android.chrome" in top.split("mResumedActivity")[-1][:300] if "mResumedActivity" in top else ("x.com" in lg)
+        foto("a04b_link_no_navegador")
+        assert abriu, "o link não abriu o navegador do Android:\n" + lg[-1500:]
+        adb("shell", "am", "start", "-n", f"{PKG}/.MainActivity")
+        time.sleep(2)
+        ok("S-0059 link: tocar no link do X no chat do Android abriu o navegador (Chrome) com o endereço; o app voltou para a frente")
 
         # 5. ver a tela do site, em tela cheia
         app.click("#panelBtn")

@@ -28,7 +28,7 @@
 <meta name="apple-mobile-web-app-title" content="BAGRENATION">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/vt323-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=0057">
+<link rel="stylesheet" href="style.css?v=0059">
 </head>
 <body>
 
@@ -122,6 +122,7 @@
         <button id="chanVoice" class="chan" type="button" data-ch="voz">
           <svg class="ic" aria-hidden="true"><use href="#i-vol"/></svg>
           <span class="chan-name">Canal de voz</span>
+          <span class="chan-time" title="Tempo de chamada" hidden></span>
           <span id="voiceCount" class="chan-count"></span>
         </button>
         <button class="icon-btn chan-gear" type="button" data-ch="voz" aria-label="Editar Canal de voz" title="Editar canal"><svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg></button>
@@ -169,6 +170,7 @@
       <div class="top-title">
         <svg class="ic top-ic" aria-hidden="true"><use id="topIcon" href="#i-hash"/></svg>
         <h1 id="roomTitle" class="top-name">chat</h1>
+        <span id="callTime" class="call-time" role="timer" aria-label="Tempo de chamada" hidden></span>
         <span id="status" class="status" data-state="connecting" role="status" aria-live="polite">
           <span class="status-dot" aria-hidden="true"></span><span id="statusText">Conectando</span>
         </span>
@@ -292,6 +294,7 @@
               <p class="dj-sec"><span id="djResHead">Resultados</span><button id="djResX" class="linkish" type="button">fechar</button></p>
               <ul id="djResults" class="dj-list" aria-label="Resultados da busca"></ul>
             </div>
+            <ul id="djFeed" class="dj-feed" aria-live="polite" aria-label="Avisos do Bagre DJ"></ul>
             <p class="dj-sec"><span>Fila <b id="djCount"></b></span><span class="dj-hint">!p ou /play no chat · !help</span></p>
             <ol id="djQueue" class="dj-list dj-queue" aria-label="Fila de músicas"></ol>
           </div>
@@ -634,6 +637,6 @@
 </template>
 
 <noscript><p class="noscript">O BAGRENATION precisa de JavaScript para conectar as pessoas da sala.</p></noscript>
-<script src="app.js?v=0057" defer></script>
+<script src="app.js?v=0059" defer></script>
 </body>
 </html>

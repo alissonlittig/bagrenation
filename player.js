@@ -5,7 +5,7 @@
  */
 (() => {
   'use strict';
-  const OK = [/^https:\/\/alissonlittig\.github\.io$/, /^https?:\/\/tauri\.localhost$/, /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/];
+  const OK = [/^https:\/\/alissonlittig\.github\.io$/, /^https:\/\/localhost$/,/^https?:\/\/tauri\.localhost$/, /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/];  // S-0059: https://localhost = app Android (Capacitor)
   let parentOrigin = '';
   let yt = null;
   let ready = false;

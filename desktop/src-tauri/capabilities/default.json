@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Só o que a página do BAGRENATION usa no app",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:allow-open-url"]
+  "permissions": ["core:default", "opener:allow-open-url", "opener:allow-default-urls"]
 }

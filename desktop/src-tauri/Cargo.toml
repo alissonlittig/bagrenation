@@ -1,6 +1,6 @@
 [package]
 name = "bagrenation"
-version = "1.8.1"
+version = "1.8.2"
 description = "BAGRENATION para PC"
 edition = "2021"
 
