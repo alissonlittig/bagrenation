@@ -86,7 +86,7 @@ def run(base, shots):
         for pg in (a, b, c):
             T.join_voice(pg)
         T.voice_ready(a, 2)
-        c.click("#panelBtn")  # celular: Cris fica no #chat (um canal por vez), a música segue tocando
+        c.click("#chanBtn")  # celular: Cris fica no #chat (um canal por vez), a música segue tocando
         c.click("#chanChat")
         A = (a, b, c)
 

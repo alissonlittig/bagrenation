@@ -84,7 +84,7 @@ def main():
                 pg.click("#nameForm [type=submit]")
                 E.connected(pg)
                 if not pg.locator("#chanVoice").is_visible():
-                    pg.click("#panelBtn")
+                    pg.click("#chanBtn")
                 pg.click("#chanVoice")
                 others.append(pg)
             for pg in [a] + others:

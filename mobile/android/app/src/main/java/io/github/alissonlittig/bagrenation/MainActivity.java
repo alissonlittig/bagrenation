@@ -63,6 +63,27 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
+    @Override
+    public void onResume() {
+        super.onResume();
+        Atualizador.visivel = true;
+        if (Atualizador.pedeToque != null && BagrePlugin.inst != null) BagrePlugin.inst.updPronto(Atualizador.prefs(this).getString("pronto_ver", ""));
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        Atualizador.visivel = false;
+        // S-0069: instalar fecha o app; com o app fora da tela, o JobScheduler roda a instalação daqui a 45 s (se ele não voltou e não está em chamada)
+        if (!Atualizador.prefs(this).getString("pronto", "").isEmpty()) {
+            android.app.job.JobScheduler js = getSystemService(android.app.job.JobScheduler.class);
+            try {
+                js.schedule(new android.app.job.JobInfo.Builder(Atualizador.JOB + 1, new android.content.ComponentName(this, AtualizaJob.class))
+                    .setMinimumLatency(45_000).setOverrideDeadline(10 * 60_000).build());
+            } catch (RuntimeException e) { Atualizador.anota(this, "não agendou a instalação: " + e); }
+        }
+    }
+
     void imersivo(boolean on) {
         WindowInsetsControllerCompat c = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
         if (on) {

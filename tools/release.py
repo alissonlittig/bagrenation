@@ -26,7 +26,7 @@ def fim(ok, **kw):
 def versoes():
     conf = json.loads((ROOT / "desktop" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))["version"]
     gradle = (ROOT / "mobile" / "android" / "app" / "build.gradle").read_text(encoding="utf-8")
-    apk = re.search(r'versionName "([^"]+)"', gradle).group(1)
+    apk = re.search(r"bagreVersionName'\) \?: '([^']+)'", gradle).group(1)
     return conf, apk
 
 
@@ -52,6 +52,12 @@ def main():
     sigf = NSIS / f"{exe.name}.sig"
     if not exe.exists() or not sigf.exists(): fim(False, erro=f"falta o instalador do Windows {exe.name} (+.sig): rode com --build")
     if not APK.exists(): fim(False, erro="falta o APK assinado: rode com --build")
+    # S-0069: o APK da release busca a atualização só no GitHub (o build de teste aponta para 127.0.0.1 e nunca pode subir)
+    import zipfile
+    with zipfile.ZipFile(APK) as z:
+        dex = b"".join(z.read(n) for n in z.namelist() if n.endswith(".dex"))
+    if b"api.github.com/repos/alissonlittig/bagrenation/releases/latest" not in dex or b"127.0.0.1:8799" in dex:
+        fim(False, erro="APK com endereço de atualização de teste: rode o build de novo sem -PbagreUpd*")
     if APK.stat().st_mtime < exe.stat().st_mtime - 6 * 3600: fim(False, erro="APK muito mais velho que o instalador do Windows: rode com --build")
     sig = sigf.read_text().strip()
     out = subprocess.run(["git", "credential", "fill"], input="protocol=https\nhost=github.com\n\n", capture_output=True, text=True,

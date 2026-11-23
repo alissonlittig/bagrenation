@@ -173,7 +173,7 @@ def main():
             c.click("#nameForm [type=submit]")
             E.connected(c)
             if not c.locator("#chanVoice").is_visible():  # celular: os canais ficam na gaveta
-                c.click("#panelBtn")
+                c.click("#chanBtn")
             c.click("#chanVoice")
             E.wait(c, "(() => { const d = BAGRENATION.dj(); return d.id && d.pid === d.id && d.st === 1; })()", 45000, 300)
             time.sleep(3)

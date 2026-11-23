@@ -747,7 +747,24 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
   .composer { padding-inline: 8px; }
   .msg-media { width: min(var(--w, 420px), 100%); }
 }
-@media (min-width: 961px) { #panelBtn { display: none; } }
+@media (min-width: 961px) { #panelBtn, #chanBtn, .side-scrim { display: none; } }
+
+/* ---------- Celular (S-0069 E1): gavetas como no Discord. Canais pela esquerda (botão no canto de cima à esquerda),
+   quem está online pela direita; arrastar o dedo abre e fecha (app.js, gavetas). ---------- */
+#chanBtn { position: relative; flex: none; --u: 2px; }
+@media (max-width: 960px) {
+  .topbar { padding-left: 8px; }
+  .side { inset: 0 auto 0 0; width: min(86vw, 360px); border-right: var(--u) solid var(--line); box-shadow: 12px 0 30px #000c; animation: gavetaE .2s ease-out; }
+  .side[data-lado="dir"] { inset: 0 0 0 auto; border-right: 0; border-left: var(--u) solid var(--line); box-shadow: -12px 0 30px #000c; animation-name: gavetaD; }
+  .side[data-lado="dir"] .channels, .side[data-lado="dir"] .vconn, .side[data-lado="dir"] .me, .side[data-lado="dir"] .side-head .js-sfx { display: none !important; }
+  .side[data-lado="dir"] .side-online { border-top: 0; }
+  .side.arrastando { animation: none; transition: none; }
+  .side-scrim { position: fixed; inset: 0; z-index: 39; background: #07040fb8; animation: escurece .2s ease-out; touch-action: none; }
+}
+@keyframes gavetaE { from { transform: translateX(-100%); } }
+@keyframes gavetaD { from { transform: translateX(100%); } }
+@keyframes escurece { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .side, .side-scrim { animation: none !important; } }
 
 /* ---------- Modo foco (S-1351): só o canal de voz, focado na tela ou nas pessoas ---------- */
 .room[data-view="voice"][data-chatoff] .chat { display: none; }

@@ -80,14 +80,14 @@ def main():
                 pg.click("#nameForm [type=submit]")
                 E.connected(pg)
                 if not pg.locator("#chanVoice").is_visible():
-                    pg.click("#panelBtn")
+                    pg.click("#chanBtn")
                 pg.click("#chanVoice")
                 others.append(pg)
             m, c = others
             A = [a, m, c]
             for pg in A:
                 expect(pg.locator("#voiceCount")).to_have_text("3", timeout=45000)
-            c.click("#panelBtn")
+            c.click("#chanBtn")
             c.click("#chanChat")
             print(f"ok: app {ver} (Felipe) e site (Martins, Cris 390) no canal de voz", flush=True)
 

@@ -63,7 +63,7 @@ def no_dj_in_chat(pg, label):
 def to_chat(pg):
     if not pg.locator("#chatInput").is_visible():
         if not pg.locator("#chanChat").is_visible():
-            pg.click("#panelBtn")
+            pg.click("#chanBtn")
         pg.click("#chanChat")
     expect(pg.locator("#chatInput")).to_be_visible()
 

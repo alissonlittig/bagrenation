@@ -1356,10 +1356,16 @@
   const chatSeen = () => document.visibilityState === 'visible' && !document.documentElement.classList.contains('app-hidden')
     && ($('room').dataset.view === 'chat' || (wideChat() && !focusOn() && !chatOff));
 
-  function togglePanel(open) {
+  function togglePanel(open, lado) { // celular: lado 'esq' = canais (e online) pela esquerda, 'dir' = só quem está online, pela direita
     const panel = $('panel');
+    if (open) panel.dataset.lado = lado || panel.dataset.lado || 'esq';
     panel.hidden = !open;
-    $('panelBtn').setAttribute('aria-expanded', String(open));
+    panel.classList.remove('arrastando');
+    panel.style.transform = '';
+    $('panelScrim').hidden = !(open && narrow());
+    $('panelScrim').style.opacity = '';
+    $('chanBtn').setAttribute('aria-expanded', String(open && panel.dataset.lado !== 'dir'));
+    $('panelBtn').setAttribute('aria-expanded', String(open && panel.dataset.lado === 'dir'));
   }
 
   // ---------- chat de texto permanente ----------
@@ -3856,9 +3862,66 @@
   $('qFps').addEventListener('click', (ev) => { const b = ev.target.closest('[data-v]'); if (b) { qFps = Number(b.dataset.v); applyQuality(); } });
   $('hint').addEventListener('change', applyQuality);
   $('panelBtn').addEventListener('click', () => {
-    togglePanel($('panel').hidden);
+    togglePanel($('panel').hidden || $('panel').dataset.lado !== 'dir', 'dir');
     if (!$('panel').hidden) $('panelClose').focus();
   });
+  $('chanBtn').addEventListener('click', () => {
+    togglePanel($('panel').hidden || $('panel').dataset.lado === 'dir', 'esq');
+    if (!$('panel').hidden) $('panelClose').focus();
+  });
+  $('panelScrim').addEventListener('click', () => togglePanel(false));
+  (() => { // S-0069 E1: arrastar o dedo como no Discord. Fechado: para a direita abre os canais, para a esquerda abre o online. Aberto: arrastar de volta fecha.
+    const panel = $('panel'), scrim = $('panelScrim');
+    let g = null;
+    const rolaDeLado = (n) => { for (; n && n !== document.body; n = n.parentElement) { const ox = getComputedStyle(n).overflowX; if ((ox === 'auto' || ox === 'scroll') && n.scrollWidth > n.clientWidth + 2) return true; } return false; };
+    const livre = (t) => !t.closest('input, textarea, select, video, .tile, dialog, .pop, .msg-media, [data-noswipe]') && !rolaDeLado(t);
+    document.addEventListener('touchstart', (ev) => {
+      g = null;
+      if (!narrow() || ev.touches.length !== 1 || document.fullscreenElement || document.querySelector('dialog[open]') || $('room').dataset.focus !== undefined || $('room').hidden) return;
+      const aberto = !panel.hidden;
+      if (aberto ? !ev.target.closest('#panel, #panelScrim') || ev.target.closest('input, textarea') : !livre(ev.target)) return;
+      const t = ev.touches[0];
+      g = { x: t.clientX, y: t.clientY, aberto, lado: aberto ? panel.dataset.lado : '', on: false, d: 0, w: 0, t: Date.now() };
+    }, { passive: true });
+    // posição da gaveta pelo quanto o dedo andou desde o toque (o Android manda poucos movimentos num arrasto rápido)
+    const mover = (x) => {
+      const w = g.w, e = g.lado === 'esq', d = x - g.x;
+      g.d = Math.max(0, Math.min(w, (e !== g.aberto) ? d : -d)); // quanto andou no sentido do gesto (abrir ou fechar)
+      const aberta = g.aberto ? w - g.d : g.d; // quanto da gaveta aparece
+      panel.style.transform = `translateX(${e ? aberta - w : w - aberta}px)`;
+      scrim.style.opacity = String(aberta / w);
+    };
+    document.addEventListener('touchmove', (ev) => {
+      if (!g) return;
+      const t = ev.touches[0], dx = t.clientX - g.x, dy = t.clientY - g.y;
+      if (!g.on) {
+        if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { g = null; return; } // é rolagem
+        if (Math.abs(dx) < 16 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+        if (g.aberto && (g.lado === 'dir') !== (dx > 0)) { g = null; return; } // aberto: só o arrasto que fecha
+        if (!g.aberto) { g.lado = dx > 0 ? 'esq' : 'dir'; togglePanel(true, g.lado); }
+        g.on = true; g.w = panel.getBoundingClientRect().width || 1;
+        panel.classList.add('arrastando');
+      }
+      if (ev.cancelable) ev.preventDefault();
+      mover(t.clientX);
+    }, { passive: false });
+    const solta = (ev) => {
+      if (!g || !g.on) { g = null; return; }
+      const fimT = ev && ev.changedTouches && ev.changedTouches[0];
+      if (fimT) mover(fimT.clientX);
+      const { w, d, lado, aberto } = g, e = lado === 'esq';
+      const vai = d > w * 0.35 || (Date.now() - g.t < 300 && d > 40); // passou de 1/3 ou foi um puxão rápido
+      const abre = aberto ? !vai : vai;
+      g = null;
+      panel.classList.remove('arrastando');
+      panel.style.transition = 'transform .16s ease-out';
+      panel.style.transform = abre ? 'translateX(0)' : `translateX(${e ? -w : w}px)`;
+      scrim.style.opacity = abre ? '' : '0';
+      setTimeout(() => { panel.style.transition = ''; if (abre) { panel.style.transform = ''; scrim.style.opacity = ''; } else togglePanel(false); }, 170);
+    };
+    document.addEventListener('touchend', solta, { passive: true });
+    document.addEventListener('touchcancel', solta, { passive: true });
+  })();
   $('panelClose').addEventListener('click', () => { togglePanel(false); $('panelBtn').focus(); });
   document.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Escape' || document.fullscreenElement || document.querySelector('dialog[open]')) return;

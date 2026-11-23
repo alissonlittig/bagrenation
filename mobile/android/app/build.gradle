@@ -7,8 +7,11 @@ android {
         applicationId "io.github.alissonlittig.bagrenation"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10901
-        versionName "1.9.1"
+        versionCode((project.findProperty('bagreVersionCode') ?: '10902') as int)
+        versionName(project.findProperty('bagreVersionName') ?: '1.9.2')
+        // S-0069: de onde vem a atualização. A release usa só o GitHub; o teste do emulador passa -PbagreUpdApi/-PbagreUpdDl (servidor local)
+        buildConfigField "String", "UPD_API", "\"${project.findProperty('bagreUpdApi') ?: 'https://api.github.com/repos/alissonlittig/bagrenation/releases/latest'}\""
+        buildConfigField "String", "UPD_DL", "\"${project.findProperty('bagreUpdDl') ?: 'https://github.com/alissonlittig/bagrenation/releases/download/'}\""
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -29,6 +32,7 @@ android {
             }
         }
     }
+    buildFeatures { buildConfig = true }
     buildTypes {
         release {
             signingConfig chave.storeFile ? signingConfigs.release : null

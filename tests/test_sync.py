@@ -39,7 +39,7 @@ def timed(label, act, checks):
 
 def gear(pg, name):
     if not pg.locator("#panel").is_visible():
-        pg.click("#panelBtn")
+        pg.click("#chanBtn")
     row = pg.locator(".chan-row", has=pg.locator(".chan-name", has_text=re.compile(rf"^{re.escape(name)}$")))
     row.hover()
     row.locator(".chan-gear").click(force=True)

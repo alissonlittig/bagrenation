@@ -197,7 +197,7 @@ def run(base, shots):
         expect(msg(m, "e o video")).to_have_count(1, timeout=20000)
         m.wait_for_timeout(1500)
         T.shot(m, "45_celular_chat")
-        m.click("#panelBtn")
+        m.click("#chanBtn")
         expect(m.locator("#panel")).to_be_visible()
         T.shot(m, "46_celular_canais")
         m.click("#chanVoice")

@@ -281,7 +281,7 @@ def run(base, shots):
         m.keyboard.type("digitando no cel", delay=40)
         expect(a.locator("#typing")).to_have_text(re.compile(r"Cel está digitando"), timeout=8000)
         T.shot(m, "65_celular_chat")
-        m.click("#panelBtn")
+        m.click("#chanBtn")
         expect(m.locator("#panel")).to_be_visible()
         expect(member(m, "offline", "Cris")).to_have_count(1)
         T.shot(m, "66_celular_membros")

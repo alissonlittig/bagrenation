@@ -126,7 +126,7 @@ def run(base, shots):
         # 8) celular: folha de baixo
         pm = T.page(br, "M", viewport={"width": 390, "height": 844})
         T.enter(pm, base, "Caio", voice=False)
-        pm.click("#panelBtn")
+        pm.click("#chanBtn")
         pm.locator("#online li, #idle li, #offline li", has=pm.locator(".nm", has_text=re.compile(r"^Ana$"))).first.click()
         expect(pm.locator("#profDlg")).to_be_visible()
         pm.wait_for_timeout(500)  # fim da animação da folha

@@ -224,11 +224,11 @@ def run(base, shots):
 
         # 9. celular: canais na gaveta e toque longo na pessoa abre o volume (folha de baixo)
         m = enter(br, url, "Celular", viewport={"width": 390, "height": 844})
-        m.click("#panelBtn")
+        m.click("#chanBtn")
         expect(chan(m, "Sala do Jogo")).to_be_visible()
         chan(m, "Sala do Jogo").click()
         expect(m.locator("#dockWrap")).to_be_visible()
-        m.click("#panelBtn")
+        m.click("#chanBtn")
         li = in_list(m, "Sala do Jogo", "Ana")
         expect(li).to_be_visible(timeout=20000)
         li.evaluate(LONG_PRESS)

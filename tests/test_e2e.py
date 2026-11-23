@@ -81,7 +81,7 @@ def enter(pg, base, name, voice=True):
 
 def join_voice(pg):
     if not pg.locator("#chanVoice").is_visible():  # celular: os canais ficam na gaveta
-        pg.click("#panelBtn")
+        pg.click("#chanBtn")
     pg.click("#chanVoice")
     expect(pg.locator("#vconn")).to_be_attached()
     expect(pg.locator("#dockWrap")).to_be_visible()
@@ -312,7 +312,7 @@ def run(base):
         playing(m)
         assert m.evaluate("document.documentElement.scrollWidth") <= 390
         shot(m, "05_assistindo_celular")
-        m.click("#panelBtn")
+        m.click("#chanBtn")
         expect(m.locator("#chanVoice")).to_be_visible()
         shot(m, "06_painel_celular")
         m.click("#panelClose")
@@ -644,7 +644,7 @@ def run_voice(base):
         assert bx["x"] >= 0 and bx["x"] + bx["width"] <= 390 and bx["y"] >= 0, bx
         shot(m, "17_config_voz_celular")
         m.keyboard.press("Escape")
-        m.click("#panelBtn")
+        m.click("#chanBtn")
         shot(m, "18_painel_celular")
         m.click("#panelClose")
         st = m.evaluate(STATS)

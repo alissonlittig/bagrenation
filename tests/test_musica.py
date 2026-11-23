@@ -235,7 +235,7 @@ def run(base, shots):
         # 9. /skip (Cris) e pular pelo botão; vídeo que não toca embutido é pulado sozinho com aviso
         order = dj(a)["q"]
         nxt = order[dj(a)["i"] + 1]
-        c.click("#panelBtn")  # celular: um canal por vez; Cris vai para o #chat e a música segue tocando
+        c.click("#chanBtn")  # celular: um canal por vez; Cris vai para o #chat e a música segue tocando
         c.click("#chanChat")
         c.wait_for_timeout(1500)
         assert dj(c)["st"] == 1, dj(c)

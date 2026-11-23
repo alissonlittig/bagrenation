@@ -175,7 +175,7 @@ def a_connected(app):
 
 def a_join_voice(app):
     if not app.visible("#chanVoice"):
-        app.click("#panelBtn")
+        app.click("#chanBtn")
     app.click("#chanVoice")
     app.wait_for_function("() => !!document.querySelector('#vconn')")
 
@@ -261,7 +261,7 @@ def main():
         adb("push", str(img), "/sdcard/Download/bagre_teste.png")
         adb("shell", "am", "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", "file:///sdcard/Download/bagre_teste.png")
         if not app.visible("#chatInput"):  # celular na voz: o #chat fica na gaveta dos canais
-            app.click("#panelBtn")
+            app.click("#chanBtn")
             app.click("#chanChat")
             app.wait_for_function("() => document.querySelector('#room').dataset.view === 'chat'")
         app.click("#fileBtn")
@@ -351,7 +351,7 @@ def main():
         ok("S-0059 link: tocar no link do X no chat do Android abriu o navegador (Chrome) com o endereço; o app voltou para a frente")
 
         # 5. ver a tela do site, em tela cheia
-        app.click("#panelBtn")
+        app.click("#chanBtn")
         app.click("#chanVoice")
         app.wait_for_function("() => document.querySelector('#room').dataset.view === 'voice'")
         site.click("#shareBtn")

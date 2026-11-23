@@ -2,7 +2,7 @@
 // O app é o mesmo site; aqui fica só o que o WebView do Android não tem:
 //  - getDisplayMedia: a tela vem do MediaProjection nativo (JPEG + som por um WebSocket local) e vira uma faixa WebRTC comum;
 //  - voz com o app atrás (serviço em primeiro plano), avisos de mensagem, botão voltar, tela cheia deitada;
-//  - aviso de versão nova com botão que baixa o APK da Release e abre o instalador.
+//  - atualização sozinha (S-0069, Atualizador.java); só quando o Android pede 1 toque aparece o aviso "Atualização pronta - Instalar".
 (() => {
   const C = window.Capacitor;
   if (!C || !C.isNativePlatform || !C.isNativePlatform() || !C.Plugins || !C.Plugins.Bagre) return;
@@ -128,12 +128,11 @@
     if (a && !a.href.startsWith(location.origin)) { ev.preventDefault(); P.openUrl({ url: a.href }).catch(() => {}); }
   });
 
-  // ---------- versão nova: aviso + botão que baixa e abre o instalador ----------
-  const cmp = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); } return 0; };
-  let meu = '';
+  // ---------- atualização (S-0069): o Android baixa, confere e instala sozinho. Só quando ele pede 1 toque aparece 1 aviso ----------
   let barra = null;
   function css() {
     const st = document.createElement('style');
+    st.dataset.upd = '1';
     st.textContent = `
 .upd { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 90; display: flex; align-items: center; gap: 12px;
   padding: 12px 12px 12px 14px; background: var(--panel, #0d0a1c); border: var(--u, 3px) solid var(--cyan, #00f0ff);
@@ -142,48 +141,21 @@
 .upd p b { display: block; margin-bottom: 6px; color: var(--cyan, #00f0ff); font: 400 10px/1.3 var(--pix, monospace); text-transform: uppercase; }
 .upd .btn { flex: none; min-height: 46px; }
 .upd .upd-go { --fr: var(--fr-yellow); --sh: #8a7a00; color: var(--ink, #07040f); }
-.upd .upd-x { min-width: 46px; padding: 0; }
-.upd .upd-bar { position: absolute; left: 0; bottom: 0; height: var(--u, 3px); background: var(--yel, #ffe600); width: 0; }`;
+.upd .upd-x { min-width: 46px; padding: 0; }`;
     document.head.appendChild(st);
   }
-  function mostrar(r) {
+  function aviso({ ver }) {
     if (barra) barra.remove();
-    if (!document.querySelector('style[data-upd]')) { css(); document.head.lastChild.dataset.upd = '1'; }
+    if (!document.querySelector('style[data-upd]')) css();
     barra = document.createElement('div');
     barra.className = 'upd';
     barra.setAttribute('role', 'status');
-    const nova = r.tag.replace(/^v/, '');
-    barra.innerHTML = `<p><b>Versão nova</b><span class="upd-txt">BAGRENATION ${nova} (você está na ${meu})</span></p>
-      <button class="btn upd-go" type="button">Atualizar</button><button class="btn upd-x" type="button" aria-label="Agora não">✕</button><i class="upd-bar"></i>`;
+    barra.innerHTML = `<p><b>Atualização pronta</b><span>BAGRENATION ${String(ver || '').replace(/[^0-9.]/g, '')}</span></p>
+      <button class="btn upd-go" type="button">Instalar</button><button class="btn upd-x" type="button" aria-label="Agora não">✕</button>`;
     document.body.appendChild(barra);
-    const txt = barra.querySelector('.upd-txt'), go = barra.querySelector('.upd-go'), bar = barra.querySelector('.upd-bar');
-    barra.querySelector('.upd-x').onclick = () => { sessionStorage.setItem('bagre:updx', r.tag); barra.remove(); barra = null; };
-    go.onclick = async () => {
-      go.disabled = true; txt.textContent = 'Baixando…';
-      const h = await P.addListener('apkProgress', ({ p }) => { bar.style.width = `${Math.round(p * 100)}%`; txt.textContent = `Baixando… ${Math.round(p * 100)}%`; });
-      try {
-        const res = await P.installApk({ url: r.apk, tag: r.tag });
-        bar.style.width = '100%';
-        txt.textContent = res && res.liberar ? 'Libere "Permitir desta fonte" e toque em Atualizar de novo' : 'Toque em Atualizar no instalador do Android';
-      } catch (err) {
-        txt.textContent = `Não baixou (${(err && err.message) || err}). Tente de novo.`;
-      }
-      h.remove();
-      go.disabled = false;
-    };
+    barra.querySelector('.upd-x').onclick = () => { barra.remove(); barra = null; };
+    barra.querySelector('.upd-go').onclick = () => { P.updInstalar().catch((e) => log('update', e)); barra.remove(); barra = null; };
   }
-  let checado = 0;
-  async function checar() {
-    if (Date.now() - checado < 6 * 3600 * 1000) return;
-    checado = Date.now();
-    try {
-      if (!meu) meu = (await P.info()).version;
-      const r = await P.latest();
-      const nova = (r.tag || '').replace(/^v/, '');
-      log('versão', meu, 'release', nova, r.apk ? 'com APK' : 'sem APK');
-      if (r.apk && /^\d+\.\d+\.\d+$/.test(nova) && cmp(nova, meu) > 0 && sessionStorage.getItem('bagre:updx') !== r.tag) mostrar(r);
-    } catch (err) { checado = Date.now() - 5.5 * 3600 * 1000; log('update', err); } // sem rede: tenta de novo em 30 min
-  }
-  window.addEventListener('load', () => setTimeout(checar, 2500));
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) checar(); });
+  P.addListener('updPronto', aviso);
+  window.addEventListener('load', () => setTimeout(() => P.updEstado().then((e) => log('atualização', JSON.stringify(e))).catch(() => {}), 2500));
 })();
