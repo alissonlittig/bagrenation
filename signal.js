@@ -117,7 +117,7 @@
 
     reconnect() {
       if (this.destroyed || this.ws) return;
-      const ws = this.ws = new WebSocket(lib.url);
+      const ws = this.ws = new WebSocket(typeof lib.url === 'function' ? lib.url() : lib.url); // S-0065: a URL leva a sessão do momento
       let pongAt = Date.now();
       const ping = setInterval(() => {
         if (ws.readyState !== 1) return;

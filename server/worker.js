@@ -85,7 +85,7 @@ export default {
     const origin = req.headers.get('Origin') || '';
     const okOrigin = ORIGINS.some((re) => re.test(origin)) ? origin : '';
     if (req.method === 'OPTIONS') return new Response(null, { status: okOrigin ? 204 : 403, headers: cors(okOrigin) });
-    const m = url.pathname.match(/^\/s\/([a-z0-9-]{1,40})\/(ws|rtc|up|del|m\/[a-z0-9]{20})$/);
+    const m = url.pathname.match(/^\/s\/([a-z0-9-]{1,40})\/(ws|rtc|up|del|adm|m\/[a-z0-9]{20})$/);
     if (!m) return new Response('BAGRENATION chat', { status: url.pathname === '/' ? 200 : 404 });
     const write = m[2] === 'ws' || m[2] === 'rtc' || m[2] === 'up';
     if (write && !okOrigin) return json({ error: 'origem não autorizada' }, 403);
@@ -94,6 +94,8 @@ export default {
     h.set('X-Route', m[2]);
     h.set('X-Ok-Origin', okOrigin);
     h.set('X-Srv', m[1]);
+    const cf = req.cf || {}; // S-0065: de onde (cidade aproximada do Cloudflare) para a lista de membros do dono
+    h.set('X-Place', clean([cf.city, cf.region, cf.country].filter(Boolean).join(', '), 80));
     return stub.fetch(new Request(req, { headers: h }));
   },
 };
@@ -113,6 +115,7 @@ export class Server {
       CREATE TABLE IF NOT EXISTS musseen (ch TEXT PRIMARY KEY, ts INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS vcall (ch TEXT PRIMARY KEY, ts INTEGER NOT NULL, empty INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS gate (uid TEXT PRIMARY KEY, ok INTEGER NOT NULL DEFAULT 0, ban INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL DEFAULT '', dev TEXT NOT NULL DEFAULT '', place TEXT NOT NULL DEFAULT '', ts INTEGER NOT NULL, last INTEGER NOT NULL DEFAULT 0);
       INSERT OR IGNORE INTO chans (id, kind, name, uid, pos, ts) VALUES ('chat', 'text', 'chat', NULL, 0, 0), ('voz', 'voice', 'Canal de voz', NULL, 0, 0);`);
     // migração S-1357: só acrescenta colunas (nada é apagado); mensagens antigas ficam com uid vazio
     const cols = new Set(this.sql.exec('PRAGMA table_info(msgs)').toArray().map((c) => c.name));
@@ -149,28 +152,132 @@ export class Server {
     const origin = req.headers.get('X-Ok-Origin');
     if (route === 'rtc') {
       if (req.headers.get('Upgrade') !== 'websocket') return new Response('esperava WebSocket', { status: 426 });
+      const uid = await this.sess(req); // S-0065: voz e tela só para quem tem sessão (antes qualquer um entrava na malha)
+      if (!uid) return new Response('sem convite', { status: 403 });
       const [client, server] = Object.values(new WebSocketPair());
       this.ctx.acceptWebSocket(server, ['rtc']);
-      server.serializeAttachment({ rtc: '', since: Date.now() });
+      server.serializeAttachment({ rtc: '', since: Date.now(), uid });
       return new Response(null, { status: 101, webSocket: client });
     }
-    if (route === 'ws') {
+    if (route === 'ws') { // S-0065: nada (histórico, membros, canais, música) sai antes do 'me' passar pelo portão
       if (req.headers.get('Upgrade') !== 'websocket') return new Response('esperava WebSocket', { status: 426 });
       const [client, server] = Object.values(new WebSocketPair());
       this.ctx.acceptWebSocket(server);
-      server.serializeAttachment({ at: 0, since: Date.now() });
-      server.send(JSON.stringify({ t: 'hist', list: this.history() }));
-      server.send(JSON.stringify({ t: 'members', list: this.members() }));
-      server.send(JSON.stringify({ t: 'chans', list: this.chans() }));
-      const now = Date.now();
-      if (this.djLeave(now)) await this.ctx.storage.setAlarm(now + this.djT().tick); // S-0033: canal vazio há tempo = o DJ sai
-      for (const r of this.sql.exec('SELECT ch, s FROM music').toArray()) server.send(JSON.stringify({ t: 'mus', ch: r.ch, s: JSON.parse(r.s), now }));
-      server.send(JSON.stringify({ t: 'vct', m: this.vcTimes(now), now })); // S-0059
+      server.serializeAttachment({ at: 0, since: Date.now(), place: clean(req.headers.get('X-Place'), 80), ua: clean(req.headers.get('User-Agent'), 200) });
+      server.send(JSON.stringify({ t: 'hi', gate: !this.open() }));
       return new Response(null, { status: 101, webSocket: client });
     }
-    if (route === 'up') return this.upload(req, origin, new URL(req.url).searchParams.get('av') === '1');
+    if (route === 'up') { if (!(await this.sess(req))) return json({ error: 'sem convite' }, 403, origin); return this.upload(req, origin, new URL(req.url).searchParams.get('av') === '1'); }
     if (route === 'del') return this.del(req);
+    if (route === 'adm') return this.admHttp(req);
+    if (!(await this.sess(req))) return new Response('sem convite', { status: 403 });
     return this.media(req, route.slice(2));
+  }
+
+  // ---------- portão (S-0065): servidor fechado, só entra quem tem convite ----------
+  // Convite = token longo aleatório; o servidor guarda só o hash (kv 'inv'). Quem entrou com ele fica liberado pelo uid
+  // (tabela gate); expulsar = ban (derruba as conexões na hora). Dono (kv 'owners') vê a lista e gera convite novo.
+  // Sessão para arquivos, envio e voz: u=<uid>&t=<HMAC(segredo do objeto, uid)>; vale enquanto o uid estiver liberado.
+  // Servidores de teste ('teste-...') e a demonstração ('demo') ficam abertos; 'teste-fech-...' testa o portão.
+  open() {
+    if (this.srv === undefined) this.srv = (this.sql.exec("SELECT v FROM kv WHERE k = 'srv'").toArray()[0] || {}).v || '';
+    return this.srv === 'demo' || (this.srv.startsWith('teste-') && !this.srv.startsWith('teste-fech-'));
+  }
+  kv(k, v) {
+    if (v === undefined) return (this.sql.exec('SELECT v FROM kv WHERE k = ?', k).toArray()[0] || {}).v;
+    this.sql.exec('INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)', k, v);
+    return v;
+  }
+  owners() { try { return JSON.parse(this.kv('owners') || '[]'); } catch { return []; } }
+  static hex(buf) { return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join(''); }
+  static async sha(s) { return Server.hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))); }
+  async tok(uid) {
+    if (!this.hkey) {
+      let sec = this.kv('gsec');
+      if (!sec) sec = this.kv('gsec', Server.hex(crypto.getRandomValues(new Uint8Array(32))));
+      this.hkey = await crypto.subtle.importKey('raw', new TextEncoder().encode(sec), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    }
+    return Server.hex(await crypto.subtle.sign('HMAC', this.hkey, new TextEncoder().encode(`s:${uid}`))).slice(0, 40);
+  }
+  allowed(uid) {
+    if (this.open()) return true;
+    const g = this.sql.exec('SELECT ok, ban FROM gate WHERE uid = ?', uid).toArray()[0];
+    return !!g && g.ok === 1 && !g.ban;
+  }
+  async sess(req) { // uid da sessão (u + t na URL) ou '' (servidor aberto: qualquer um)
+    const p = new URL(req.url).searchParams;
+    const u = p.get('u') || '', t = p.get('t') || '';
+    if (this.open()) return u || 'aberto';
+    if (this.kv('strict') !== '1' && !this.srv.startsWith('teste-fech-')) return u || 'aberto'; // etapa 1: só o chat fechado (app antigo segue com voz e arquivos até atualizar)
+    if (!/^[a-f0-9]{16}$/.test(u) || !/^[a-f0-9]{40}$/.test(t) || !this.allowed(u)) return '';
+    return (await this.tok(u)) === t ? u : '';
+  }
+  static newInvite() { return [...crypto.getRandomValues(new Uint8Array(43))].map((b) => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'[b & 63]).join(''); }
+  async invite() { const tok = Server.newInvite(); this.kv('inv', await Server.sha(`inv:${tok}`)); return tok; }
+  async invOk(inv) { const h = this.kv('inv'); return !!h && typeof inv === 'string' && /^[A-Za-z0-9_-]{20,80}$/.test(inv) && (await Server.sha(`inv:${inv}`)) === h; }
+  kickUid(uid, why) { // derruba todas as conexões dessa pessoa (chat e voz) na hora
+    for (const ws of this.ctx.getWebSockets()) {
+      const a = ws.deserializeAttachment() || {};
+      if (a.uid !== uid) continue;
+      try { if (typeof a.rtc !== 'string') ws.send(JSON.stringify({ t: 'kicked', why })); } catch { /* fechando */ }
+      try { ws.serializeAttachment({ ...a, ok: false, closed: true }); ws.close(4403, 'expulso'); } catch { /* já fechou */ }
+    }
+    this.shown.delete(uid);
+    this.broadcast({ t: 'members', list: this.members() });
+    this.vcUpdate();
+  }
+  admList() {
+    const live = this.live();
+    const mem = new Map(this.sql.exec('SELECT uid, name, seen, since FROM members').toArray().map((m) => [m.uid, m]));
+    const own = new Set(this.owners());
+    return this.sql.exec('SELECT * FROM gate ORDER BY ban, ok DESC, last DESC').toArray().map((g) => {
+      const m = mem.get(g.uid) || {};
+      return { uid: g.uid, name: m.name || g.name || '?', ok: g.ok === 1, ban: !!g.ban, owner: own.has(g.uid), since: m.since || g.ts, seen: Math.max(m.seen || 0, g.last || 0), dev: g.dev, place: g.place, st: live.get(g.uid) || 'off' };
+    });
+  }
+  async adm(ws, att, d) { // { t:'adm', op:'list'|'kick'|'unban'|'invite', uid? } — só o dono
+    const no = (text) => ws.send(JSON.stringify({ t: 'err', text }));
+    if (!att.uid || !this.owners().includes(att.uid)) return no('Só o dono do servidor mexe nisso.');
+    if (d.op === 'invite') { const tok = await this.invite(); ws.send(JSON.stringify({ t: 'adminv', tok })); }
+    else if ((d.op === 'kick' || d.op === 'unban') && /^[a-f0-9]{16}$/.test(d.uid || '')) {
+      if (this.owners().includes(d.uid)) return no('O dono não pode ser expulso.');
+      const name = (this.sql.exec('SELECT name FROM members WHERE uid = ?', d.uid).toArray()[0] || {}).name || '';
+      this.sql.exec('INSERT INTO gate (uid, ok, ban, name, ts) VALUES (?, 0, ?, ?, ?) ON CONFLICT(uid) DO UPDATE SET ok = 0, ban = excluded.ban',
+        d.uid, d.op === 'kick' ? 1 : 0, name, Date.now());
+      if (d.op === 'kick') this.kickUid(d.uid, 'ban');
+    } else if (d.op !== 'list') return;
+    ws.send(JSON.stringify({ t: 'admlist', list: this.admList(), inv: !!this.kv('inv') }));
+  }
+  async admHttp(req) { // POST /adm (Authorization: Bearer <ADMIN_KEY>): { op:'setup', owners, allow, ban } · { op:'invite' } · { op:'list' }
+    const key = this.env.ADMIN_KEY;
+    if (!key || req.method !== 'POST' || req.headers.get('Authorization') !== `Bearer ${key}`) return json({ error: 'sem permissão' }, 403);
+    let d;
+    try { d = await req.json(); } catch { return json({ error: 'json' }, 400); }
+    const uids = (v) => (Array.isArray(v) ? v.filter((u) => /^[a-f0-9]{16}$/.test(u)) : []);
+    const now = Date.now();
+    if (d.op === 'setup') {
+      if (Array.isArray(d.owners)) this.kv('owners', JSON.stringify(uids(d.owners)));
+      if (typeof d.strict === 'boolean') this.kv('strict', d.strict ? '1' : '0');
+      for (const u of uids(d.allow)) {
+        const name = (this.sql.exec('SELECT name FROM members WHERE uid = ?', u).toArray()[0] || {}).name || '';
+        this.sql.exec('INSERT INTO gate (uid, ok, ban, name, dev, ts) VALUES (?, 1, 0, ?, ?, ?) ON CONFLICT(uid) DO UPDATE SET ok = 1, ban = 0', u, name, 'já estava (S-0065)', now);
+      }
+      for (const u of uids(d.ban)) {
+        const name = (this.sql.exec('SELECT name FROM members WHERE uid = ?', u).toArray()[0] || {}).name || '';
+        this.sql.exec('INSERT INTO gate (uid, ok, ban, name, ts) VALUES (?, 0, 1, ?, ?) ON CONFLICT(uid) DO UPDATE SET ok = 0, ban = 1', u, name, now);
+        this.kickUid(u, 'ban');
+      }
+      // quem está conectado e não foi liberado cai agora (o portão só vale dali em diante para conexões novas)
+      for (const ws of this.ctx.getWebSockets()) {
+        const a = ws.deserializeAttachment() || {};
+        if (a.closed || this.open()) continue;
+        if (!a.uid || !this.allowed(a.uid)) { try { if (typeof a.rtc !== 'string') ws.send(JSON.stringify({ t: 'locked', why: 'need' })); ws.close(4401, 'convite'); } catch { /* já fechou */ } }
+      }
+      this.broadcast({ t: 'members', list: this.members() });
+    }
+    const out = { ok: true, list: this.admList(), owners: this.owners(), inv: !!this.kv('inv'), strict: this.kv('strict') === '1' };
+    if (d.op === 'invite') out.tok = await this.invite();
+    return json(out, 200);
   }
 
   history(before, ch = 'chat') {
@@ -184,7 +291,7 @@ export class Server {
     const s = JSON.stringify(obj);
     for (const ws of this.ctx.getWebSockets()) {
       const a = ws.deserializeAttachment() || {};
-      if (ws === skip || typeof a.rtc === 'string' || (onlyNew && !a.c2)) continue;
+      if (ws === skip || typeof a.rtc === 'string' || !a.ok || (onlyNew && !a.c2)) continue; // S-0065: só quem passou pelo portão
       try { ws.send(s); } catch { /* fechando */ }
     }
   }
@@ -259,7 +366,8 @@ export class Server {
   }
   members() {
     const live = this.live();
-    return this.sql.exec('SELECT uid, name, av, seen, bio, since FROM members ORDER BY seen DESC LIMIT 300').toArray()
+    const only = this.open() ? '' : ' WHERE uid IN (SELECT uid FROM gate WHERE ok = 1 AND ban = 0)'; // S-0065: só quem está liberado
+    return this.sql.exec(`SELECT uid, name, av, seen, bio, since FROM members${only} ORDER BY seen DESC LIMIT 300`).toArray()
       .map((m) => ({ ...m, st: live.get(m.uid) || 'off' }));
   }
   presence(uid, skip) { // avisa todo mundo se o estado público (ou nome/avatar) dessa pessoa mudou
@@ -388,18 +496,20 @@ export class Server {
     let d;
     try { d = JSON.parse(raw); } catch { return; }
     if (!d || typeof d !== 'object') return;
-    if (d.t === 'more' && Number.isInteger(d.before)) {
-      const ch = this.textChan(d.ch);
-      if (ch) ws.send(JSON.stringify({ t: 'old', ch, list: this.history(d.before, ch) }));
-      return;
-    }
     if (d.t === 'clk' && Number.isFinite(d.c)) { ws.send(JSON.stringify({ t: 'clk', c: d.c, s: Date.now() })); return; } // acerto de relógio (música)
-    if (d.t === 'hist') { const ch = this.textChan(d.ch); if (ch) ws.send(JSON.stringify({ t: 'hist', ch, list: this.history(null, ch) })); return; }
     const att = ws.deserializeAttachment() || { at: 0 };
     const now = Date.now();
     att.lt = now;
     if (d.t === 'v') { att.c2 = true; ws.serializeAttachment(att); return; } // cliente que entende canais
     if (d.t === 'me') return this.hello(ws, att, d);
+    if (!att.ok) return; // S-0065: antes do portão só relógio, 'v' e 'me'
+    if (d.t === 'more' && Number.isInteger(d.before)) {
+      const ch = this.textChan(d.ch);
+      if (ch) ws.send(JSON.stringify({ t: 'old', ch, list: this.history(d.before, ch) }));
+      return;
+    }
+    if (d.t === 'hist') { const ch = this.textChan(d.ch); if (ch) ws.send(JSON.stringify({ t: 'hist', ch, list: this.history(null, ch) })); return; }
+    if (d.t === 'adm') return this.adm(ws, att, d);
     if (d.t === 'chan') return this.chan(ws, att, d, now);
     if (d.t === 'typing') { // nada é gravado: só repassa, no máximo 1 a cada 2 s por conexão
       const ch = this.textChan(d.ch);
@@ -455,7 +565,7 @@ export class Server {
   mset(ch, s, o = {}) { // o.quiet: não anuncia · o.leave: o DJ sai do canal (sem a espera de DJ_STAY)
     const old = this.mget(ch);
     const oc = old.q[old.i], cur = s.q[s.i];
-    s.v = (s.v || 0) + 1;
+    s.v = Math.max((s.v || 0) + 1, Date.now()); // S-0065: sempre cresce (estado recriado do zero não fica 'fora de ordem' no app)
     if (cur || o.leave) s.stay = 0;
     else if (oc && !(s.stay > Date.now())) s.stay = Date.now() + this.djT().stay; // a fila acabou: o DJ fica um pouco no canal
     this.sql.exec('INSERT INTO music (ch, s) VALUES (?, ?) ON CONFLICT(ch) DO UPDATE SET s = excluded.s', ch, JSON.stringify(s));
@@ -1123,15 +1233,51 @@ export class Server {
     const uid = [...hash.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('');
     if (att.uid && att.uid !== uid) return; // a conexão não troca de dono
     const first = !att.uid;
+    const now0 = Date.now();
+    const dev = clean(d.dev, 60) || Server.devOf(att.ua);
+    const lock = (why) => { // S-0065: sem convite (ou expulso): nada do servidor sai, só o aviso; a tentativa fica para o dono ver
+      this.sql.exec('INSERT INTO gate (uid, ok, ban, name, dev, place, ts, last) VALUES (?, 0, 0, ?, ?, ?, ?, ?) ON CONFLICT(uid) DO UPDATE SET name = excluded.name, dev = excluded.dev, place = excluded.place, last = excluded.last',
+        uid, clean(d.name, 24), dev, att.place || '', now0, now0);
+      try { ws.send(JSON.stringify({ t: 'locked', why })); ws.serializeAttachment({ ...att, closed: true }); ws.close(4401, 'convite'); } catch { /* já fechou */ }
+    };
+    if (!this.open()) {
+      const g = this.sql.exec('SELECT ok, ban FROM gate WHERE uid = ?', uid).toArray()[0];
+      if (g && g.ban) return lock('ban');
+      if (!(g && g.ok === 1)) {
+        const boot = this.srv.startsWith('teste-fech-') && !this.owners().length; // teste do portão: o 1º vira dono
+        if (boot) this.kv('owners', JSON.stringify([uid]));
+        else if (!(await this.invOk(d.inv))) return lock(d.inv ? 'bad' : 'need');
+        this.sql.exec('INSERT INTO gate (uid, ok, ban, name, dev, place, ts, last) VALUES (?, 1, 0, ?, ?, ?, ?, ?) ON CONFLICT(uid) DO UPDATE SET ok = 1, name = excluded.name, dev = excluded.dev, place = excluded.place, last = excluded.last',
+          uid, clean(d.name, 24), dev, att.place || '', now0, now0);
+      } else this.sql.exec('UPDATE gate SET dev = ?, place = ?, last = ? WHERE uid = ?', dev, att.place || '', now0, uid);
+    }
     att.uid = uid;
+    att.ok = true;
     att.st = ST.includes(d.st) ? d.st : 'on';
     ws.serializeAttachment(att);
     this.sql.exec('INSERT INTO members (uid, name, av, seen, since) VALUES (?, ?, ?, ?, ?) ON CONFLICT(uid) DO UPDATE SET name = excluded.name, av = excluded.av, seen = excluded.seen',
       uid, clean(d.name, 24) || 'Visitante', this.avOk(d.av), Date.now(), Date.now());
     if (typeof d.bio === 'string') this.sql.exec('UPDATE members SET bio = ? WHERE uid = ?', bioClean(d.bio), uid); // só quem mandou a bio mexe nela (cliente antigo não apaga)
-    if (first) ws.send(JSON.stringify({ t: 'you', uid }));
+    if (first) { // S-0065: o que antes saía ao conectar agora sai só aqui, depois do portão
+      ws.send(JSON.stringify({ t: 'you', uid }));
+      ws.send(JSON.stringify({ t: 'ok', mt: await this.tok(uid), owner: this.owners().includes(uid), demo: this.srv === 'demo' }));
+      ws.send(JSON.stringify({ t: 'hist', list: this.history() }));
+      ws.send(JSON.stringify({ t: 'members', list: this.members() }));
+      ws.send(JSON.stringify({ t: 'chans', list: this.chans() }));
+      const now = Date.now();
+      if (this.djLeave(now)) await this.ctx.storage.setAlarm(now + this.djT().tick); // S-0033: canal vazio há tempo = o DJ sai
+      for (const r of this.sql.exec('SELECT ch, s FROM music').toArray()) ws.send(JSON.stringify({ t: 'mus', ch: r.ch, s: JSON.parse(r.s), now }));
+      ws.send(JSON.stringify({ t: 'vct', m: this.vcTimes(now), now })); // S-0059
+    }
     this.presence(uid);
     if (first && !(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(Date.now() + 60000);
+  }
+
+  static devOf(ua) { // aparelho em palavras (para o dono), pelo navegador da conexão
+    const u = String(ua || '');
+    const os = /Android/i.test(u) ? 'Android' : /iPhone|iPad/i.test(u) ? 'iPhone' : /Windows/i.test(u) ? 'Windows' : /Mac OS/i.test(u) ? 'Mac' : /Linux/i.test(u) ? 'Linux' : '';
+    const br = /Edg\//.test(u) ? 'Edge' : /OPR\//.test(u) ? 'Opera' : /Firefox\//.test(u) ? 'Firefox' : /Chrome\//.test(u) ? 'Chrome' : /Safari\//.test(u) ? 'Safari' : u ? 'outro' : '';
+    return u ? `Site (${[br, os].filter(Boolean).join(' no ')})` : 'desconhecido';
   }
 
   react(ws, att, d, now) { // liga/desliga a minha reação com um emoji da lista
@@ -1230,7 +1376,7 @@ export class Server {
     return new Response(out, { status, headers: {
       'Content-Type': r0.mime, 'Content-Length': String(out.length), 'Accept-Ranges': 'bytes',
       ...(status === 206 ? { 'Content-Range': `bytes ${start}-${end}/${r0.size}` } : {}),
-      'Cache-Control': 'public, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff',
       'Content-Security-Policy': "default-src 'none'", 'Cross-Origin-Resource-Policy': 'cross-origin', 'Access-Control-Allow-Origin': '*',
     } });
   }

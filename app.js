@@ -21,6 +21,9 @@
   const asked = new URLSearchParams(location.search).get('servidor') || '';
   const SERVER = /^[a-z0-9-]{1,40}$/.test(asked) ? asked : 'bagrenation';
   const CHAT = `https://bagrenation-chat.alissondelittig.workers.dev/s/${SERVER}`;
+  // S-0065: servidor fechado. O convite chega no link (#convite=<token>) ou colado na tela de entrar; fica guardado só até entrar.
+  const invFrom = (v) => { const t = String(v || '').trim(); const m = t.match(/convite=([A-Za-z0-9_-]{40,80})/) || t.match(/^([A-Za-z0-9_-]{40,80})$/); return m ? m[1] : ''; };
+  if (invFrom(location.hash)) { store('inv', invFrom(location.hash)); history.replaceState(null, '', location.pathname + location.search); }
   // Qualidade da transmissão (S-1363): resolução 720p / 1080p / fonte (sem reduzir) e 30 / 60 fps. Padrão 720p30.
   // Escolha antiga (até a 1.2.0) é convertida: 1440p60 vira fonte a 60 fps.
   const RES = { 720: { w: 1280, h: 720 }, 1080: { w: 1920, h: 1080 }, src: null };
@@ -83,6 +86,9 @@
     store('key', myKey);
   }
   let myUid = /^[a-f0-9]{16}$/.test(store('uid') || '') ? store('uid') : '';
+  const sess = { ok: false, mt: '', owner: false, locked: '' }; // S-0065
+  const sq = () => (sess.mt && myUid ? `u=${myUid}&t=${sess.mt}` : '');
+  const mediaUrl = (id) => `${CHAT}/m/${id}${sq() ? `?${sq()}` : ''}`;
   // Status: 'auto' = online (vira ausente sozinho após 10 min parado) · 'idle' = ausente fixo · 'off' = invisível
   let stPick = ['auto', 'idle', 'off'].includes(store('status')) ? store('status') : 'auto';
   let autoIdle = false;
@@ -125,8 +131,8 @@
     if (!peerLib) {
       peerLib = new Promise((resolve) => {
         const s = document.createElement('script');
-        s.src = 'signal.js?v=1382';
-        s.onload = () => { Peer.setup(`${CHAT.replace('https:', 'wss:')}/rtc`); resolve(true); };
+        s.src = 'signal.js?v=0065';
+        s.onload = () => { Peer.setup(() => `${CHAT.replace('https:', 'wss:')}/rtc${sq() ? `?${sq()}` : ''}`); resolve(true); }; // S-0065: com a sessão
         s.onerror = () => { peerLib = null; s.remove(); resolve(false); }; // falhou: a próxima tentativa baixa de novo
         document.head.append(s);
       });
@@ -162,10 +168,11 @@
     for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 360;
     el.style.setProperty('--h', String(h));
     if (!AVATARS.includes(av) && !isUp(av)) { delete el.dataset.av; el.textContent = [...name.trim()][0] || '?'; return; }
-    if (el.dataset.av === av) return;
+    if (el.dataset.av === av && (!isUp(av) || el.dataset.mt === sess.mt)) return;
     el.dataset.av = av;
-    if (isUp(av)) { // foto própria (PNG/JPG/WEBP/GIF): <img> do Worker, igual para todos
-      el.replaceChildren(Object.assign(document.createElement('img'), { src: `${CHAT}/m/${av.slice(2)}`, alt: '', draggable: false }));
+    if (isUp(av)) { // foto própria (PNG/JPG/WEBP/GIF): <img> do Worker, igual para todos (S-0065: com a sessão)
+      el.dataset.mt = sess.mt;
+      el.replaceChildren(Object.assign(document.createElement('img'), { src: mediaUrl(av.slice(2)), alt: '', draggable: false }));
       return;
     }
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -1264,7 +1271,8 @@
     for (const b of $('statusPop').querySelectorAll('.st-opt')) b.setAttribute('aria-checked', String(b.dataset.st === stPick));
   }
   function sendMe() { // quem sou eu e como quero aparecer (só depois de ter nome)
-    if (chatOpen() && store('name')) chat.ws.send(JSON.stringify({ t: 'me', key: myKey, name: myName, av: myAv, st: myStatus(), ...(store('bio') !== null ? { bio: store('bio') } : {}) }));
+    if (chatOpen() && store('name')) chat.ws.send(JSON.stringify({ t: 'me', key: myKey, name: myName, av: myAv, st: myStatus(), ...(store('bio') !== null ? { bio: store('bio') } : {}),
+      ...(store('inv') ? { inv: store('inv') } : {}), ...(DESK ? { dev: 'App de PC (Windows)' } : MOB ? { dev: 'App Android' } : {}) })); // S-0065
     vcSend();
   }
   // ---------- tempo de chamada (S-0059, como no Discord) ----------
@@ -1367,8 +1375,7 @@
     ws.addEventListener('open', () => {
       chat.backoff = 0;
       ws.send(JSON.stringify({ t: 'v' })); // entendo canais: o servidor manda também as mensagens dos outros canais
-      if (textCh !== 'chat') { chat.loading = true; ws.send(JSON.stringify({ t: 'hist', ch: textCh })); }
-      chatState(); sendMe();
+      chatState(); sendMe(); // S-0065: o histórico de outro canal é pedido depois do portão (onOk)
       djClock(ws);
     });
     ws.addEventListener('message', (ev) => {
@@ -1379,8 +1386,10 @@
     ws.addEventListener('close', () => {
       if (chat.ws !== ws) return;
       chat.ws = null;
+      sess.ok = false;
       chatState();
       typers.clear(); renderTyping();
+      if (sess.locked) return; // S-0065: sem convite ou expulso: espera a pessoa colar um convite
       chat.timer = setTimeout(chatConnect, Math.min(1000 * 2 ** chat.backoff++, 15000));
     });
     chatState();
@@ -1390,6 +1399,11 @@
     $('chatState').textContent = chatOpen() ? (chat.loading ? 'carregando…' : '') : chat.list.length ? 'reconectando…' : 'conectando…';
   }
   function onChat(d) {
+    if (d.t === 'hi') { if (d.gate && !store('name') && !store('inv')) lockShow('need'); return; } // S-0065: servidor fechado, sem convite
+    if (d.t === 'ok' && /^[a-f0-9]{40}$/.test(d.mt || '')) { onOk(d); return; }
+    if (d.t === 'locked' || d.t === 'kicked') { lockShow(d.t === 'kicked' ? 'ban' : String(d.why || 'need')); return; }
+    if (d.t === 'adminv' && /^[A-Za-z0-9_-]{40,80}$/.test(d.tok || '')) { admInv(d.tok); return; }
+    if (d.t === 'admlist' && Array.isArray(d.list)) { admRender(d.list); return; }
     if (d.t === 'hist' && Array.isArray(d.list)) {
       if ((d.ch || 'chat') !== textCh) return; // histórico de outro canal (o do #chat chega sozinho ao conectar)
       chat.loading = false;
@@ -1940,7 +1954,7 @@
     } else if (kind === 'del') { if (ev.shiftKey) delMsg(id); else confirmDel(id); }
   }
   function mediaEl(md) {
-    const src = `${CHAT}/m/${md.id}`;
+    const src = mediaUrl(md.id); // S-0065: só com a sessão
     const video = String(md.mime).startsWith('video/');
     const box = document.createElement('div');
     box.className = 'msg-media';
@@ -2018,7 +2032,7 @@
   function upload(p, bar, path = '/up') { // XHR para ter o progresso do envio
     return new Promise((resolve) => {
       const x = new XMLHttpRequest();
-      x.open('POST', `${CHAT}${path}`);
+      x.open('POST', `${CHAT}${path}${sq() ? `${path.includes('?') ? '&' : '?'}${sq()}` : ''}`); // S-0065: só com a sessão
       x.setRequestHeader('Content-Type', p.file.type);
       x.upload.addEventListener('progress', (ev) => { if (ev.lengthComputable) bar.style.setProperty('--p', `${(ev.loaded / ev.total) * 100}%`); });
       x.addEventListener('load', () => {
@@ -2077,12 +2091,11 @@
     togglePanel(!narrow());
     setView('chat');
     renderShareUi(); renderPeople(); layout(); refreshStatus();
-    chatConnect();
-    if (store('name')) joinMesh(); // primeira vez: só depois do nome (ninguém vê um "Visitante" passando)
+    chatConnect(); // S-0065: a malha de voz só liga depois do portão (onOk), com o nome já escolhido
   }
   let meshStarted = false;
   function joinMesh() {
-    if (meshStarted) return;
+    if (meshStarted || !sess.ok) return;
     meshStarted = true;
     loadPeer().then((ok) => {
       if (ok) connect();
@@ -2854,10 +2867,13 @@
     djCmd({ op: 'vol', v: dj.vol, m });
   }
   function djSync() {
-    if (!inVoice) { if (dj.frame) djKill(); renderDj(); return; }
+    if (!inVoice) { if (dj.frame || dj.aud) djKill(); renderDj(); return; } // S-0065: o <audio> do app de PC também (antes só o iframe)
     const s = dj.st.get(myVch);
     const cur = djCur(s);
-    if (!cur) { if (dj.frame && dj.loaded) { djCmd({ op: 'stop' }); dj.loaded = ''; } dj.blocked = false; renderDj(); return; }
+    if (!cur) { // nada tocando no meu canal (!stop, !dc, fila acabou, troquei para um canal sem música): o player daqui para
+      if ((dj.frame || dj.aud) && (dj.loaded || (dj.tk && dj.tk.st === 1))) { djCmd({ op: 'stop' }); dj.loaded = ''; }
+      dj.blocked = false; renderDj(); return;
+    }
     const aud = !!DESK && !dj.fb.has(cur.id);
     if (aud ? !dj.aud : !dj.frame) { djKill(); if (aud) audMake(); else djFrame(); }
     renderDj();
@@ -4015,6 +4031,87 @@
     if (peer) peer.destroy();
   });
   window.addEventListener('pageshow', (ev) => { if (ev.persisted && leaving) location.reload(); });
+
+  // ---------- servidor fechado (S-0065): convite, tela de entrar, Membros do dono ----------
+  const SITE = 'https://alissonlittig.github.io/bagrenation/';
+  function onOk(d) {
+    sess.ok = true; sess.mt = d.mt; sess.owner = d.owner === true; sess.locked = '';
+    try { localStorage.removeItem('bagrenation:inv'); } catch { /* sem armazenamento */ }
+    $('lock').hidden = true;
+    $('admBtn').hidden = !sess.owner;
+    if (d.demo === true && !document.querySelector('.demo-bar')) document.body.append(Object.assign(document.createElement('div'), { className: 'demo-bar', textContent: 'Demonstração · tudo aqui é de exemplo' }));
+    if (textCh !== 'chat' && chatOpen()) { chat.loading = true; chat.ws.send(JSON.stringify({ t: 'hist', ch: textCh })); }
+    myFace(); renderPeople();
+    if (store('name')) joinMesh();
+  }
+  function lockShow(why) {
+    sess.ok = false; sess.mt = ''; sess.locked = why;
+    if (why !== 'need' || inVoice) { if (inVoice) leaveVoice(); djKill(); }
+    if ($('nameDlg').open) $('nameDlg').close();
+    for (const dl of document.querySelectorAll('dialog[open]')) dl.close();
+    chat.list = []; members.clear(); renderChat(true); renderPeople();
+    $('admBtn').hidden = true;
+    const ban = why === 'ban';
+    $('lockTitle').textContent = ban ? 'Você saiu deste servidor' : 'BAGRENATION é um servidor fechado';
+    $('lockText').textContent = ban ? 'O dono do servidor tirou o seu acesso.'
+      : why === 'bad' ? 'Esse convite não vale mais. Peça um link novo para quem te convidou e cole aqui.'
+        : 'Só entra quem recebeu o link de convite. Recebeu? Abra o link ou cole ele aqui.';
+    $('lockInput').hidden = ban; $('lockGo').hidden = ban;
+    $('lock').hidden = false;
+  }
+  $('lockForm').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const v = invFrom($('lockInput').value);
+    if (!v) { toast('Cole o link inteiro do convite (ou o código dele).'); $('lockInput').focus(); return; }
+    store('inv', v);
+    sess.locked = '';
+    $('lock').hidden = true;
+    $('lockInput').value = '';
+    if (!store('name')) { $('homeName').value = ''; $('nameDlg').showModal(); myFace(); }
+    if (!chatOpen()) { chat.backoff = 0; chatConnect(); } else sendMe();
+  });
+  const admWhen = (ts) => (ts ? new Date(ts).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+  function twoStep(btn, label, confirmLabel, go) { // 1º toque arma, 2º confirma (sem janela do sistema)
+    btn.addEventListener('click', () => {
+      if (btn.dataset.armed === '1') { btn.dataset.armed = ''; btn.textContent = label; go(); return; }
+      btn.dataset.armed = '1'; btn.textContent = confirmLabel;
+      setTimeout(() => { if (btn.dataset.armed === '1') { btn.dataset.armed = ''; btn.textContent = label; } }, 4000);
+    });
+  }
+  function admSend(o) { if (chatOpen()) chat.ws.send(JSON.stringify({ t: 'adm', ...o })); else toast('O chat está reconectando. Tente de novo em instantes.'); }
+  function admRender(list) {
+    const ul = $('admList');
+    ul.textContent = '';
+    for (const m of list) {
+      const li = document.createElement('li');
+      li.className = `adm-row${m.ban ? ' is-ban' : ''}`;
+      const head = document.createElement('div');
+      const st = m.ban ? 'Bloqueado' : !m.ok ? 'Tentou entrar sem convite' : { on: 'Online', idle: 'Ausente' }[m.st] || 'Offline';
+      head.append(Object.assign(document.createElement('b'), { textContent: String(m.name || '?').slice(0, 24) }), ' ',
+        Object.assign(document.createElement('span'), { className: 'adm-tag', textContent: `${m.uid === myUid ? 'você · ' : m.owner ? 'dono · ' : ''}${st}` }));
+      const info = Object.assign(document.createElement('div'), { className: 'muted',
+        textContent: `Entrou ${admWhen(m.since)} · visto ${admWhen(m.seen)} · ${String(m.dev || 'aparelho ?').slice(0, 60)}${m.place ? ` · ${String(m.place).slice(0, 60)}` : ''}` });
+      li.append(head, info);
+      if (!m.owner && /^[a-f0-9]{16}$/.test(m.uid || '')) {
+        const b = Object.assign(document.createElement('button'), { type: 'button', className: m.ban ? 'btn btn-quiet' : 'btn btn-danger' });
+        const label = m.ban ? 'Desbloquear' : 'Expulsar';
+        b.textContent = label;
+        twoStep(b, label, 'Confirmar', () => admSend({ op: m.ban ? 'unban' : 'kick', uid: m.uid }));
+        li.append(b);
+      }
+      ul.append(li);
+    }
+  }
+  function admInv(tok) {
+    $('admInvLink').value = `${SITE}#convite=${tok}`;
+    $('admInvBox').hidden = false;
+    toast('Convite novo pronto. O link antigo parou de valer.');
+  }
+  $('admBtn').addEventListener('click', () => { admSend({ op: 'list' }); $('admInvBox').hidden = true; $('admDlg').showModal(); });
+  twoStep($('admInvNew'), 'Gerar novo convite', 'Confirmar: o link antigo para de valer', () => admSend({ op: 'invite' }));
+  $('admInvCopy').addEventListener('click', () => {
+    navigator.clipboard.writeText($('admInvLink').value).then(() => toast('Link do convite copiado.')).catch(() => { $('admInvLink').select(); toast('Selecionei o link: copie com Ctrl+C.'); });
+  });
 
   // ---------- app para PC (Tauri) ----------
   // Tecla global (push-to-talk e mutar valem com o jogo em foco), bandeja, abrir com o Windows,

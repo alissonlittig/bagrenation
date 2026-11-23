@@ -1325,3 +1325,23 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 18px; border: 0; bo
 
 .dj-side .dj-queue { min-height: 88px; }
 .dj-feed { flex: 0 1 auto; }
+
+/* S-0065: servidor fechado (tela de entrar com convite) e Membros do dono */
+.lock { position: fixed; inset: 0; z-index: 9000; display: grid; place-items: center; padding: 16px; background: var(--bg); }
+.lock[hidden] { display: none; }
+.lock-card { --fr: var(--fr-panel-hot); border: calc(var(--u) * 3) solid transparent; border-image: var(--fr) 3 fill; width: min(440px, 100%); padding: 16px; display: grid; gap: 12px; color: var(--text); font: 400 22px/1.2 var(--term); }
+.lock-card h2 { font: 400 13px/1.5 var(--pix); text-transform: uppercase; color: var(--yel); }
+.lock-card p { color: var(--muted); }
+.adm-btn { margin-bottom: 12px; min-height: 44px; font-size: 11px; }
+.adm-list { display: grid; gap: 8px; margin-bottom: 12px; }
+.adm-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; padding: 8px; background: #120a1e; }
+.adm-row b { color: var(--text); font-weight: 400; }
+.adm-row .muted { grid-column: 1; font-size: 18px; }
+.adm-row .btn { grid-row: 1 / span 2; grid-column: 2; min-height: 44px; }
+.adm-row.is-ban { opacity: .7; }
+.adm-tag { color: var(--yel); font-size: 18px; }
+.adm-inv { display: grid; gap: 8px; margin-bottom: 12px; }
+.adm-inv h3 { font: 400 11px/1.5 var(--pix); text-transform: uppercase; color: var(--yel); }
+.adm-invbox { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.adm-invbox[hidden] { display: none; }
+.demo-bar { position: fixed; left: 50%; bottom: 8px; transform: translateX(-50%); z-index: 50; padding: 4px 10px; background: #ff2bd6; color: #07040f; font: 400 10px/1.4 var(--pix); text-transform: uppercase; pointer-events: none; }

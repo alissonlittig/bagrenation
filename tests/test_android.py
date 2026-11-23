@@ -209,6 +209,9 @@ def main():
     base = servir()
     erros = []
     adb("shell", "am", "force-stop", PKG)
+    # S-0065: sem dados de antes. O app abre no servidor de verdade antes de ir ao de teste: com o nome "Droid" guardado
+    # ele se identificava lá (apareceu como membro em 21 e 22/11). Sem nome guardado ele não se identifica.
+    adb("shell", "pm", "clear", PKG)
     adb("logcat", "-c")
     for perm in ("android.permission.RECORD_AUDIO", "android.permission.POST_NOTIFICATIONS", "android.permission.BLUETOOTH_CONNECT"):
         adb("shell", "pm", "grant", PKG, perm)

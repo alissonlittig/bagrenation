@@ -28,7 +28,7 @@
 <meta name="apple-mobile-web-app-title" content="BAGRENATION">
 <link rel="preload" href="fonts/press-start-2p-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/vt323-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="style.css?v=0059">
+<link rel="stylesheet" href="style.css?v=0065">
 </head>
 <body>
 
@@ -132,6 +132,7 @@
     </nav>
 
     <div class="side-section side-online" aria-label="Membros">
+      <button id="admBtn" class="btn btn-cyan btn-block adm-btn" type="button" hidden>Membros e convite</button>
       <h2 class="label">Online <span id="peopleCountSide">1</span></h2>
       <ul id="online" class="people people-online" aria-label="Online"></ul>
       <h2 class="label" id="idleHead" hidden>Ausente <span id="idleCount">0</span></h2>
@@ -582,6 +583,33 @@
   </form>
 </dialog>
 
+<!-- S-0065: servidor fechado. Sem convite, só esta tela (nada do servidor chega antes do convite) -->
+<div id="lock" class="lock" hidden role="dialog" aria-modal="true" aria-labelledby="lockTitle">
+  <form id="lockForm" class="lock-card" novalidate>
+    <h2 id="lockTitle">BAGRENATION é um servidor fechado</h2>
+    <p id="lockText">Só entra quem recebeu o link de convite. Recebeu? Abra o link ou cole ele aqui.</p>
+    <input id="lockInput" class="field" type="text" autocomplete="off" spellcheck="false" placeholder="Link ou código do convite">
+    <button id="lockGo" class="btn btn-primary btn-lg btn-block" type="submit"><span class="lbl">Entrar</span></button>
+  </form>
+</div>
+
+<!-- S-0065: só o dono vê. Quem está no servidor, expulsar e gerar convite novo -->
+<dialog id="admDlg" class="dlg adm" aria-labelledby="admTitle">
+  <form method="dialog" class="dlg-body">
+    <header class="dlg-head">
+      <h2 id="admTitle">Membros</h2>
+    </header>
+    <ul id="admList" class="adm-list"></ul>
+    <section class="adm-inv">
+      <h3>Convite</h3>
+      <p class="muted">Quem tem o link entra. Gerar um novo faz o antigo parar de valer (quem já entrou continua).</p>
+      <div id="admInvBox" class="adm-invbox" hidden><input id="admInvLink" class="field" type="text" readonly><button id="admInvCopy" class="btn btn-cyan" type="button">Copiar</button></div>
+      <button id="admInvNew" class="btn btn-primary btn-block" type="button">Gerar novo convite</button>
+    </section>
+    <div class="dlg-actions"><button class="btn btn-quiet" type="submit" value="no">Fechar</button></div>
+  </form>
+</dialog>
+
 <!-- Moldes de cada pessoa: linha da lista e cartão do canal de voz -->
 <template id="personTpl">
   <li>
@@ -637,6 +665,6 @@
 </template>
 
 <noscript><p class="noscript">O BAGRENATION precisa de JavaScript para conectar as pessoas da sala.</p></noscript>
-<script src="app.js?v=0059" defer></script>
+<script src="app.js?v=0065" defer></script>
 </body>
 </html>
