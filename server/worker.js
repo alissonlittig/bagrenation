@@ -271,12 +271,15 @@ export class Server {
       for (const ws of this.ctx.getWebSockets()) {
         const a = ws.deserializeAttachment() || {};
         if (a.closed || this.open()) continue;
-        if (!a.uid || !this.allowed(a.uid)) { try { if (typeof a.rtc !== 'string') ws.send(JSON.stringify({ t: 'locked', why: 'need' })); ws.close(4401, 'convite'); } catch { /* já fechou */ } }
+        const rtc = typeof a.rtc === 'string';
+        if (!a.uid || !this.allowed(a.uid)) { try { if (!rtc) ws.send(JSON.stringify({ t: 'locked', why: 'need' })); ws.close(4401, 'convite'); } catch { /* já fechou */ } }
+        else if (!rtc && !a.ok) { try { ws.close(4012, 'reconecte'); } catch { /* já fechou */ } } // aberta antes do portão: reconecta e recebe tudo de novo
       }
       this.broadcast({ t: 'members', list: this.members() });
     }
     const out = { ok: true, list: this.admList(), owners: this.owners(), inv: !!this.kv('inv'), strict: this.kv('strict') === '1' };
     if (d.op === 'invite') out.tok = await this.invite();
+    if (d.op === 'socks') out.socks = this.ctx.getWebSockets().map((w) => { const x = w.deserializeAttachment() || {}; const p = this.ctx.getWebSocketAutoResponseTimestamp(w); return { uid: x.uid || '', rtc: typeof x.rtc === 'string', ok: !!x.ok, closed: !!x.closed, since: x.since || 0, lt: x.lt || 0, pong: p ? p.getTime() : 0, rs: w.readyState }; });
     return json(out, 200);
   }
 
@@ -502,7 +505,11 @@ export class Server {
     att.lt = now;
     if (d.t === 'v') { att.c2 = true; ws.serializeAttachment(att); return; } // cliente que entende canais
     if (d.t === 'me') return this.hello(ws, att, d);
-    if (!att.ok) return; // S-0065: antes do portão só relógio, 'v' e 'me'
+    if (!att.ok) { // S-0065: antes do portão só relógio, 'v' e 'me' (conexão aberta antes do portão e liberada: passa)
+      if (!(att.uid && this.allowed(att.uid))) return;
+      att.ok = true;
+      ws.serializeAttachment(att);
+    }
     if (d.t === 'more' && Number.isInteger(d.before)) {
       const ch = this.textChan(d.ch);
       if (ch) ws.send(JSON.stringify({ t: 'old', ch, list: this.history(d.before, ch) }));
