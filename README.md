@@ -4,6 +4,10 @@
 
 Um servidor fixo, como um servidor do Discord: abriu o BAGRENATION (site ou app), já está lá, vendo quem está online, o **#chat** (com imagem, GIF e vídeo, e o histórico fica) e o **Canal de voz**. Entra no canal com um clique e qualquer um no canal pode mostrar a tela (ou a janela, a guia, o jogo) com o áudio junto. Sem conta.
 
+**Para quem:** o grupo de amigos do Alisson (servidor fechado: só entra quem tem convite; sem conta). **Versão atual:** 1.9.2 (23/11/2026), site, app de PC (Windows) e app Android na mesma versão.
+
+**Documentação técnica:** [Arquitetura](docs/ARQUITETURA.md) · [Como rodar, publicar e atualizar](docs/COMO_RODAR.md) · [Histórico de versões](docs/HISTORICO.md) · índice geral dos projetos: `C:\SISTEMA\DOCS\INDICE.md`.
+
 **Abrir:** https://alissonlittig.github.io/bagrenation/
 
 ## Como usar
